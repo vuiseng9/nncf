@@ -10,6 +10,7 @@
  See the License for the specific language governing permissions and
  limitations under the License.
 """
+from collections import OrderedDict
 import os.path as osp
 import sys
 import time
@@ -21,6 +22,7 @@ from shutil import copyfile
 from typing import Any
 
 import torch
+from torch._C import device
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
 import torch.nn.parallel
@@ -207,7 +209,30 @@ def main_worker(current_gpu, config: SampleConfig):
     if resuming_checkpoint_path is not None:
         resuming_checkpoint = load_resuming_checkpoint(resuming_checkpoint_path)
     model_state_dict, compression_state = extract_model_and_compression_states(resuming_checkpoint)
+
+    # logger.info("Pretrained Score: {}".format(validate(val_loader, model, criterion, config)))
+
     compression_ctrl, model = create_compressed_model(model, nncf_config, compression_state)
+    # logger.info("QInit Score: {}".format(validate(val_loader, model, criterion, config)))
+
+    compression_ctrl.disable_activation_quantization()
+    compression_ctrl.disable_weight_quantization()
+
+    one_non_wq = list(compression_ctrl.non_weight_quantizers.keys())[-1]
+    model.external_quantizers[one_non_wq.__str__()].num_bits=5
+    compression_ctrl.non_weight_quantizers[one_non_wq].quantizer_module_ref.enable_quantization()
+    logger.info("\n### {} | {}".format(one_non_wq, model.external_quantizers[one_non_wq.__str__()]))
+
+    # logger.info("Q one non_wq Score: {}".format(validate(val_loader, model, criterion, config)))
+    qinit_params = deepcopy(OrderedDict(model.named_parameters()))
+    qinit_buffers = deepcopy(OrderedDict(model.named_buffers()))
+
+    from glf import GLF_unitC
+    custom_quantizer = GLF_unitC(device=next(model.parameters()).device)
+    model.external_quantizers[one_non_wq.__str__()]=custom_quantizer
+    logger.info("\n### {} | {}".format(one_non_wq, model.external_quantizers[one_non_wq.__str__()]))
+    # logger.info("Q[GLF] Score: {}".format(validate(val_loader, model, criterion, config)))
+
     if model_state_dict is not None:
         load_state(model, model_state_dict, is_resume=True)
 
@@ -220,8 +245,34 @@ def main_worker(current_gpu, config: SampleConfig):
     if config.distributed:
         compression_ctrl.distributed()
 
+    # disable all model parameters except quantization parameters
+    for l, p in model.named_parameters():
+        if 'pre_ops' in l:
+            pass
+        elif 'quantizer' in l:
+            pass
+        else:
+            logger.info("Setting requires_grad=False for {}".format(l))
+            p.requires_grad = False
+
     # define optimizer
     params_to_optimize = get_parameter_groups(model, config)
+
+    # Hack to only add in model parameter, exclude quantization parameters
+    params_to_optimize[0]['params'] = []
+    for l, p in model.named_parameters():
+        if 'external_quantizers.VGG/Sequential[classifier]/ReLU[4]/relu__0|OUTPUT' in l:
+            print("to optimize:", l)
+            params_to_optimize[0]['params'].append(p)
+        elif 'pre_ops' in l:
+            pass
+        elif 'quantizer' in l:
+            pass
+        else:
+            pass
+            # print("to optimize:", l)
+            # params_to_optimize[0]['params'].append(p)
+
     optimizer, lr_scheduler = make_optimizer(params_to_optimize, config)
 
     best_acc1 = 0
@@ -277,10 +328,30 @@ def main_worker(current_gpu, config: SampleConfig):
         else:
             train(config, compression_ctrl, model, criterion, train_criterion_fn, lr_scheduler, model_name, optimizer,
                   train_loader, train_sampler, val_loader, best_acc1)
+            logger.info("QFinal Score: {}".format(validate(val_loader, model, criterion, config)))
+            qfinal_params = deepcopy(OrderedDict(model.named_parameters()))
+            qfinal_buffers = deepcopy(OrderedDict(model.named_buffers()))
+
+            # assert len(qinit_params) == len(qfinal_params), "unequal length"
+            # diff_keys = []
+            # for key, val in qfinal_params.items():
+            #     if 'pre_ops' in key:
+            #         continue
+            #     elif 'quantizer' in key:
+            #         continue
+            #     if (val == qinit_params[key]).sum().item() == 0:
+            #         diff_keys.append(key)
+            # assert len(diff_keys) == 0, "Model Parameters has been touched!"
+
+            # assert len(qinit_buffers) == len(qfinal_buffers), "unequal length"
+            # diff_keys = []
+            # for key, val in qfinal_params.items():
+            #     if (val == qinit_params[key]).sum().item() == 0:
+            #         diff_keys.append(key)
+            # print("haha")
 
     if 'test' in config.mode:
         validate(val_loader, model, criterion, config)
-
     config.mlflow.end_run()
 
     if 'export' in config.mode:
@@ -300,6 +371,7 @@ def train(config, compression_ctrl, model, criterion, criterion_fn, lr_scheduler
 
         # train for one epoch
         train_epoch(train_loader, model, criterion, criterion_fn, optimizer, compression_ctrl, epoch, config)
+        
 
         # Learning rate scheduling should be applied after optimizer’s update
         lr_scheduler.step(epoch if not isinstance(lr_scheduler, ReduceLROnPlateau) else best_acc1)
@@ -310,7 +382,9 @@ def train(config, compression_ctrl, model, criterion, criterion_fn, lr_scheduler
         acc1 = best_acc1
         if epoch % config.test_every_n_epochs == 0:
             # evaluate on validation set
-            acc1, _, _ = validate(val_loader, model, criterion, config, epoch=epoch)
+            acc1, acc5, _ = validate(val_loader, model, criterion, config, epoch=epoch)
+            one_non_wq = list(compression_ctrl.non_weight_quantizers.keys())[-1]
+            logger.info("\n[##GLF] val top1: {:.2f}, top5: {:.2f}, {} | {}".format(acc1, acc5, one_non_wq, model.external_quantizers[one_non_wq.__str__()]))
 
         compression_stage = compression_ctrl.compression_stage()
         # remember best acc@1, considering compression stage. If current acc@1 less then the best acc@1, checkpoint
@@ -326,7 +400,7 @@ def train(config, compression_ctrl, model, criterion, criterion_fn, lr_scheduler
         if config.metrics_dump is not None:
             write_metrics(acc, config.metrics_dump)
         if is_main_process():
-            logger.info(statistics.to_str())
+            # logger.info(statistics.to_str())
 
             checkpoint_path = osp.join(config.checkpoint_save_dir, get_name(config) + '_last.pth')
             checkpoint = {
