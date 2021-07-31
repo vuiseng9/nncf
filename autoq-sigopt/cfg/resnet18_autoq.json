@@ -29,7 +29,7 @@
             "precision": {
                 "type": "autoq",
                 "bits": [2, 4, 8],
-                "iter_number": 10,
+                "iter_number": 500,
                 "compression_ratio": 0.15,
                 "eval_subset_ratio": 0.20,
                 "dump_init_precision_data": true
