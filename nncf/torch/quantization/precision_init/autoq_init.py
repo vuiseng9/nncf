@@ -34,7 +34,9 @@ import math
 import numpy as np
 import pandas as pd
 from copy import deepcopy
-
+import sigopt
+from sigopt import Connection
+import hashlib
 
 class AutoQPrecisionInitParams(BasePrecisionInitParams):
     def __init__(self, user_init_args: AutoQPrecisionInitArgs,
@@ -100,6 +102,44 @@ class AutoQPrecisionInitializer(BasePrecisionInitializer):
         self._iter_number = params.iter_number
         self._ddpg_hparams_override = params.ddpg_hparams_dict
         self._hw_cfg_type = params.hw_cfg_type
+        
+        def _create_project_label_id():
+            d = datetime.now()
+            datetime_id = '{:%Y-%m-%d__%H-%M-%S}'.format(d)
+
+            model_name = self._init_args.config['model']
+            if model_name is None or model_name == "":
+                model_name = algo._model.get_nncf_wrapped_model().__class__.__name__
+            
+            project_label = "{} | NNCF-AutoQ | {}".format(model_name, datetime_id)
+            project_id = "{}-{}-autoq-{}".format(model_name, 
+                                                 datetime_id.split("__")[0], 
+                                                 hashlib.md5(datetime_id.encode('utf')).hexdigest()[:4]).lower() # required match of regex /^[a-z0-9\-_\.]+$/
+            return project_label, project_id
+        
+        try:
+            conn = Connection(client_token=self._init_args.config['sigopt_token'])
+            client = conn.clients(self._init_args.config['sigopt_id']).fetch()
+            
+            self._sigopt_id = self._init_args.config['sigopt_id']
+            self._sigopt_token = self._init_args.config['sigopt_token']
+            os.environ['SIGOPT_API_TOKEN'] = self._sigopt_token
+            self._sigopt_proj_label, self._sigopt_proj_id =_create_project_label_id()
+            self._sigopt_project = conn.clients(self._sigopt_id).projects().create(name=self._sigopt_proj_label, id=self._sigopt_proj_id)
+            self._sigopt_logging = True
+        except:
+            self._sigopt_logging = False
+
+    def _log_to_sigopt_project(self, iter_id, iter_params, iter_metadata, iter_metric):
+        run_name = "iter_{}".format(str(iter_id).zfill(4))
+        with sigopt.create_run(name=run_name, project=self._sigopt_proj_id) as run:
+            # log observation metadata with the Run
+            [run.log_metadata(key,value) for key,value in iter_metadata.items()]
+            # link parameter values to the Run
+            [run.get_parameter(key, default=value) for key, value in iter_params.items()]
+            # link metric values to the Run
+            [run.log_metric(key, value) for key, value in iter_metric.items()]
+            # run.log_metric(iter_metric['label'], iter_metric['value'])
 
     def apply_init(self) -> SingleConfigQuantizerSetup:
         from nncf.torch.automl.environment.quantization_env import QuantizationEnv
@@ -223,6 +263,26 @@ class AutoQPrecisionInitializer(BasePrecisionInitializer):
             observation = deepcopy(observation2)
 
             if done:  # end of episode
+                if self._sigopt_logging:
+                    iter_id = episode
+
+                    iter_params = OrderedDict()
+                    iter_metadata = OrderedDict()
+                    for i, (q, bit) in enumerate(env._get_quantizer_bitwidth().items()):
+                        key = "Q_{}".format(str(i).zfill(3))
+                        Qtype = '(WQ)' if env.master_df.is_wt_quantizer[str(q)] else '(AQ)'
+                        iter_params[key] = bit
+                        iter_metadata[key] = "{} {}".format(Qtype, q)
+                    
+                    iter_metric = OrderedDict()
+                    iter_metric['reward'] = episode_reward
+                    iter_metric['accuracy'] = info['accuracy']
+                    iter_metric['model size ratio'] = info['model_ratio']
+                    iter_metric['bit complexity ratio'] = info['bop_ratio'] 
+                    iter_metric['model size (mb)'] = info['model_size']/8e6
+
+                    self._log_to_sigopt_project(iter_id, iter_params, iter_metadata, iter_metric)
+
                 logger.info(
                     '## Episode[{}], reward: {:.3f}, acc: {:.3f}, model_ratio: {:.3f}, '
                     'model_size(MB): {:.2f}, BOP_ratio: {:.3f}\n' \

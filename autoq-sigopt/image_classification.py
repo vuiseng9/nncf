@@ -94,6 +94,10 @@ def get_argument_parser():
     )
     parser.add_argument('--test-every-n-epochs', default=1, type=int,
                         help='Enables running validation every given number of epochs')
+    parser.add_argument("--sigopt-id", type=str, default=None,
+                        help="SigOpt Client ID")
+    parser.add_argument("--sigopt-token", type=str, default=None,
+                        help="SigOpt Client Token")                   
     return parser
 
 
@@ -101,6 +105,10 @@ def main(argv):
     parser = get_argument_parser()
     args = parse_args(parser, argv)
     config = create_sample_config(args, parser)
+
+    # need to pass sigopt* variable to nncf_config so it is visible to AutoQ runner
+    for k in ['sigopt_id', 'sigopt_token']:
+        config.nncf_config[k] = config[k]
 
     if config.dist_url == "env://":
         config.update_from_env()
