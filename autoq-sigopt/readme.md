@@ -9,7 +9,7 @@ git clone https://github.com/vuiseng9/nncf
 cd nncf && git checkout autoq-sigopt
 python setup.py develop
 pip install -r examples/torch/requirements.txt
-pip install autoq-sigopt/requirements.txt
+pip install -r autoq-sigopt/requirements.txt
 ```
 
 # Run
