@@ -110,10 +110,10 @@ class AutoQPrecisionInitializer(BasePrecisionInitializer):
             model_name = self._init_args.config['model']
             if model_name is None or model_name == "":
                 model_name = algo._model.get_nncf_wrapped_model().__class__.__name__
-            
+
             project_label = "{} | NNCF-AutoQ | {}".format(model_name, datetime_id)
             project_id = "{}-{}-autoq-{}".format(model_name, 
-                                                 datetime_id.split("__")[0], 
+                                                 datetime_id.split("__")[0][5:], 
                                                  hashlib.md5(datetime_id.encode('utf')).hexdigest()[:4]).lower() # required match of regex /^[a-z0-9\-_\.]+$/
             return project_label, project_id
         
@@ -127,7 +127,8 @@ class AutoQPrecisionInitializer(BasePrecisionInitializer):
             self._sigopt_proj_label, self._sigopt_proj_id =_create_project_label_id()
             self._sigopt_project = conn.clients(self._sigopt_id).projects().create(name=self._sigopt_proj_label, id=self._sigopt_proj_id)
             self._sigopt_logging = True
-        except:
+        except Exception as e:
+            logger.warn("SIGOPT logging is not enabled due to {}".format(str(e)))
             self._sigopt_logging = False
 
     def _log_to_sigopt_project(self, iter_id, iter_params, iter_metadata, iter_metric):
