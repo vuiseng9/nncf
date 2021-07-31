@@ -1,5 +1,5 @@
 # autoq-sigopt
-* The codes in this folder aims to demonstrate SigOpt's Bring Your Own Optimizer (BYOO) capability with AutoQ. 
+* The codes in this folder aim to demonstrate SigOpt's Bring Your Own Optimizer (BYOO) capability with AutoQ. 
 * AutoQ backend has been integrated with the API calls to SigOpt.
 * Imagenet AutoQ mixed precision search has been adapted to allow user to input thier credentials for logging and visualization.
 
