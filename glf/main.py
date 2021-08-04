@@ -210,28 +210,35 @@ def main_worker(current_gpu, config: SampleConfig):
         resuming_checkpoint = load_resuming_checkpoint(resuming_checkpoint_path)
     model_state_dict, compression_state = extract_model_and_compression_states(resuming_checkpoint)
 
-    # logger.info("Pretrained Score: {}".format(validate(val_loader, model, criterion, config)))
+    logger.info("Pretrained Score: {}".format(validate(val_loader, model, criterion, config)))
 
     compression_ctrl, model = create_compressed_model(model, nncf_config, compression_state)
-    # logger.info("QInit Score: {}".format(validate(val_loader, model, criterion, config)))
+    logger.info("QInit Score: {}".format(validate(val_loader, model, criterion, config)))
 
     compression_ctrl.disable_activation_quantization()
     compression_ctrl.disable_weight_quantization()
 
     one_non_wq = list(compression_ctrl.non_weight_quantizers.keys())[-1]
-    model.external_quantizers[one_non_wq.__str__()].num_bits=5
+    # model.external_quantizers[one_non_wq.__str__()].num_bits=5
     compression_ctrl.non_weight_quantizers[one_non_wq].quantizer_module_ref.enable_quantization()
     logger.info("\n### {} | {}".format(one_non_wq, model.external_quantizers[one_non_wq.__str__()]))
 
-    # logger.info("Q one non_wq Score: {}".format(validate(val_loader, model, criterion, config)))
+    logger.info("Q one non_wq Score: {}".format(validate(val_loader, model, criterion, config)))
     qinit_params = deepcopy(OrderedDict(model.named_parameters()))
     qinit_buffers = deepcopy(OrderedDict(model.named_buffers()))
 
     from glf import GLF_unitC
     custom_quantizer = GLF_unitC(device=next(model.parameters()).device)
+
+    q=model.external_quantizers[one_non_wq.__str__()]
+    custom_quantizer.set_coef(
+        A=-1*q.scale.data.item(),
+        K=q.scale.data.item(),
+    )
+
     model.external_quantizers[one_non_wq.__str__()]=custom_quantizer
     logger.info("\n### {} | {}".format(one_non_wq, model.external_quantizers[one_non_wq.__str__()]))
-    # logger.info("Q[GLF] Score: {}".format(validate(val_loader, model, criterion, config)))
+    logger.info("Q[GLF] Score: {}".format(validate(val_loader, model, criterion, config)))
 
     if model_state_dict is not None:
         load_state(model, model_state_dict, is_resume=True)
@@ -384,7 +391,7 @@ def train(config, compression_ctrl, model, criterion, criterion_fn, lr_scheduler
             # evaluate on validation set
             acc1, acc5, _ = validate(val_loader, model, criterion, config, epoch=epoch)
             one_non_wq = list(compression_ctrl.non_weight_quantizers.keys())[-1]
-            logger.info("\n[##GLF] val top1: {:.2f}, top5: {:.2f}, {} | {}".format(acc1, acc5, one_non_wq, model.external_quantizers[one_non_wq.__str__()]))
+            logger.info("\n[##GLF] epoch: {}, val top1: {:.2f}, top5: {:.2f}, {} | {}".format(epoch, acc1, acc5, one_non_wq, model.external_quantizers[one_non_wq.__str__()]))
 
         compression_stage = compression_ctrl.compression_stage()
         # remember best acc@1, considering compression stage. If current acc@1 less then the best acc@1, checkpoint
