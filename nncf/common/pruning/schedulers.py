@@ -248,6 +248,7 @@ class PaasGradualFTScheduler(PruningScheduler):
         self.freeze_epoch = self.num_warmup_epochs
         self.num_warmup_epochs = 0 # Freezing these per paas use-cases
         self.num_pruning_epochs = 1000 # Freezing these per paas use-cases
+        self.ft_step_per_group = params.get('ft_step_per_group', 1)
         group_id_list = list(map(lambda x: x.id, controller.pruned_module_groups_info.get_all_clusters()))
         groupwise_pruning_cfg = params.get('groupwise_pruning_cfg', None)
         assert len(group_id_list) == len(groupwise_pruning_cfg)
@@ -274,9 +275,6 @@ class PaasGradualFTScheduler(PruningScheduler):
         #         pruning_module = minfo.operand
         #         pruning_module.binary_filter_pruning_mask = torch.ones_like(pruning_module.binary_filter_pruning_mask)
 
-    def _calculate_pruning_level(self) -> float:
-        return self.groupwise_pruning_cfg
-
     def epoch_step(self, next_epoch: Optional[int] = None) -> None:
         """
         Should be called at the beginning of each training epoch to prepare
@@ -289,7 +287,7 @@ class PaasGradualFTScheduler(PruningScheduler):
             next_epoch = self.current_epoch + 1
         self.current_epoch = next_epoch
         
-        sequence_id = self.current_epoch % len(self.groupwise_pruning_cfg)
+        sequence_id = (self.current_epoch//self.ft_step_per_group) % len(self.groupwise_pruning_cfg)
         tuple_list = list(self.groupwise_pruning_cfg.items())
         group_id = tuple_list[sequence_id][0]
 

@@ -228,11 +228,12 @@ def train(config, compression_ctrl, model, criterion, criterion_fn, lr_scheduler
         if config.distributed:
             train_sampler.set_epoch(epoch)
 
+        # Learning rate scheduling should be applied after optimizer’s update
+        lr_scheduler.step(epoch if not isinstance(lr_scheduler, ReduceLROnPlateau) else best_acc1)
+        
         # train for one epoch
         train_epoch(train_loader, model, criterion, criterion_fn, optimizer, compression_ctrl, epoch, config)
 
-        # Learning rate scheduling should be applied after optimizer’s update
-        lr_scheduler.step(epoch if not isinstance(lr_scheduler, ReduceLROnPlateau) else best_acc1)
 
         # compute compression algo statistics
         stats = compression_ctrl.statistics()

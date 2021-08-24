@@ -693,6 +693,9 @@ FILTER_PRUNING_SCHEMA = {
                                                                    " `False` by default. ",
                                                        default=False
                                                        ),
+                    "ft_step_per_group": with_attributes(_NUMBER,
+                                                     description="Number of training epochs for current pruning rate"
+                                                                 "use in gradual ft scheduler"),
 
                 },
                 "additionalProperties": False,
