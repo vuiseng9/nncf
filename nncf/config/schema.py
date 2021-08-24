@@ -687,6 +687,12 @@ FILTER_PRUNING_SCHEMA = {
                                                  default=True),
                     "groupwise_pruning_cfg": with_attributes({"type": "object"},
                                                  description="Levels of pruning ratio per group of conv layers"),
+                    "large_groupwise_ratio_first": with_attributes(_BOOLEAN,
+                                                       description="for groupwise pruning and fine-tuning (gradual_paas_ft)"
+                                                                   "This parameter instructs the order of the group to be pruned"
+                                                                   " `False` by default. ",
+                                                       default=False
+                                                       ),
 
                 },
                 "additionalProperties": False,

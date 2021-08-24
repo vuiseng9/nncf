@@ -15,7 +15,7 @@ import re
 
 from torch.optim import SGD, Adam
 from torch.optim.lr_scheduler import MultiStepLR, ReduceLROnPlateau, StepLR, LambdaLR, ExponentialLR
-
+from .paas_lr_scheduler import PAASStepLR
 
 def get_parameter_groups(model, config):
     optim_config = config.get('optimizer', {})
@@ -63,6 +63,9 @@ def make_optimizer(params_to_optimize, config):
                                 **scheduler_params)
     elif scheduler_type == 'step':
         scheduler = StepLR(optim, step_size=optim_config.get('step', 30), gamma=gamma,
+                           **scheduler_params)
+    elif scheduler_type == 'paas_step':
+        scheduler = PAASStepLR(optim, step_size=optim_config.get('step', 10), gamma=gamma, hyperstep_per_cycle=optim_config.get('hyperstep_per_cycle', 5),
                            **scheduler_params)
     elif scheduler_type == 'plateau':
         if not scheduler_params:

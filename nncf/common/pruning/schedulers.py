@@ -17,6 +17,9 @@ import scipy.optimize
 
 from nncf.common.utils.registry import Registry
 from nncf.common.schedulers import ExponentialDecaySchedule, BaseCompressionScheduler
+from copy import deepcopy
+from collections import OrderedDict
+from nncf.common.utils.logger import logger as nncf_logger
 
 PRUNING_SCHEDULERS = Registry("pruning_schedulers")
 
@@ -224,7 +227,7 @@ class PaasFTScheduler(PruningScheduler):
         super().__init__(controller, params)
         self.freeze_epoch = self.num_warmup_epochs
         self.num_warmup_epochs = 0 # Freezing these per paas use-cases
-        self.num_pruning_epochs = 100 # Freezing these per paas use-cases
+        self.num_pruning_epochs = 1000 # Freezing these per paas use-cases
         group_id_list = list(map(lambda x: x.id, controller.pruned_module_groups_info.get_all_clusters()))
         groupwise_pruning_cfg = params.get('groupwise_pruning_cfg', None)
         assert len(group_id_list) == len(groupwise_pruning_cfg)
@@ -233,3 +236,68 @@ class PaasFTScheduler(PruningScheduler):
 
     def _calculate_pruning_level(self) -> float:
         return self.groupwise_pruning_cfg
+
+@PRUNING_SCHEDULERS.register("paas_gradual_ft")
+class PaasGradualFTScheduler(PruningScheduler):
+    """
+    NEMO/PAAS Fine-tuning with gradual pruning with mask
+    """
+
+    def __init__(self, controller, params: dict):
+        super().__init__(controller, params)
+        self.freeze_epoch = self.num_warmup_epochs
+        self.num_warmup_epochs = 0 # Freezing these per paas use-cases
+        self.num_pruning_epochs = 1000 # Freezing these per paas use-cases
+        group_id_list = list(map(lambda x: x.id, controller.pruned_module_groups_info.get_all_clusters()))
+        groupwise_pruning_cfg = params.get('groupwise_pruning_cfg', None)
+        assert len(group_id_list) == len(groupwise_pruning_cfg)
+        
+        self.groupwise_pruning_cfg = {int(gid): ratio for gid, ratio in groupwise_pruning_cfg.items()}
+        self.groupwise_pruning_cfg = OrderedDict(sorted(self.groupwise_pruning_cfg.items(), key=lambda item: item[1], reverse=params.get("large_groupwise_ratio_first", False)))
+
+        # Mask extraction
+        # self.groupwise_pruning_current_mask will be unpruned
+        self.groupwise_pruning_current_mask = deepcopy(self._controller.pruned_module_groups_info.get_all_clusters())
+
+        # Use the following function to just get mask computed and prevet mask being applied to parameters
+        self._controller._set_binary_masks_for_pruned_modules_groupwise(self.groupwise_pruning_cfg)
+        self.groupwise_pruning_target_mask = deepcopy(self._controller.pruned_module_groups_info.get_all_clusters())
+
+        # reset mask
+        self._controller._set_binary_masks_for_pruned_modules_groupwise(self.groupwise_pruning_current_mask)
+        # IMPORTANT, flops are calculated based on mask in _set_binary_masks_for_pruned_modules_groupwise
+        # Ensure this is being validated
+
+        # Template to access mask
+        # for group in self._controller.pruned_module_groups_info.get_all_clusters():
+        #     for minfo in group.nodes:
+        #         pruning_module = minfo.operand
+        #         pruning_module.binary_filter_pruning_mask = torch.ones_like(pruning_module.binary_filter_pruning_mask)
+
+    def _calculate_pruning_level(self) -> float:
+        return self.groupwise_pruning_cfg
+
+    def epoch_step(self, next_epoch: Optional[int] = None) -> None:
+        """
+        Should be called at the beginning of each training epoch to prepare
+        the pruning method to continue training the model in the `next_epoch`.
+
+        :param next_epoch: The epoch index for which the pruning scheduler
+            will update the state of the pruning method.
+        """
+        if next_epoch is None:
+            next_epoch = self.current_epoch + 1
+        self.current_epoch = next_epoch
+        
+        sequence_id = self.current_epoch % len(self.groupwise_pruning_cfg)
+        tuple_list = list(self.groupwise_pruning_cfg.items())
+        group_id = tuple_list[sequence_id][0]
+
+        nncf_logger.info("#PAAS# backend: PaasGradualFTScheduler, prune filter group {}".format(group_id))
+        for current_node, target_node in zip(self.groupwise_pruning_current_mask[group_id].nodes, self.groupwise_pruning_target_mask[group_id].nodes):
+            assert current_node.nncf_node_id == target_node.nncf_node_id, "Logical Bug"
+            current_node.operand.binary_filter_pruning_mask = target_node.operand.binary_filter_pruning_mask
+
+        self._controller.set_pruning_rate(self.groupwise_pruning_current_mask)
+        # if self.current_epoch >= self.freeze_epoch:
+        #     self._controller.freeze()

@@ -349,7 +349,10 @@ class FilterPruningController(BasePruningAlgoController):
         self._apply_masks()
 
         if not groupwise_pruning_rates_set:
-            self._pruning_rate = passed_pruning_rate
+            if isinstance(pruning_rate, list):
+                self._pruning_rate = self._calculate_global_weight_pruning_rate()
+            else:
+                self._pruning_rate = passed_pruning_rate
         else:
             self._pruning_rate = self._calculate_global_weight_pruning_rate()
 
@@ -387,31 +390,40 @@ class FilterPruningController(BasePruningAlgoController):
         nncf_logger.debug("Updating binary masks for pruned modules.")
         groupwise_pruning_rates_set = isinstance(pruning_rate, dict)
 
-        for group in self.pruned_module_groups_info.get_all_clusters():
-            group_pruning_rate = pruning_rate[group.id] if groupwise_pruning_rates_set \
-                else pruning_rate
+        if groupwise_pruning_rates_set is True:
+            for group in self.pruned_module_groups_info.get_all_clusters():
+                group_pruning_rate = pruning_rate[group.id] if groupwise_pruning_rates_set \
+                    else pruning_rate
 
-            filters_num = torch.tensor([get_filters_num(minfo.module) for minfo in group.nodes])
-            assert torch.all(filters_num == filters_num[0])
-            device = group.nodes[0].module.weight.device
+                filters_num = torch.tensor([get_filters_num(minfo.module) for minfo in group.nodes])
+                assert torch.all(filters_num == filters_num[0])
+                device = group.nodes[0].module.weight.device
 
-            cumulative_filters_importance = torch.zeros(filters_num[0]).to(device)
-            # 1. Calculate cumulative importance for all filters in group
-            for minfo in group.nodes:
-                filters_importance = self.filter_importance(minfo.module.weight,
-                                                            minfo.module.target_weight_dim_for_compression)
-                cumulative_filters_importance += filters_importance
+                cumulative_filters_importance = torch.zeros(filters_num[0]).to(device)
+                # 1. Calculate cumulative importance for all filters in group
+                for minfo in group.nodes:
+                    filters_importance = self.filter_importance(minfo.module.weight,
+                                                                minfo.module.target_weight_dim_for_compression)
+                    cumulative_filters_importance += filters_importance
 
-            # 2. Calculate threshold
-            num_of_sparse_elems = get_rounded_pruned_element_number(cumulative_filters_importance.size(0),
-                                                                    group_pruning_rate)
-            threshold = sorted(cumulative_filters_importance)[min(num_of_sparse_elems, filters_num[0] - 1)]
-            mask = calculate_binary_mask(cumulative_filters_importance, threshold)
+                # 2. Calculate threshold
+                num_of_sparse_elems = get_rounded_pruned_element_number(cumulative_filters_importance.size(0),
+                                                                        group_pruning_rate)
+                threshold = sorted(cumulative_filters_importance)[min(num_of_sparse_elems, filters_num[0] - 1)]
+                mask = calculate_binary_mask(cumulative_filters_importance, threshold)
 
-            # 3. Set binary masks for filter
-            for minfo in group.nodes:
-                pruning_module = minfo.operand
-                pruning_module.binary_filter_pruning_mask = mask
+                # 3. Set binary masks for filter
+                for minfo in group.nodes:
+                    pruning_module = minfo.operand
+                    pruning_module.binary_filter_pruning_mask = mask
+        else:
+            if isinstance(pruning_rate, list):
+                nncf_logger.info("#PAAS# backend: groupwise pruning by mask")
+                for iii, group in enumerate(self.pruned_module_groups_info.get_all_clusters()):
+                    for target_minfo, current_minfo in zip(pruning_rate[iii].nodes, group.nodes):
+                        assert target_minfo.nncf_node_id == current_minfo.nncf_node_id, "Logical Bug"
+                        pruning_module = current_minfo.operand
+                        pruning_module.binary_filter_pruning_mask = target_minfo.operand.binary_filter_pruning_mask
 
         # Calculate actual flops with new masks
         self.current_flops = self._calculate_flops_pruned_model_by_masks()
