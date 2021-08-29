@@ -79,6 +79,10 @@ from nncf.torch.structures import ExecutionParameters
 from nncf.torch.utils import is_main_process
 from nncf.torch.utils import safe_thread_call
 
+from functools import partial
+from collections import OrderedDict
+import numpy as np
+
 model_names = sorted(name for name in models.__dict__
                      if name.islower() and not name.startswith("__")
                      and callable(models.__dict__[name]))
@@ -180,6 +184,13 @@ def main_worker(current_gpu, config: SampleConfig):
 
         execution_params = ExecutionParameters(config.cpu_only, config.current_gpu)
 
+        if 'actdist' in config.mode:
+            # To prevent mistake and dependency of users to disable batchnorm adaptation
+            # we disable bnadap by force here when we are in actdist mode
+            assert config.compression.algorithm == 'quantization', "actdist mode only applicable for a quantization config"
+            config.compression.initializer.batchnorm_adaptation.num_bn_adaptation_samples = 0
+            nncf_config['compression']['initializer']['batchnorm_adaptation']['num_bn_adaptation_samples'] = 0
+
         nncf_config = register_default_init_args(
             nncf_config,
             init_loader,
@@ -244,6 +255,122 @@ def main_worker(current_gpu, config: SampleConfig):
     if is_main_process():
         statistics = compression_ctrl.statistics()
         logger.info(statistics.to_str())
+
+    if 'actdist' in config.mode:
+        # This mode is to generate distribution of activation tensors which will be quantized.
+        # We do not perform quantization, but we rely on nncf quantization graph to obtain the target activation tensor, hence we need a quantization NNCF config
+        # Important: batchnorm adaptation must be DISABLED; we need to avoid touching the model as we want the original activation distribution.
+        # we disable quantization function prior to activation output collection.
+
+        # create callback function that caches feature maps through forward hook/prehooks
+        def _get_fm_cache_hook(qid, cache_dict, pre_hook=False):
+            def fm_cache(module, input_, output, cache_dict, dictkey):
+                if dictkey not in cache_dict:
+                    cache_dict[dictkey] = []
+                cache_dict[dictkey].append(output.clone().detach())
+
+            def pre_fm_cache(module, input, cache_dict, dictkey):
+                if len(input) != 1:
+                    raise ValueError("Multi input!")
+                if dictkey not in cache_dict:
+                    cache_dict[dictkey] = []
+                cache_dict[dictkey].append(input[0].clone().detach())
+
+            if pre_hook is True:
+                return partial(pre_fm_cache, cache_dict=cache_dict, dictkey=qid)
+            return partial(fm_cache, cache_dict=cache_dict, dictkey=qid)
+
+        def get_quantizers_in_exec_order(quantization_controller, quantized_model, type='non_weight'):
+            def get_hook(qtuple, exec_ordereddict):
+                def register_quantizer_exec_order(module, input_, output, qtuple, exec_ordereddict):
+                    exec_ordereddict[qtuple[0]] = qtuple[1]
+                return partial(register_quantizer_exec_order, qtuple=qtuple, exec_ordereddict=exec_ordereddict)
+
+            quantizers_store = {
+                'weight': quantization_controller.weight_quantizers,
+                'non_weight': quantization_controller.non_weight_quantizers,
+                'both': quantization_controller.all_quantizations
+            }
+            
+            quantizers_in_exec_order = OrderedDict()
+            hooklist = []
+
+            if type == 'both':
+                for qid, qmod in quantizers_store[type].items():
+                    hooklist.append(
+                        qmod.register_forward_hook(
+                            get_hook((qid, qmod), quantizers_in_exec_order)
+                        )
+                    )
+            else:
+                for qid, qinfo in quantizers_store[type].items():
+                    hooklist.append(
+                        qinfo.quantizer_module_ref.register_forward_hook(
+                            get_hook((qid, qinfo), quantizers_in_exec_order)
+                        )
+                    )
+            quantized_model.do_dummy_forward(force_eval=True)
+            for h in hooklist:
+                h.remove()
+            return quantizers_in_exec_order
+
+
+        # disable quantization
+        compression_ctrl.disable_weight_quantization()
+        compression_ctrl.disable_activation_quantization()
+
+        aq_order = get_quantizers_in_exec_order(compression_ctrl, model, type='non_weight')
+
+        # register prehook to activation of interest
+        # prehook on targeted quantizer will be executed even it is disabled
+        # the quantizer functions as an identity when disabled, forward pass is still executed, hence prehook.
+
+        # Estimation of memory requirement
+        # ---------------------------------
+        dummy_buffer = OrderedDict()
+        hooklist=[]
+        for qid, qinfo in aq_order.items():
+            hooklist.append(
+                qinfo.quantizer_module_ref.register_forward_pre_hook(_get_fm_cache_hook(str(qid), dummy_buffer, pre_hook=True))
+            )
+        model.do_dummy_forward(force_eval=True)
+        for h in hooklist:
+            h.remove()
+
+        nbatch = len(train_loader)
+        bs = config.batch_size
+        for qid, fm in dummy_buffer.items():
+            size_per_input = np.prod(fm[0].shape)
+            logger.info('[ClipOpt]: size_per_input: {:8}, per_dataset (GB): {:5.3f}, qid: {}'.format(
+                size_per_input, 
+                size_per_input*nbatch*bs*4*1e-9,
+                qid))
+
+        # forward pass on calibration set to collect distribution
+        # -------------------------------------------------------
+        generate_actdict_fwdpass = partial(validate, val_loader=train_loader, criterion=criterion, 
+            config=config, epoch=0, log_validation_info=True)
+
+        for iii, (qid, qinfo) in enumerate(aq_order.items()):
+            fm_buffer = OrderedDict()
+            hook = qinfo.quantizer_module_ref.register_forward_pre_hook(_get_fm_cache_hook(str(qid), fm_buffer, pre_hook=True))
+            top1, top5, loss = generate_actdict_fwdpass(model=model)
+            logger.info("[ClipOpt]: top1: {:3.3f}, top5: {:3.3f}, loss: {:3.3f}, Collected tensors of {}/{}, {}".format(
+                top1, top5, loss, str(iii+1).zfill(3), str(len(aq_order)).zfill(3), str(qid)))
+            hook.remove()
+            assert len(fm_buffer) == 1, "BUG - we expect fm_buffer to have only 1 item"
+            # transfer buffer to cpu
+            buffer_cpu = OrderedDict()
+            for k, v in fm_buffer.items():
+                temp=[]
+                for d in v:
+                    temp.append(d.to('cpu'))
+                buffer_cpu[k]=temp
+            del fm_buffer
+            qidstr, buffer = list(buffer_cpu.items())[0]
+            config.tb.add_histogram("actdist/{}/{}".format(str(iii).zfill(3), qidstr), torch.cat(buffer))            
+        
+        exit()
 
     if 'train' in config.mode:
         if is_accuracy_aware_training(config):
