@@ -52,10 +52,25 @@ from nncf.dynamic_graph.graph_tracer import create_input_infos
 from nncf.initialization import register_default_init_args, default_criterion_fn
 from nncf.utils import safe_thread_call, is_main_process
 from examples.classification.common import set_seed, load_resuming_checkpoint
+import copy
 
 model_names = sorted(name for name in models.__dict__
                      if name.islower() and not name.startswith("__")
                      and callable(models.__dict__[name]))
+
+class KDLossCalculator:
+    def __init__(self, original_model, temperature=1.0):
+        self.original_model = original_model
+        self.original_model.eval()
+        self.temperature = temperature
+
+    def loss(self, inputs, quantized_network_outputs):
+        T = self.temperature
+        with torch.no_grad():
+            ref_output = self.original_model(inputs).detach()
+        kd_loss = -(nn.functional.log_softmax(quantized_network_outputs / T, dim=1) *
+                    nn.functional.softmax(ref_output / T, dim=1)).mean() * (T * T * quantized_network_outputs.shape[1])
+        return kd_loss
 
 def get_argument_parser():
     parser = get_common_argument_parser()
@@ -156,6 +171,12 @@ def main_worker(current_gpu, config: SampleConfig):
                        model_params=config.get('model_params'),
                        weights_path=config.get('weights'))
 
+    kd_loss_calculator=None
+    if config.mode.lower() == 'train-kd':
+        original_model = copy.deepcopy(model)
+        original_model.to(config.device)
+        kd_loss_calculator = KDLossCalculator(original_model)
+
     model.to(config.device)
 
     resuming_model_sd, resuming_checkpoint = load_resuming_checkpoint(resuming_checkpoint_path)
@@ -211,14 +232,14 @@ def main_worker(current_gpu, config: SampleConfig):
     if config.mode.lower() == 'test':
         validate(val_loader, model, criterion, config)
 
-    if config.mode.lower() == 'train':
+    if (config.mode.lower() == 'train') or (config.mode.lower() == 'train-kd'):
         train(config, compression_ctrl, model, criterion, train_criterion_fn, lr_scheduler, model_name, optimizer,
-              train_loader, train_sampler, val_loader, best_acc1)
+              train_loader, train_sampler, val_loader, best_acc1, kd_loss_calculator)
     config.mlflow.end_run()
 
 
 def train(config, compression_ctrl, model, criterion, criterion_fn, lr_scheduler, model_name, optimizer,
-          train_loader, train_sampler, val_loader, best_acc1=0):
+          train_loader, train_sampler, val_loader, best_acc1=0, kd_loss_calculator=None):
     best_compression_level = CompressionLevel.NONE
     for epoch in range(config.start_epoch, config.epochs):
         # update compression scheduler state at the begin of the epoch
@@ -232,7 +253,7 @@ def train(config, compression_ctrl, model, criterion, criterion_fn, lr_scheduler
         lr_scheduler.step(epoch if not isinstance(lr_scheduler, ReduceLROnPlateau) else best_acc1)
         
         # train for one epoch
-        train_epoch(train_loader, model, criterion, criterion_fn, optimizer, compression_ctrl, epoch, config)
+        train_epoch(train_loader, model, criterion, criterion_fn, optimizer, compression_ctrl, epoch, config, kd_loss_calculator)
 
 
         # compute compression algo statistics
@@ -408,7 +429,7 @@ def create_data_loaders(config, train_dataset, val_dataset):
     return train_loader, train_sampler, val_loader, init_loader
 
 
-def train_epoch(train_loader, model, criterion, criterion_fn, optimizer, compression_ctrl, epoch, config):
+def train_epoch(train_loader, model, criterion, criterion_fn, optimizer, compression_ctrl, epoch, config, kd_loss_calculator=None):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -416,7 +437,9 @@ def train_epoch(train_loader, model, criterion, criterion_fn, optimizer, compres
     criterion_losses = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
-
+    if kd_loss_calculator is not None:
+        kd_losses_meter = AverageMeter()
+    
     compression_scheduler = compression_ctrl.scheduler
 
     # switch to train mode
@@ -442,6 +465,13 @@ def train_epoch(train_loader, model, criterion, criterion_fn, optimizer, compres
 
         if isinstance(output, InceptionOutputs):
             output = output.logits
+
+        if kd_loss_calculator is not None:
+            # compute KD loss
+            kd_loss = kd_loss_calculator.loss(input_, output)
+            loss = criterion_loss + kd_loss
+            kd_losses_meter.update(kd_loss, input_.size(0))
+
         # measure accuracy and record loss
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
         losses.update(loss.item(), input_.size(0))
@@ -486,6 +516,8 @@ def train_epoch(train_loader, model, criterion, criterion_fn, optimizer, compres
             config.tb.add_scalar("train/loss", losses.avg, i + global_step)
             config.tb.add_scalar("train/top1", top1.avg, i + global_step)
             config.tb.add_scalar("train/top5", top5.avg, i + global_step)
+            if kd_loss_calculator is not None:
+                config.tb.add_scalar("train/kd_loss", kd_losses_meter.avg, i + global_step)
 
             for stat_name, stat_value in compression_ctrl.statistics(quickly_collected_only=True).items():
                 if isinstance(stat_value, (int, float)):

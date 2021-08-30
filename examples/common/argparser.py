@@ -32,7 +32,7 @@ def get_common_argument_parser():
     parser.add_argument(
         "--mode",
         "-m",
-        choices=['train', 'test'],
+        choices=['train', 'test', 'train-kd'],
         default='train',
         help=("train: performs training and validation; test: tests the model"
               "found in \"--save_dir\" with name \"--name\" on the validation split of \"--dataset\"; "))
