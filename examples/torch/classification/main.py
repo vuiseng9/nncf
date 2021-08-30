@@ -430,7 +430,6 @@ def main_worker(current_gpu, config: SampleConfig):
             tensor_stats[qidstr]['mean']=consolidated_tensor.mean().item()
             tensor_stats[qidstr]['std']=consolidated_tensor.std().item()
 
-            
             hist_label = "actdist-pertensor/{}/   {}".format(str(iii).zfill(3), qidstr)
             config.tb.add_histogram(hist_label, consolidated_tensor, global_step=0, bins='fd')
             # config.tb.add_histogram(hist_label, consolidated_tensor, global_step=0, bins='tensorflow')
@@ -448,10 +447,8 @@ def main_worker(current_gpu, config: SampleConfig):
             hist_label = "actdist-perchannel/{}/   {}".format(str(iii).zfill(3), qidstr)
             for channel in range(consolidated_tensor.shape[1]):
                 config.tb.add_histogram(hist_label, consolidated_tensor[:,channel,:,:], global_step=channel, bins='fd')
-            torch.save({'pertensor':tensor_stats,'perchannel':channel_stats}, '/'.join([config.log_dir, "activation_stats.pt"]))
-            print("hey")
-
-
+        torch.save({'pertensor':tensor_stats,'perchannel':channel_stats}, '/'.join([config.log_dir, "activation_stats.pt"]))
+        
         exit()
 
     if 'train' in config.mode:
