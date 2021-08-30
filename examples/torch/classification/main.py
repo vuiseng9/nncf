@@ -185,6 +185,57 @@ def main_worker(current_gpu, config: SampleConfig):
         execution_params = ExecutionParameters(config.cpu_only, config.current_gpu)
 
         if 'actdist' in config.mode:
+            # Custome dataloader
+            dataset_config = config.dataset if config.dataset is not None else 'imagenet'
+            dataset_config = dataset_config.lower()
+            assert dataset_config in ['imagenet', 'cifar100', 'cifar10', 'mock_32x32', 'mock_299x299'], \
+                "Unknown dataset option"
+
+            if dataset_config == 'imagenet':
+                normalize = transforms.Normalize(mean=(0.485, 0.456, 0.406),
+                                                std=(0.229, 0.224, 0.225))
+            elif dataset_config == 'cifar100':
+                normalize = transforms.Normalize(mean=(0.5071, 0.4865, 0.4409),
+                                                std=(0.2673, 0.2564, 0.2761))
+            elif dataset_config in ['cifar10', 'mock_32x32', 'mock_299x299']:
+                normalize = transforms.Normalize(mean=(0.5, 0.5, 0.5),
+                                                std=(0.5, 0.5, 0.5))
+
+            input_info_list = create_input_infos(config)
+            image_size = input_info_list[0].shape[-1]
+
+            if dataset_config in ['cifar10', 'cifar100']:
+                val_transform = transforms.Compose([
+                    transforms.ToTensor(),
+                    normalize,
+                ])
+                train_transforms = transforms.Compose([
+                    transforms.RandomCrop(image_size, padding=4),
+                    transforms.RandomHorizontalFlip(),
+                    transforms.ToTensor(),
+                    normalize,
+                ])
+            else:
+                size = int(image_size / 0.875)
+                val_transform = transforms.Compose([
+                    transforms.Resize(size),
+                    transforms.CenterCrop(image_size),
+                    transforms.ToTensor(),
+                    normalize,
+                ])
+                train_transforms = transforms.Compose([
+                    transforms.RandomResizedCrop(image_size),
+                    transforms.RandomHorizontalFlip(),
+                    transforms.ToTensor(),
+                    normalize,
+                ])
+
+            # notice the custom combination val_transform + is_train
+            actdist_dataset = get_dataset(dataset_config, config, val_transform, is_train=True)
+
+            # workaround by putting train dataset for val loader to bypass the stochascity in train loader
+            _, _, actdist_loader, _ = create_data_loaders(config, actdist_dataset, actdist_dataset)
+
             # To prevent mistake and dependency of users to disable batchnorm adaptation
             # we disable bnadap by force here when we are in actdist mode
             assert config.compression.algorithm == 'quantization', "actdist mode only applicable for a quantization config"
@@ -337,7 +388,7 @@ def main_worker(current_gpu, config: SampleConfig):
         for h in hooklist:
             h.remove()
 
-        nbatch = len(train_loader)
+        nbatch = len(actdist_loader)
         bs = config.batch_size
         for qid, fm in dummy_buffer.items():
             size_per_input = np.prod(fm[0].shape)
@@ -348,8 +399,11 @@ def main_worker(current_gpu, config: SampleConfig):
 
         # forward pass on calibration set to collect distribution
         # -------------------------------------------------------
-        generate_actdict_fwdpass = partial(validate, val_loader=train_loader, criterion=criterion, 
+        generate_actdict_fwdpass = partial(validate, val_loader=actdist_loader, criterion=criterion, 
             config=config, epoch=0, log_validation_info=True)
+
+        tensor_stats = OrderedDict()
+        channel_stats = OrderedDict()
 
         for iii, (qid, qinfo) in enumerate(aq_order.items()):
             fm_buffer = OrderedDict()
@@ -368,8 +422,36 @@ def main_worker(current_gpu, config: SampleConfig):
                 buffer_cpu[k]=temp
             del fm_buffer
             qidstr, buffer = list(buffer_cpu.items())[0]
-            config.tb.add_histogram("actdist/{}/{}".format(str(iii).zfill(3), qidstr), torch.cat(buffer))            
-        
+            consolidated_tensor = torch.cat(buffer)
+
+            tensor_stats[qidstr]=OrderedDict()
+            tensor_stats[qidstr]['min']=consolidated_tensor.min().item()
+            tensor_stats[qidstr]['max']=consolidated_tensor.max().item()
+            tensor_stats[qidstr]['mean']=consolidated_tensor.mean().item()
+            tensor_stats[qidstr]['std']=consolidated_tensor.std().item()
+
+            
+            hist_label = "actdist-pertensor/{}/   {}".format(str(iii).zfill(3), qidstr)
+            config.tb.add_histogram(hist_label, consolidated_tensor, global_step=0, bins='fd')
+            # config.tb.add_histogram(hist_label, consolidated_tensor, global_step=0, bins='tensorflow')
+            # config.tb.add_histogram(hist_label, consolidated_tensor, global_step=2, bins='auto')
+
+            # per channel dump
+            t = consolidated_tensor.transpose(0,1)
+            channel_tensor = t.reshape((t.shape[0], -1))
+            channel_stats[qidstr]=OrderedDict()
+            channel_stats[qidstr]['min']=channel_tensor.min(dim=1).values.numpy()
+            channel_stats[qidstr]['max']=channel_tensor.max(dim=1).values.numpy()
+            channel_stats[qidstr]['mean']=channel_tensor.mean(dim=1).numpy()
+            channel_stats[qidstr]['std']=channel_tensor.std(dim=1).numpy()
+
+            hist_label = "actdist-perchannel/{}/   {}".format(str(iii).zfill(3), qidstr)
+            for channel in range(consolidated_tensor.shape[1]):
+                config.tb.add_histogram(hist_label, consolidated_tensor[:,channel,:,:], global_step=channel, bins='fd')
+            torch.save({'pertensor':tensor_stats,'perchannel':channel_stats}, '/'.join([config.log_dir, "activation_stats.pt"]))
+            print("hey")
+
+
         exit()
 
     if 'train' in config.mode:
