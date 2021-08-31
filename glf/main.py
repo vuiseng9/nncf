@@ -218,6 +218,7 @@ def main_worker(current_gpu, config: SampleConfig):
                        model_params=config.get('model_params'),
                        weights_path=config.get('weights'))
 
+    fstar_fn = None
     if 'train-sps' in config.mode:
         original_model = deepcopy(model)
         original_model.to(config.device)
@@ -238,7 +239,8 @@ def main_worker(current_gpu, config: SampleConfig):
     compression_ctrl.disable_activation_quantization()
     compression_ctrl.disable_weight_quantization()
 
-    one_non_wq = list(compression_ctrl.non_weight_quantizers.keys())[-1]
+    # one_non_wq = list(compression_ctrl.non_weight_quantizers.keys())[-1]
+    one_non_wq = list(compression_ctrl.non_weight_quantizers.keys())[1]
     # model.external_quantizers[one_non_wq.__str__()].num_bits=5
     compression_ctrl.non_weight_quantizers[one_non_wq].quantizer_module_ref.enable_quantization()
     logger.info("\n### {} | {}".format(one_non_wq, model.external_quantizers[one_non_wq.__str__()]))
@@ -288,7 +290,7 @@ def main_worker(current_gpu, config: SampleConfig):
     # Hack to only add in model parameter, exclude quantization parameters
     params_to_optimize[0]['params'] = []
     for l, p in model.named_parameters():
-        if 'external_quantizers.VGG/Sequential[classifier]/ReLU[4]/relu__0|OUTPUT' in l:
+        if '.'.join(['external_quantizers', one_non_wq.__str__()]) in l:
             print("to optimize:", l)
             params_to_optimize[0]['params'].append(p)
         elif 'pre_ops' in l:
@@ -304,7 +306,7 @@ def main_worker(current_gpu, config: SampleConfig):
         optimizer = Sps(model.external_quantizers[one_non_wq.__str__()].parameters(),
                     c=0.5, 
                     n_batches_per_epoch=len(train_loader), # only matters if adapt_flag is 'smooth_iter' which is to smooth step_size 
-                    adapt_flag='smooth_iter', # 'constant',
+                    adapt_flag='constant', # 'smooth_iter', # 
                     fstar_flag=True, 
                     eta_max=None, # upper bound for bounded variant of SPS
                     eps=1e-8,
@@ -423,7 +425,7 @@ def train(config, compression_ctrl, model, criterion, criterion_fn, lr_scheduler
         if epoch % config.test_every_n_epochs == 0:
             # evaluate on validation set
             acc1, acc5, val_loss = validate(val_loader, model, criterion, config, epoch=epoch)
-            one_non_wq = list(compression_ctrl.non_weight_quantizers.keys())[-1]
+            one_non_wq = list(compression_ctrl.non_weight_quantizers.keys())[1]
             logger.info("\n[##GLF] epoch: {}, val top1: {:.2f}, top5: {:.2f}, {} | {}".format(epoch, acc1, acc5, one_non_wq, model.external_quantizers[one_non_wq.__str__()]))
             val_top1, val_top5, val_loss = validate(val_loader, model, criterion, config, epoch=epoch)
             config.tb.add_scalar("epoch-wise/val/loss", val_loss, epoch)
@@ -679,10 +681,11 @@ def train_epoch(train_loader, model, criterion, criterion_fn, optimizer, compres
             config.tb.add_scalar("train/lr", current_lr, i + global_step)
             config.tb.add_scalar("train/criterion_loss", criterion_losses.avg, i + global_step)
             config.tb.add_scalar("train/compression_loss", compression_losses.avg, i + global_step)
-            config.tb.add_scalar("train/fstar", fstar.avg, i + global_step)
             config.tb.add_scalar("train/loss", losses.avg, i + global_step)
             config.tb.add_scalar("train/top1", top1.avg, i + global_step)
             config.tb.add_scalar("train/top5", top5.avg, i + global_step)
+            if isinstance(optimizer, Sps):
+                config.tb.add_scalar("train/fstar", fstar.avg, i + global_step)
 
             statistics = compression_ctrl.statistics(quickly_collected_only=True)
             for stat_name, stat_value in prepare_for_tensorboard(statistics).items():
@@ -695,10 +698,11 @@ def train_epoch(train_loader, model, criterion, criterion_fn, optimizer, compres
         config.tb.add_scalar("epoch-wise/train/lr", current_lr, epoch)
         config.tb.add_scalar("epoch-wise/train/criterion_loss", criterion_losses.avg, epoch)
         config.tb.add_scalar("epoch-wise/train/compression_loss", compression_losses.avg, epoch)
-        config.tb.add_scalar("epoch-wise/train/fstar", fstar.avg, epoch)
         config.tb.add_scalar("epoch-wise/train/loss", losses.avg, epoch)
         config.tb.add_scalar("epoch-wise/train/top1", top1.avg, epoch)
         config.tb.add_scalar("epoch-wise/train/top5", top5.avg, epoch)
+        if isinstance(optimizer, Sps):
+            config.tb.add_scalar("epoch-wise/train/fstar", fstar.avg, epoch)
 
         statistics = compression_ctrl.statistics(quickly_collected_only=True)
         for stat_name, stat_value in prepare_for_tensorboard(statistics).items():
