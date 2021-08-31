@@ -389,9 +389,13 @@ def train(config, compression_ctrl, model, criterion, criterion_fn, lr_scheduler
         acc1 = best_acc1
         if epoch % config.test_every_n_epochs == 0:
             # evaluate on validation set
-            acc1, acc5, _ = validate(val_loader, model, criterion, config, epoch=epoch)
+            acc1, acc5, val_loss = validate(val_loader, model, criterion, config, epoch=epoch)
             one_non_wq = list(compression_ctrl.non_weight_quantizers.keys())[-1]
             logger.info("\n[##GLF] epoch: {}, val top1: {:.2f}, top5: {:.2f}, {} | {}".format(epoch, acc1, acc5, one_non_wq, model.external_quantizers[one_non_wq.__str__()]))
+            val_top1, val_top5, val_loss = validate(val_loader, model, criterion, config, epoch=epoch)
+            config.tb.add_scalar("epoch-wise/val/loss", val_loss, epoch)
+            config.tb.add_scalar("epoch-wise/val/top1", acc1, epoch)
+            config.tb.add_scalar("epoch-wise/val/top5", acc5, epoch)
 
         compression_stage = compression_ctrl.compression_stage()
         # remember best acc@1, considering compression stage. If current acc@1 less then the best acc@1, checkpoint
@@ -624,7 +628,7 @@ def train_epoch(train_loader, model, criterion, criterion_fn, optimizer, compres
 
         if is_main_process() and log_training_info:
             global_step = len(train_loader) * epoch
-            config.tb.add_scalar("train/learning_rate", get_lr(optimizer), i + global_step)
+            config.tb.add_scalar("train/lr", get_lr(optimizer), i + global_step)
             config.tb.add_scalar("train/criterion_loss", criterion_losses.avg, i + global_step)
             config.tb.add_scalar("train/compression_loss", compression_losses.avg, i + global_step)
             config.tb.add_scalar("train/loss", losses.avg, i + global_step)
@@ -637,6 +641,18 @@ def train_epoch(train_loader, model, criterion, criterion_fn, optimizer, compres
 
         if i >= train_iters:
             break
+
+    if is_main_process() and log_training_info:
+        config.tb.add_scalar("epoch-wise/train/learning_rate", get_lr(optimizer), epoch)
+        config.tb.add_scalar("epoch-wise/train/criterion_loss", criterion_losses.avg, epoch)
+        config.tb.add_scalar("epoch-wise/train/compression_loss", compression_losses.avg, epoch)
+        config.tb.add_scalar("epoch-wise/train/loss", losses.avg, epoch)
+        config.tb.add_scalar("epoch-wise/train/top1", top1.avg, epoch)
+        config.tb.add_scalar("epoch-wise/train/top5", top5.avg, epoch)
+
+        statistics = compression_ctrl.statistics(quickly_collected_only=True)
+        for stat_name, stat_value in prepare_for_tensorboard(statistics).items():
+            config.tb.add_scalar('epoch-wise/train/statistics/{}'.format(stat_name), stat_value, epoch)
 
 
 def validate(val_loader, model, criterion, config, epoch=0, log_validation_info=True):
