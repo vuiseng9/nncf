@@ -6,7 +6,7 @@
     },
     "num_classes": 1000,
     "batch_size" : 128,
-    "epochs": 15,
+    "epochs": 10,
     "workers": 6,
     "optimizer": {
         "type": "Adam",

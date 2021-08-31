@@ -33,7 +33,7 @@ def get_common_argument_parser():
         "--mode",
         "-m",
         nargs='+',
-        choices=['train', 'test', 'export'],
+        choices=['train', 'train-sps', 'test', 'export'],
         default='train',
         help=("train: performs training and validation; test: tests the model"
               "on the validation split of \"--dataset\"; export: exports the model to .onnx"))

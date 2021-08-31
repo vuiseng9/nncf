@@ -81,6 +81,9 @@ from nncf.torch.structures import ExecutionParameters
 from nncf.torch.utils import is_main_process
 from nncf.torch.utils import safe_thread_call
 
+from sps.sps.sps import Sps
+from copy import deepcopy
+
 model_names = sorted(name for name in models.__dict__
                      if name.islower() and not name.startswith("__")
                      and callable(models.__dict__[name]))
@@ -138,6 +141,18 @@ def inception_criterion_fn(model_outputs: Any, target: Any, criterion: _Loss) ->
     loss2 = criterion(aux_outputs, target)
     return loss1 + 0.4 * loss2
 
+
+class TeacherLoss:
+    def __init__(self, original_model, loss_fn=None):
+        self.original_model = original_model
+        self.original_model.eval()
+        assert loss_fn is not None, "Pls provide a loss_fn"
+        self.loss_fn=loss_fn
+
+    def loss(self, minibatch_in_gt, minibatch_out_gt):
+        with torch.no_grad():
+            ref_output = self.original_model(minibatch_in_gt).detach()
+        return self.loss_fn(ref_output, minibatch_out_gt)
 
 # pylint:disable=too-many-branches,too-many-statements
 def main_worker(current_gpu, config: SampleConfig):
@@ -202,6 +217,11 @@ def main_worker(current_gpu, config: SampleConfig):
                        num_classes=config.get('num_classes', 1000),
                        model_params=config.get('model_params'),
                        weights_path=config.get('weights'))
+
+    if 'train-sps' in config.mode:
+        original_model = deepcopy(model)
+        original_model.to(config.device)
+        fstar_fn = TeacherLoss(original_model, loss_fn=criterion)
 
     model.to(config.device)
 
@@ -280,7 +300,19 @@ def main_worker(current_gpu, config: SampleConfig):
             # print("to optimize:", l)
             # params_to_optimize[0]['params'].append(p)
 
-    optimizer, lr_scheduler = make_optimizer(params_to_optimize, config)
+    if 'train-sps' in config.mode:
+        optimizer = Sps(model.external_quantizers[one_non_wq.__str__()].parameters(),
+                    c=0.5, 
+                    n_batches_per_epoch=len(train_loader), # only matters if adapt_flag is 'smooth_iter' which is to smooth step_size 
+                    adapt_flag='smooth_iter', # 'constant',
+                    fstar_flag=True, 
+                    eta_max=None, # upper bound for bounded variant of SPS
+                    eps=1e-8,
+                    centralize_grad=False,
+                    centralize_grad_norm=False)
+        lr_scheduler = None
+    else:
+        optimizer, lr_scheduler = make_optimizer(params_to_optimize, config)
 
     best_acc1 = 0
     # optionally resume from a checkpoint
@@ -303,7 +335,7 @@ def main_worker(current_gpu, config: SampleConfig):
         statistics = compression_ctrl.statistics()
         logger.info(statistics.to_str())
 
-    if 'train' in config.mode:
+    if config.mode[0] in ['train', 'train-sps']:
         if is_accuracy_aware_training(config):
             # validation function that returns the target metric value
             # pylint: disable=E1123
@@ -334,7 +366,7 @@ def main_worker(current_gpu, config: SampleConfig):
                                                 log_dir=config.log_dir)
         else:
             train(config, compression_ctrl, model, criterion, train_criterion_fn, lr_scheduler, model_name, optimizer,
-                  train_loader, train_sampler, val_loader, best_acc1)
+                  train_loader, train_sampler, val_loader, best_acc1=best_acc1, fstar_fn=fstar_fn)
             logger.info("QFinal Score: {}".format(validate(val_loader, model, criterion, config)))
             qfinal_params = deepcopy(OrderedDict(model.named_parameters()))
             qfinal_buffers = deepcopy(OrderedDict(model.named_buffers()))
@@ -367,7 +399,7 @@ def main_worker(current_gpu, config: SampleConfig):
 
 
 def train(config, compression_ctrl, model, criterion, criterion_fn, lr_scheduler, model_name, optimizer,
-          train_loader, train_sampler, val_loader, best_acc1=0):
+          train_loader, train_sampler, val_loader, best_acc1=0, fstar_fn=None):
     best_compression_stage = CompressionStage.UNCOMPRESSED
     for epoch in range(config.start_epoch, config.epochs):
         # update compression scheduler state at the begin of the epoch
@@ -377,11 +409,12 @@ def train(config, compression_ctrl, model, criterion, criterion_fn, lr_scheduler
             train_sampler.set_epoch(epoch)
 
         # train for one epoch
-        train_epoch(train_loader, model, criterion, criterion_fn, optimizer, compression_ctrl, epoch, config)
+        train_epoch(train_loader, model, criterion, criterion_fn, optimizer, compression_ctrl, epoch, config, fstar_fn=fstar_fn)
         
-
-        # Learning rate scheduling should be applied after optimizer’s update
-        lr_scheduler.step(epoch if not isinstance(lr_scheduler, ReduceLROnPlateau) else best_acc1)
+        # we dont deal with base learning rate
+        if fstar_fn is None:
+            # Learning rate scheduling should be applied after optimizer’s update
+            lr_scheduler.step(epoch if not isinstance(lr_scheduler, ReduceLROnPlateau) else best_acc1)
 
         # compute compression algo statistics
         statistics = compression_ctrl.statistics()
@@ -553,7 +586,7 @@ def create_data_loaders(config, train_dataset, val_dataset):
 
 
 def train_epoch(train_loader, model, criterion, criterion_fn, optimizer, compression_ctrl, epoch, config,
-                train_iters=None, log_training_info=True):
+                train_iters=None, log_training_info=True, fstar_fn=None):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -561,6 +594,9 @@ def train_epoch(train_loader, model, criterion, criterion_fn, optimizer, compres
     criterion_losses = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
+
+    if fstar_fn is not None:
+        fstar = AverageMeter()
 
     if train_iters is None:
         train_iters = len(train_loader)
@@ -584,6 +620,11 @@ def train_epoch(train_loader, model, criterion, criterion_fn, optimizer, compres
         output = model(input_)
         criterion_loss = criterion_fn(output, target, criterion)
 
+        if fstar_fn is not None:
+            minibatch_fstar = fstar_fn.loss(input_, target)
+            wrapped_fstar = {'meta': {'fstar': minibatch_fstar}}
+            fstar.update(minibatch_fstar.item())
+
         # compute compression loss
         compression_loss = compression_ctrl.loss()
         loss = criterion_loss + compression_loss
@@ -602,12 +643,19 @@ def train_epoch(train_loader, model, criterion, criterion_fn, optimizer, compres
         # compute gradient and do SGD step
         optimizer.zero_grad()
         loss.backward()
-        optimizer.step()
+        if isinstance(optimizer, Sps):
+            optimizer.step(loss=loss, batch=wrapped_fstar) # batch will be used in this way: batch['meta']['fstar'].mean()
+        else:
+            optimizer.step()
 
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
 
+        if isinstance(optimizer, Sps):
+            current_lr = optimizer.state['step_size']
+        else:
+            current_lr = get_lr(optimizer)
         if i % config.print_freq == 0 and log_training_info:
             logger.info(
                 '{rank}: '
@@ -620,7 +668,7 @@ def train_epoch(train_loader, model, criterion, criterion_fn, optimizer, compres
                 'Loss: {loss.val:.4f} ({loss.avg:.4f}) '
                 'Acc@1: {top1.val:.3f} ({top1.avg:.3f}) '
                 'Acc@5: {top5.val:.3f} ({top5.avg:.3f})'.format(
-                    epoch, i, len(train_loader), get_lr(optimizer), batch_time=batch_time,
+                    epoch, i, len(train_loader), current_lr, batch_time=batch_time,
                     data_time=data_time, ce_loss=criterion_losses, cr_loss=compression_losses,
                     loss=losses, top1=top1, top5=top5,
                     rank='{}:'.format(config.rank) if config.multiprocessing_distributed else ''
@@ -628,9 +676,10 @@ def train_epoch(train_loader, model, criterion, criterion_fn, optimizer, compres
 
         if is_main_process() and log_training_info:
             global_step = len(train_loader) * epoch
-            config.tb.add_scalar("train/lr", get_lr(optimizer), i + global_step)
+            config.tb.add_scalar("train/lr", current_lr, i + global_step)
             config.tb.add_scalar("train/criterion_loss", criterion_losses.avg, i + global_step)
             config.tb.add_scalar("train/compression_loss", compression_losses.avg, i + global_step)
+            config.tb.add_scalar("train/fstar", fstar.avg, i + global_step)
             config.tb.add_scalar("train/loss", losses.avg, i + global_step)
             config.tb.add_scalar("train/top1", top1.avg, i + global_step)
             config.tb.add_scalar("train/top5", top5.avg, i + global_step)
@@ -643,9 +692,10 @@ def train_epoch(train_loader, model, criterion, criterion_fn, optimizer, compres
             break
 
     if is_main_process() and log_training_info:
-        config.tb.add_scalar("epoch-wise/train/learning_rate", get_lr(optimizer), epoch)
+        config.tb.add_scalar("epoch-wise/train/lr", current_lr, epoch)
         config.tb.add_scalar("epoch-wise/train/criterion_loss", criterion_losses.avg, epoch)
         config.tb.add_scalar("epoch-wise/train/compression_loss", compression_losses.avg, epoch)
+        config.tb.add_scalar("epoch-wise/train/fstar", fstar.avg, epoch)
         config.tb.add_scalar("epoch-wise/train/loss", losses.avg, epoch)
         config.tb.add_scalar("epoch-wise/train/top1", top1.avg, epoch)
         config.tb.add_scalar("epoch-wise/train/top5", top5.avg, epoch)
