@@ -197,6 +197,13 @@ def main_worker(current_gpu, config: SampleConfig):
 
         execution_params = ExecutionParameters(config.cpu_only, config.current_gpu)
 
+        if 'train-sps' in config.mode:
+            # To prevent mistake and dependency of users to disable batchnorm adaptation
+            # we disable bnadap by force here when we are in actdist mode
+            assert config.compression.algorithm == 'quantization', "actdist mode only applicable for a quantization config"
+            config.compression.initializer.batchnorm_adaptation.num_bn_adaptation_samples = 0
+            nncf_config['compression']['initializer']['batchnorm_adaptation'] = {'num_bn_adaptation_samples': 0}
+
         nncf_config = register_default_init_args(
             nncf_config,
             init_loader,
@@ -231,36 +238,37 @@ def main_worker(current_gpu, config: SampleConfig):
         resuming_checkpoint = load_resuming_checkpoint(resuming_checkpoint_path)
     model_state_dict, compression_state = extract_model_and_compression_states(resuming_checkpoint)
 
-    logger.info("Pretrained Score: {}".format(validate(val_loader, model, criterion, config)))
+    logger.info("[glf] Pretrained Score: {:7.2f} |top1, {:7.2f} |top5, {:7.3f} |loss\n{}".format(*validate(val_loader, model, criterion, config), '-'*100))
 
     compression_ctrl, model = create_compressed_model(model, nncf_config, compression_state)
-    logger.info("QInit Score: {}".format(validate(val_loader, model, criterion, config)))
+    logger.info("[glf] QInit Score: {:7.2f} |top1, {:7.2f} |top5, {:7.3f} |loss\n{}".format(*validate(val_loader, model, criterion, config), '-'*100))
 
     compression_ctrl.disable_activation_quantization()
     compression_ctrl.disable_weight_quantization()
 
-    # one_non_wq = list(compression_ctrl.non_weight_quantizers.keys())[-1]
-    one_non_wq = list(compression_ctrl.non_weight_quantizers.keys())[1]
-    # model.external_quantizers[one_non_wq.__str__()].num_bits=5
+    # Enable only one quantizer
+    compression_ctrl.glf_target = list(compression_ctrl.non_weight_quantizers.items())[-1]
+    one_non_wq, one_non_wq_info = compression_ctrl.glf_target
     compression_ctrl.non_weight_quantizers[one_non_wq].quantizer_module_ref.enable_quantization()
-    logger.info("\n### {} | {}".format(one_non_wq, model.external_quantizers[one_non_wq.__str__()]))
 
-    logger.info("Q one non_wq Score: {}".format(validate(val_loader, model, criterion, config)))
+    logger.info("[glf] Qinit Score with only - {} | {} -: {:7.2f} |top1, {:7.2f} |top5, {:7.3f} |loss\n{}".format(
+        one_non_wq, model.external_quantizers[one_non_wq.__str__()], *validate(val_loader, model, criterion, config), '-'*100))
+
     qinit_params = deepcopy(OrderedDict(model.named_parameters()))
     qinit_buffers = deepcopy(OrderedDict(model.named_buffers()))
 
     from glf import GLF_unitC
     custom_quantizer = GLF_unitC(device=next(model.parameters()).device)
 
-    q=model.external_quantizers[one_non_wq.__str__()]
+    orig_qmod = model.external_quantizers[one_non_wq.__str__()]
     custom_quantizer.set_coef(
-        A=-1*q.scale.data.item(),
-        K=q.scale.data.item(),
+        A=-1*orig_qmod.scale.data.item(), # if model.get_containing_module(one_non_wq.target_node_name).__class__.__name__.lower() == 'relu' else -1*q.scale.data.item(),
+        K=orig_qmod.scale.data.item()
     )
 
     model.external_quantizers[one_non_wq.__str__()]=custom_quantizer
-    logger.info("\n### {} | {}".format(one_non_wq, model.external_quantizers[one_non_wq.__str__()]))
-    logger.info("Q[GLF] Score: {}".format(validate(val_loader, model, criterion, config)))
+    logger.info("[glf] Replaced Qmod: {} | {}\n".format(one_non_wq, model.external_quantizers[one_non_wq.__str__()]))
+    logger.info("[glf] Custom quantizer Initial Score: {:7.2f} |top1, {:7.2f} |top5, {:7.3f} |loss\n{}".format(*validate(val_loader, model, criterion, config), '-'*100))
 
     if model_state_dict is not None:
         load_state(model, model_state_dict, is_resume=True)
@@ -306,7 +314,7 @@ def main_worker(current_gpu, config: SampleConfig):
         optimizer = Sps(model.external_quantizers[one_non_wq.__str__()].parameters(),
                     c=0.5, 
                     n_batches_per_epoch=len(train_loader), # only matters if adapt_flag is 'smooth_iter' which is to smooth step_size 
-                    adapt_flag='constant', # 'smooth_iter', # 
+                    adapt_flag='smooth_iter', # 'constant', # 
                     fstar_flag=True, 
                     eta_max=None, # upper bound for bounded variant of SPS
                     eps=1e-8,
@@ -424,13 +432,13 @@ def train(config, compression_ctrl, model, criterion, criterion_fn, lr_scheduler
         acc1 = best_acc1
         if epoch % config.test_every_n_epochs == 0:
             # evaluate on validation set
-            acc1, acc5, val_loss = validate(val_loader, model, criterion, config, epoch=epoch)
-            one_non_wq = list(compression_ctrl.non_weight_quantizers.keys())[1]
-            logger.info("\n[##GLF] epoch: {}, val top1: {:.2f}, top5: {:.2f}, {} | {}".format(epoch, acc1, acc5, one_non_wq, model.external_quantizers[one_non_wq.__str__()]))
             val_top1, val_top5, val_loss = validate(val_loader, model, criterion, config, epoch=epoch)
             config.tb.add_scalar("epoch-wise/val/loss", val_loss, epoch)
-            config.tb.add_scalar("epoch-wise/val/top1", acc1, epoch)
-            config.tb.add_scalar("epoch-wise/val/top5", acc5, epoch)
+            config.tb.add_scalar("epoch-wise/val/top1", val_top1, epoch)
+            config.tb.add_scalar("epoch-wise/val/top5", val_top5, epoch)
+            one_non_wq, one_non_wq_info = compression_ctrl.glf_target
+            logger.info("[glf] {} val epoch: {:7.2f} |top1, {:7.2f} |top5, {:7.3f} |loss\n\n{} | {}\n{}".format(
+                str(epoch).zfill(3), val_top1, val_top5, val_loss, one_non_wq, model.external_quantizers[one_non_wq.__str__()], '-'*200))
 
         compression_stage = compression_ctrl.compression_stage()
         # remember best acc@1, considering compression stage. If current acc@1 less then the best acc@1, checkpoint
