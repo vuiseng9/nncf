@@ -33,4 +33,4 @@ class GLF_unitC(nn.Module):
         self.load_state_dict(sd)
 
     def __repr__(self):
-        return "GLF_unitC: {}".format(self.state_dict())
+        return "GLF_unitC: " + ', '.join([' |'.join(['{:7.3f}'.format(v.item()),k]) for k, v in self.state_dict().items()])
