@@ -20,6 +20,7 @@ from nncf.common.schedulers import ExponentialDecaySchedule, BaseCompressionSche
 from copy import deepcopy
 from collections import OrderedDict
 from nncf.common.utils.logger import logger as nncf_logger
+import torch
 
 PRUNING_SCHEDULERS = Registry("pruning_schedulers")
 
@@ -291,11 +292,32 @@ class PaasGradualFTScheduler(PruningScheduler):
         tuple_list = list(self.groupwise_pruning_cfg.items())
         group_id = tuple_list[sequence_id][0]
 
-        nncf_logger.info("#PAAS# backend: PaasGradualFTScheduler, prune filter group {}".format(group_id))
-        for current_node, target_node in zip(self.groupwise_pruning_current_mask[group_id].nodes, self.groupwise_pruning_target_mask[group_id].nodes):
-            assert current_node.nncf_node_id == target_node.nncf_node_id, "Logical Bug"
-            current_node.operand.binary_filter_pruning_mask = target_node.operand.binary_filter_pruning_mask
+        if False:
+            nncf_logger.info("#PAAS# backend: PaasGradualFTScheduler, prune filter group {}".format(group_id))
+            for current_node, target_node in zip(self.groupwise_pruning_current_mask[group_id].nodes, self.groupwise_pruning_target_mask[group_id].nodes):
+                assert current_node.nncf_node_id == target_node.nncf_node_id, "Logical Bug"
+                current_node.operand.binary_filter_pruning_mask = target_node.operand.binary_filter_pruning_mask
+            self._controller.set_pruning_rate(self.groupwise_pruning_current_mask)
+        else:
+            prune_ratio = ((sequence_id+1)%(len(self.groupwise_pruning_cfg)/2))/(len(self.groupwise_pruning_cfg)/2)
+            assert prune_ratio < 1, "unconsidered prune ratio, pls review"
 
-        self._controller.set_pruning_rate(self.groupwise_pruning_current_mask)
+            local_groupwise_pruning_target_mask = deepcopy(self.groupwise_pruning_target_mask)
+
+            nncf_logger.info("#PAAS# backend: PaasGradualFTScheduler, prune filter group proportionally {:3f} of masks".format(prune_ratio))
+            for group_id, _ in enumerate(local_groupwise_pruning_target_mask):
+                for current_node, target_node in zip(local_groupwise_pruning_target_mask[group_id].nodes, local_groupwise_pruning_target_mask[group_id].nodes):
+                    mask_shape = target_node.operand.binary_filter_pruning_mask.shape
+                    prune_mask_idx = (target_node.operand.binary_filter_pruning_mask*-1+1).nonzero()
+
+                    assert len(prune_mask_idx.shape)==2, "unconsidered case, pls review"
+                    revert_mask_idx = prune_mask_idx.reshape(-1)[0:int(len(prune_mask_idx.reshape(-1))*(1-prune_ratio))].reshape((-1,1))
+                    assert len(prune_mask_idx.shape)==2, "logical bug shape mismatch, pls review"
+
+                    current_node.operand.binary_filter_pruning_mask = target_node.operand.binary_filter_pruning_mask
+                    current_node.operand.binary_filter_pruning_mask[revert_mask_idx] = current_node.operand.binary_filter_pruning_mask[revert_mask_idx]+1
+
+            self._controller.set_pruning_rate(local_groupwise_pruning_target_mask)
+        
         # if self.current_epoch >= self.freeze_epoch:
         #     self._controller.freeze()
