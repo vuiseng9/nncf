@@ -76,6 +76,7 @@ class PTExporter(Exporter):
         with torch.no_grad():
             # Should call this, otherwise the operations executed during export will end up in graph.
             model.disable_dynamic_graph_building()
+
             torch.onnx.export(model, tuple(input_tensor_list), save_path,
                               input_names=self._input_names,
                               output_names=self._output_names,
@@ -83,5 +84,16 @@ class PTExporter(Exporter):
                               opset_version=10,
                               # Do not fuse Conv+BN in ONNX. May cause dropout elements to appear in ONNX.
                               training=True)
+            import os
+            graph_only_save_path = '.'.join(list(os.path.splitext(save_path)[:-1])+['graph_only.onnx'])
+            torch.onnx.export(model, tuple(input_tensor_list), graph_only_save_path,
+                              export_params=False,
+                              input_names=self._input_names,
+                              output_names=self._output_names,
+                              enable_onnx_checker=False,
+                              opset_version=10,
+                              # Do not fuse Conv+BN in ONNX. May cause dropout elements to appear in ONNX.
+                              training=True)
+
             model.enable_dynamic_graph_building()
         model.forward = original_forward
