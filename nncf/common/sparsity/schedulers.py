@@ -285,3 +285,125 @@ class MultiStepSparsityScheduler(SparsityScheduler):
 
     def _calculate_sparsity_level(self) -> float:
         return self.schedule(self.current_epoch)
+
+
+@SPARSITY_SCHEDULERS.register('poly_threshold')
+class PolynomialThresholdScheduler(BaseCompressionScheduler):
+    """
+    Sparsity scheduler with a polynomial decay schedule.
+
+    Two ways are available for calculations of the sparsity:
+        - per epoch
+        - per step
+    Parameters `update_per_optimizer_step` and `steps_per_epoch`
+    should be provided in config for the per step calculation.
+    If `update_per_optimizer_step` was only provided then scheduler
+    will use first epoch to calculate `steps_per_epoch`
+    parameter. In this case, `current_epoch` and `current_step` will
+    not be updated on this epoch. The scheduler will start calculation
+    after `steps_per_epoch` will be calculated.
+    """
+
+    def __init__(self, controller: SparsityController, params: dict):
+        """
+        TODO: revise docstring
+        TODO: test epoch-wise stepping
+        Initializes a sparsity scheduler with a polynomial decay schedule.
+
+        :param controller: Sparsity algorithm controller.
+        :param params: Parameters of the scheduler.
+        """
+        super().__init__()
+        self._controller = controller
+        self.init_importance_threshold = params.get('init_importance_threshold', 0.0)
+        self.final_importance_threshold = params.get('final_importance_threshold', 0.1)
+        self.warmup_start_epoch = params.get('warmup_start_epoch', 0.0)
+        self.warmup_end_epoch = params.get('warmup_end_epoch', 0.0)
+        self.final_lambda = params.get('regu_final_lambda', 1.0)
+        self.freeze_epoch = params.get('sparsity_freeze_epoch', 100)
+        self._current_regu_lambda = 0.0
+        self._current_importance_threshold = 0.0
+
+        self.schedule = PolynomialDecaySchedule(self.init_importance_threshold, self.final_importance_threshold, self.warmup_end_epoch,
+                                                params.get('power', 0.9), params.get('concave', False))
+        self._steps_in_current_epoch = 0
+        self._update_per_optimizer_step = params.get('update_per_optimizer_step', False)
+        self._steps_per_epoch = params.get('steps_per_epoch', None)
+        self._should_skip = False
+
+    def step(self, next_step: Optional[int] = None) -> None:
+        super().step(next_step)
+        self._steps_in_current_epoch += 1
+        if self._should_skip:
+            return
+
+        if self._update_per_optimizer_step:
+            _cached_threshold = self._current_importance_threshold
+            _cached_regu_lambda = self._current_regu_lambda
+            if self.current_step <= self.warmup_start_epoch * self._steps_per_epoch:
+                self._current_importance_threshold = self.init_importance_threshold
+                self._current_regu_lambda = 0.0
+
+            elif self.current_step > self.warmup_end_epoch * self._steps_per_epoch:
+                self._current_importance_threshold = self.final_importance_threshold
+                self._current_regu_lambda = self.final_lambda
+
+            else:
+                self._current_importance_threshold = self._calculate_threshold_level()
+                self._current_regu_lambda = self.final_lambda * (self._current_importance_threshold/self.final_importance_threshold)
+
+            if _cached_threshold != self._current_importance_threshold or _cached_regu_lambda != self._current_regu_lambda:
+                for n, m in self._controller.model.named_modules():
+                    if m.__class__.__name__ == "MovementSparsifyingWeight":
+                        m.masking_threshold = self._current_importance_threshold
+                        # m.lmbd = self._current_regu_lambda
+            return
+
+    def epoch_step(self, next_epoch: Optional[int] = None) -> None:
+        self._maybe_should_skip()
+        if self._should_skip:
+            return
+
+        self._steps_in_current_epoch = 0
+
+        super().epoch_step(next_epoch)
+        if not self._update_per_optimizer_step:
+            self._current_importance_threshold = self._calculate_threshold_level()
+
+    def _calculate_threshold_level(self) -> float:
+        local_step = max(self._steps_in_current_epoch - 1, 0)
+        return self.schedule(self.current_epoch, local_step, self._steps_per_epoch)
+
+    def load_state(self, state: Dict[str, Any]) -> None:
+        super().load_state(state)
+        if self._update_per_optimizer_step:
+            self._steps_per_epoch = state['_steps_per_epoch']
+
+    def get_state(self) -> Dict[str, Any]:
+        state = super().get_state()
+        if self._update_per_optimizer_step:
+            state['_steps_per_epoch'] = self._steps_per_epoch
+        return state
+
+    def _maybe_should_skip(self) -> None:
+        """
+        Checks if the first epoch (with index 0) should be skipped to calculate
+        the steps per epoch. If the skip is needed, then the internal state
+        of the scheduler object will not be changed.
+        """
+        self._should_skip = False
+        if self._update_per_optimizer_step:
+            if self._steps_per_epoch is None and self._steps_in_current_epoch > 0:
+                self._steps_per_epoch = self._steps_in_current_epoch
+
+            if self._steps_per_epoch is not None and self._steps_in_current_epoch > 0:
+                if self._steps_per_epoch != self._steps_in_current_epoch:
+                    raise Exception('Actual steps per epoch and steps per epoch from the scheduler '
+                                    'parameters are different. Scheduling may be incorrect.')
+
+            if self._steps_per_epoch is None:
+                self._should_skip = True
+                logger.warning('Scheduler set to update sparsity level per optimizer step, '
+                               'but steps_per_epoch was not set in config. Will only start updating '
+                               'sparsity level after measuring the actual steps per epoch as signaled '
+                               'by a .epoch_step() call.')
