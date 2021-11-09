@@ -29,12 +29,24 @@ class MovementSparsifyingWeight(BinaryMask):
         self.eps = eps
         self.lmbd = 0.5
         self.masking_threshold = 0.0
+        self._importance_shape = self.get_importance_shape(weight_shape, r=32, c=32)
+        self.bExpandScore = True
         self._importance = CompressionParameter(
-                                torch.zeros(weight_shape), 
+                                torch.zeros(self._importance_shape), 
                                 requires_grad=not self.frozen,
                                 compression_lr_multiplier=compression_lr_multiplier)
         self.binary_mask = mask_by_threshold(self._importance, self._masking_threshold)
         self.mask_calculation_hook = MaskCalculationHook(self)
+
+    def get_importance_shape(self, weight_shape, r=32, c=32):
+        assert weight_shape[0] % r == 0
+        assert weight_shape[1] % c == 0
+        return (weight_shape[0]//r, weight_shape[1]//c)
+
+    def expand_importance(self, importance):
+        if self.bExpandScore:
+            return importance.repeat_interleave(32, dim=0).repeat_interleave(32, dim=1)
+        return importance
 
     @property
     def importance(self):
@@ -58,15 +70,21 @@ class MovementSparsifyingWeight(BinaryMask):
 
     def _calc_training_binary_mask(self, weight):
         if self.training and not self.frozen:
-            _mask = mask_by_threshold(self._importance, self._masking_threshold)
+            _mask = mask_by_threshold(
+                self.expand_importance(self._importance), 
+                self._masking_threshold
+            )
             self.binary_mask = _mask
             return _mask
         else:
             return self.binary_mask
 
     def loss(self):
-        return self.lmbd * (torch.norm(torch.sigmoid(self._importance), p=1) / self._importance.numel())
-
+        return self.lmbd * (torch.norm(
+            torch.sigmoid(
+                self.expand_importance(self._importance)
+            ), 
+            p=1) / self._importance.numel())
 
 class MaskCalculationHook():
     def __init__(self, module):
@@ -74,7 +92,7 @@ class MaskCalculationHook():
         self.hook = module._register_state_dict_hook(self.hook_fn)
 
     def hook_fn(self, module, destination, prefix, local_metadata):
-        module.binary_mask = mask_by_threshold(module.importance, module.masking_threshold)
+        module.binary_mask = mask_by_threshold(module.expand_importance(module.importance), module.masking_threshold)
         destination[prefix + '_binary_mask'] = module.binary_mask
         return destination
 
