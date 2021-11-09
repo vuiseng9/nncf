@@ -45,12 +45,12 @@ class SparseLoss(PTCompressionLoss):
         # sparse_prob_sum = 0
         n_active_layer=0
         for sparse_layer in self._sparse_layers:
-            if not self.disabled and sparse_layer.frozen:
-                raise AssertionError(
-                    "Invalid state of SparseLoss and SparsifiedWeight: mask is frozen for enabled loss")
-            if not sparse_layer.frozen:
-                loss += sparse_layer.loss()
-                n_active_layer+=1
+            # if not self.disabled and sparse_layer.frozen:
+            #     raise AssertionError(
+            #         "Invalid state of SparseLoss and SparsifiedWeight: mask is frozen for enabled loss")
+            # if not sparse_layer.frozen:
+            loss += sparse_layer.loss()
+            n_active_layer+=1
                 # params = params + sw_loss.view(-1).size(0)
                 # loss = loss + sw_loss.sum()
                 # sparse_prob_sum += torch.sigmoid(sparse_layer.mask).sum()

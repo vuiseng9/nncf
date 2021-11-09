@@ -348,6 +348,12 @@ class PolynomialThresholdScheduler(BaseCompressionScheduler):
                 self._current_importance_threshold = self.final_importance_threshold
                 self._current_regu_lambda = self.final_lambda
 
+                # TODO: gradient freezing should be at the epoch to freeze epoch
+                for n, m in self._controller.model.named_modules():
+                    if m.__class__.__name__ == "MovementSparsifyingWeight":
+                        m.frozen=True
+                        m._importance.requires_grad=False
+
             else:
                 self._current_importance_threshold = self._calculate_threshold_level()
                 self._current_regu_lambda = self.final_lambda * (self._current_importance_threshold/self.final_importance_threshold)
