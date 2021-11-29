@@ -350,7 +350,7 @@ class PolynomialThresholdScheduler(BaseCompressionScheduler):
         self.schedule = PolynomialDecaySchedule(
             self.init_importance_threshold, 
             self.final_importance_threshold, 
-            self.warmup_end_epoch,
+            (self.warmup_end_epoch-self.warmup_start_epoch),
             params.get('power', 3), 
             params.get('concave', True)
             )
@@ -374,11 +374,29 @@ class PolynomialThresholdScheduler(BaseCompressionScheduler):
                 m.operand.masking_threshold = self.current_importance_threshold
         self.cached_importance_threshold = self.current_importance_threshold 
 
+    def epoch_step(self, next_epoch: Optional[int] = None) -> None:
+        self._maybe_should_skip()
+        self._steps_in_current_epoch = 0 # This must be set after _maybe_should_skip as it is used in that routine
+        if self._should_skip:
+            return
+        # only increment epoch if should_skip is checked
+        super().epoch_step(next_epoch)
+        self.schedule_threshold()
+
+    def step(self, next_step: Optional[int] = None) -> None:
+        super().step(next_step)
+        self._steps_in_current_epoch += 1
+        if self._should_skip:
+            return
+
+        if self._update_per_optimizer_step:
+            self.schedule_threshold()
+    
     def schedule_threshold(self):
-        if self.current_step <= self.warmup_start_epoch * self._steps_per_epoch:
+        if self.current_step < self.warmup_start_epoch * self._steps_per_epoch:
             self.current_importance_threshold  = self.init_importance_threshold
 
-        elif self.current_step > self.warmup_end_epoch * self._steps_per_epoch:
+        elif self.current_step >= self.warmup_end_epoch * self._steps_per_epoch:
             self.current_importance_threshold  = self.final_importance_threshold
             self._disable_importance_grad()
 
@@ -398,32 +416,13 @@ class PolynomialThresholdScheduler(BaseCompressionScheduler):
         #             m.masking_threshold = self.current_importance_threshold 
         #             # m.lmbd = self.current_importance_lambda
 
-    def step(self, next_step: Optional[int] = None) -> None:
-        super().step(next_step)
-        self._steps_in_current_epoch += 1
-        if self._should_skip:
-            return
-
-        if self._update_per_optimizer_step:
-            self.schedule_threshold()
-
-    def epoch_step(self, next_epoch: Optional[int] = None) -> None:
-        self._maybe_should_skip()
-        self._steps_in_current_epoch = 0 # This must be set after _maybe_should_skip as it is used in that routine
-        if self._should_skip:
-            return
-        # only increment epoch if should_skip is checked
-        super().epoch_step(next_epoch)
-        print("-----epoch_step", self.current_epoch)
-        print("-----step", self._steps_in_current_epoch)
-        if not self._update_per_optimizer_step:
-            self.schedule_threshold()
-
     def _calculate_threshold_level(self) -> float:
-        print("epoch_step", self.current_epoch)
-        print("step", self._steps_in_current_epoch)
-        local_step = max(self._steps_in_current_epoch+1, 0)
-        return self.schedule(self.current_epoch-self.warmup_start_epoch, local_step, self._steps_per_epoch)
+        warmup_start_global_step = self.warmup_start_epoch*self._steps_per_epoch
+        schedule_current_step = self.current_step - warmup_start_global_step
+        schedule_epoch = schedule_current_step // self._steps_per_epoch
+        schedule_step = schedule_current_step % self._steps_per_epoch
+        return self.schedule(schedule_epoch, schedule_step, self._steps_per_epoch)
+
 
     def load_state(self, state: Dict[str, Any]) -> None:
         super().load_state(state)

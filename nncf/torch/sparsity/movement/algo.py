@@ -24,9 +24,10 @@ from nncf.common.graph import NNCFNode
 from nncf.torch.compression_method_api import PTCompressionAlgorithmController
 from nncf.torch.nncf_network import NNCFNetwork
 from nncf.torch.sparsity.base_algo import BaseSparsityAlgoBuilder, BaseSparsityAlgoController, SparseModuleInfo
-from nncf.torch.sparsity.movement.layers import MovementSparsifyingWeight
+from nncf.torch.sparsity.movement.layers import MovementSparsifyingWeight, SparseConfig, SparseStructure
 from nncf.torch.sparsity.movement.loss import ImportanceLoss, SparseLossForPerLayerSparsity
 from nncf.torch.utils import get_world_size
+from nncf.common.utils.helpers import matches_any
 from nncf.common.accuracy_aware_training.training_loop import ADAPTIVE_COMPRESSION_CONTROLLERS
 from nncf.torch.sparsity.collector import PTSparseModelStatisticsCollector
 from nncf.common.sparsity.schedulers import SPARSITY_SCHEDULERS
@@ -38,8 +39,22 @@ from nncf.common.statistics import NNCFStatistics
 @PT_COMPRESSION_ALGORITHMS.register('movement_sparsity')
 class MovementSparsityBuilder(BaseSparsityAlgoBuilder):
     def create_weight_sparsifying_operation(self, target_module_node: NNCFNode, compression_lr_multiplier: float):
-        return MovementSparsifyingWeight(target_module_node.layer_attributes.get_weight_shape(), frozen=False,
-                                   compression_lr_multiplier=compression_lr_multiplier)
+        sparse_cfg=None
+        if 'sparse_structure_by_scopes' in self._algo_config:
+            for sparse_mode, sparse_args, regex in self._algo_config['sparse_structure_by_scopes']:
+                if matches_any(target_module_node.node_name, regex):
+                    sparse_cfg = SparseConfig(sparse_mode, sparse_args)
+                    break
+
+        if sparse_cfg is None:
+            sparse_cfg = SparseConfig()
+
+        return MovementSparsifyingWeight(
+                    target_module_node.layer_attributes.get_weight_shape(), 
+                    frozen=False,
+                    compression_lr_multiplier=compression_lr_multiplier,
+                    eps=1e-6, 
+                    sparse_cfg=sparse_cfg)
 
     def _build_controller(self, model: NNCFNetwork) -> PTCompressionAlgorithmController:
         return MovementSparsityController(model, self._sparsified_module_info, self.config)

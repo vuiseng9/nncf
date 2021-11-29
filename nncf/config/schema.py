@@ -760,6 +760,9 @@ MOVEMENT_SPARSITY_SCHEMA = {
                                                                 description="The mode of sparsity level setting( "
                                                                             "'global' - one sparsity level is set for all layer, "
                                                                             "'local' - sparsity level is set per-layer.)"),
+                    # TODO
+                    # "sparse_structure_by_scopes": with_attributes(make_object_or_array_of_objects_schema(_ARRAY_OF_STRINGS),
+                    #                   description="specification of sparsity grain size by NNCF scope. "),
                 },
                 "additionalProperties": False
             },
