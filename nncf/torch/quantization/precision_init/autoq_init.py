@@ -152,28 +152,35 @@ class AutoQPrecisionInitializer(BasePrecisionInitializer):
             hw_config_type=self._hw_cfg_type,
             params=env_params)
 
-        nb_state = len(env.state_list)
-        nb_action = 1
+        #FIXME QAAS duck tape
+        if self._init_args.config.get('restful', False) is True: 
+            env.master_df['action']=8
+            best_policy=env.master_df['action']
+            best_reward=-9999
+            self.qenv=env
+        else:
+            nb_state = len(env.state_list)
+            nb_action = 1
 
-        # Control buffer length at run manager level
-        if "warmup_iter_number" not in self._ddpg_hparams_override:
-            self._ddpg_hparams_override["warmup_iter_number"] = 10
+            # Control buffer length at run manager level
+            if "warmup_iter_number" not in self._ddpg_hparams_override:
+                self._ddpg_hparams_override["warmup_iter_number"] = 10
 
-        self._ddpg_hparams_override["rmsize"] = \
-            self._ddpg_hparams_override["warmup_iter_number"] * (len(env.master_df)+1)
+            self._ddpg_hparams_override["rmsize"] = \
+                self._ddpg_hparams_override["warmup_iter_number"] * (len(env.master_df)+1)
 
-        # Instantiate Automation Agent
-        agent = DDPG(nb_state, nb_action, self._iter_number, hparam_override=self._ddpg_hparams_override)
+            # Instantiate Automation Agent
+            agent = DDPG(nb_state, nb_action, self._iter_number, hparam_override=self._ddpg_hparams_override)
 
-        if self._dump_autoq_data and self.tb_writer is not None:
-            # Need to replace '|' in nodestr (QuantizerId/QuantizerPointId)
-            # to '+' as it is a special character in markdown
-            temp_df = deepcopy(env.master_df[env.state_list + ['n_op']])
-            temp_df["modified_nodestr"] = list(map(lambda x: x.replace("|","+"), temp_df.index.tolist()))
-            temp_df = temp_df.set_index("modified_nodestr").reset_index()
-            self.tb_writer.add_text('AutoQ/state_embedding', temp_df.to_markdown())
+            if self._dump_autoq_data and self.tb_writer is not None:
+                # Need to replace '|' in nodestr (QuantizerId/QuantizerPointId)
+                # to '+' as it is a special character in markdown
+                temp_df = deepcopy(env.master_df[env.state_list + ['n_op']])
+                temp_df["modified_nodestr"] = list(map(lambda x: x.replace("|","+"), temp_df.index.tolist()))
+                temp_df = temp_df.set_index("modified_nodestr").reset_index()
+                self.tb_writer.add_text('AutoQ/state_embedding', temp_df.to_markdown())
 
-        best_policy, best_reward = self._search(agent, env)
+            best_policy, best_reward = self._search(agent, env)
 
         end_ts = datetime.now()
 

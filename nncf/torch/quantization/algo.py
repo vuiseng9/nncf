@@ -302,6 +302,7 @@ class DefaultQuantizerSetupDisambiguator(IQuantizerSetupDisambiguator):
                 final_quantizer_setup = intermediate_ctrl.init_precision(self._precision_init_type,
                                                                          self._precision_init_params,
                                                                          hw_constraints)
+                self.qenv = intermediate_ctrl.initializer.qenv #FIXME QAAS duck tape
         else:
             final_quantizer_setup = multi_config_setup.select_first_qconfig_for_each_point()
         return final_quantizer_setup
@@ -367,6 +368,7 @@ class PropagationBasedQuantizerSetupGenerator(QuantizerSetupGeneratorBase):
 
         single_config_quantizer_setup = disambiguator.select_final_quantizer_setup(
             quantization_proposal.quantizer_setup)
+        self.qenv = disambiguator.qenv #FIXME QAAS duck tape
 
         finalized_proposal = quantization_proposal.finalize(single_config_quantizer_setup,
                                                             strict=self.hw_config is not None)
@@ -667,6 +669,7 @@ class QuantizationBuilder(PTCompressionAlgorithmBuilder):
                                                                   self._debug_interface)
         single_config_quantizer_setup = setup_generator.generate_setup()
         self._build_time_metric_infos = setup_generator.get_build_time_metric_infos()
+        self.qenv = setup_generator.qenv #FIXME QAAS duck tape
         return single_config_quantizer_setup
 
     def _build_controller(self, model: NNCFNetwork) -> PTCompressionAlgorithmController:
@@ -1283,6 +1286,7 @@ class QuantizationController(QuantizationControllerBase):
         init_impl = PrecisionInitializerFactory.create(precision_init_type)
         initializer = init_impl(self, precision_init_params, precision_constraints)
         nncf_logger.info("Initialization of quantization precisions")
+        self.initializer=initializer #FIXME QAAS duck tape
         return initializer.apply_init()
 
     def init_range(self, range_init_params: PTRangeInitParams = None):

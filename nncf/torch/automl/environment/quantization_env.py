@@ -143,6 +143,7 @@ class QuantizationEnv:
         self.eval_fn = eval_fn
         self._hw_precision_constraints = hw_precision_constraints
         self._bn_adaptation = None
+        self.nncf_config = None # FIXME qaas: placeholder for qaas that can hack to run bnadap
 
         self.model_name = self.qmodel.nncf_module.__class__.__name__
 
@@ -468,18 +469,21 @@ class QuantizationEnv:
     def _run_batchnorm_adaptation(self):
         if self._bn_adaptation is None:
             self._bn_adaptation = BatchnormAdaptationAlgorithm(
-            **extract_bn_adaptation_init_params(self.qctrl.config, "quantization"))
+            **extract_bn_adaptation_init_params(self.nncf_config, "quantization"))
         self._bn_adaptation.run(self.qctrl.model)
 
     def _run_quantization_pipeline(self, finetune=False) -> float:
-        if self.qctrl.config:
+        if self.nncf_config:
             self._run_batchnorm_adaptation()
 
         if finetune:
             raise NotImplementedError("Post-Quantization fine tuning is not implemented.")
         with torch.no_grad():
             quantized_score = self.eval_fn(self.qmodel, self.eval_loader)
-            logger.info("[Q.Env] Quantized Score: {:.3f}".format(quantized_score))
+            if isinstance(quantized_score, dict):
+                logger.info("[Q.Env] Quantized Score: {}".format(quantized_score))
+            else:
+                logger.info("[Q.Env] Quantized Score: {:.3f}".format(quantized_score))
         return quantized_score
 
 
@@ -600,7 +604,9 @@ class QuantizationEnv:
         current_model_bop_ratio = self.compression_ratio_calculator.run_for_quantizer_setup(
             self.qctrl.get_quantizer_setup_for_current_state())
 
-        reward = self.reward(quantized_score, current_model_ratio)
+        reward = 0
+        if not isinstance(quantized_score, dict):
+            reward = self.reward(quantized_score, current_model_ratio)
 
         info_set = {'model_ratio': current_model_ratio,
                     'accuracy': quantized_score,

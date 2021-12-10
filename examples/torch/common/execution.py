@@ -99,8 +99,11 @@ def start_worker(main_worker, config: SampleConfig):
         return
 
     if config.execution_mode == ExecutionMode.SINGLE_GPU:
-        main_worker(current_gpu=config.gpu_id, config=config)
-        return
+        if config.restful is True:
+            return main_worker(current_gpu=config.gpu_id, config=config)
+        else:
+            main_worker(current_gpu=config.gpu_id, config=config)
+            return
 
     if config.execution_mode == ExecutionMode.GPU_DATAPARALLEL:
         main_worker(current_gpu=None, config=config)

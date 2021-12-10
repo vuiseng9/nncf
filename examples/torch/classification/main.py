@@ -123,8 +123,12 @@ def main(argv):
         write_metrics(0, config.metrics_dump)
 
     if not is_staged_quantization(config):
-        start_worker(main_worker, config)
+        retval = start_worker(main_worker, config)
+        if config.restful is True:
+            return retval
     else:
+        if config.restful is True:
+            raise ValueError("Restful service does not allow stage quantization config")
         from examples.torch.classification.staged_quantization_worker import staged_quantization_main_worker
         start_worker(staged_quantization_main_worker, config)
 
@@ -174,7 +178,7 @@ def main_worker(current_gpu, config: SampleConfig):
                         train_iters=train_steps, log_training_info=False)
 
         def validate_model_fn(model, eval_loader):
-            top1, top5, loss = validate(eval_loader, model, criterion, config, log_validation_info=False)
+            top1, top5, loss = validate(eval_loader, model, criterion, config, log_validation_info=True)
             return top1, top5, loss
 
         def model_eval_fn(model):
@@ -213,6 +217,20 @@ def main_worker(current_gpu, config: SampleConfig):
     compression_ctrl, model = create_compressed_model(model, nncf_config, compression_state)
     if model_state_dict is not None:
         load_state(model, model_state_dict, is_resume=True)
+
+    if config.get('restful', False) is True:
+        _, _, val_loader, _ = create_data_loaders(config, train_dataset, train_dataset)
+        _, _, test_loader, _ = create_data_loaders(config, train_dataset, val_dataset)
+
+        def eval_fn(model, data_loader):
+            top1, top5, loss = validate(data_loader, model, criterion, config)
+            return {'top1': top1, 'top5': top5, 'loss': loss}
+        
+        val_fn =partial(eval_fn, model=model, data_loader=val_loader)
+        test_fn =partial(eval_fn, model=model, data_loader=test_loader)
+
+        return compression_ctrl, model, nncf_config, eval_fn, val_loader, test_loader
+        # return compression_ctrl, model, nncf_config, val_fn, test_fn #TODO Align with PAAS?
 
     if is_export_only:
         compression_ctrl.export_model(config.to_onnx)
