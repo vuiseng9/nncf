@@ -25,9 +25,9 @@ RUN apt-get update && \
 
 ENV PATH="/miniconda/bin:${PATH}"
 RUN wget https://repo.anaconda.com/miniconda/Miniconda3-py38_4.10.3-Linux-x86_64.sh && \
-    bash Miniconda3-latest-Linux-x86_64.sh -b -p /miniconda && \
-    rm -f Miniconda3-latest-Linux-x86_64.sh && \
-    conda --version && python --version
+    bash Miniconda3-py38_4.10.3-Linux-x86_64.sh -b -p /miniconda && \
+    rm -f Miniconda3-py38_4.10.3-Linux-x86_64.sh && \
+    conda --version && python --version 
 
 # ENV PATH /usr/local/nvidia/bin:/usr/local/cuda/bin:${PATH}
 # ENV LD_LIBRARY_PATH /usr/local/nvidia/lib:/usr/local/nvidia/lib64
@@ -54,7 +54,7 @@ RUN wget https://repo.anaconda.com/miniconda/Miniconda3-py38_4.10.3-Linux-x86_64
 
 RUN git clone https://github.com/vuiseng9/nncf && \
     cd nncf && git checkout qaas-dec2021 && \
-    python setup.py develop \
+    python setup.py develop && \
     pip install -r examples/torch/requirements.txt && \
     pip install ipython jupyterlab pygraphviz more_itertools && \
     rm -rf ~/.cache/pip/* && \
