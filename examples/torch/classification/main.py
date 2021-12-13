@@ -330,7 +330,12 @@ def train(config, compression_ctrl, model, criterion, criterion_fn, lr_scheduler
         acc1 = best_acc1
         if epoch % config.test_every_n_epochs == 0:
             # evaluate on validation set
-            acc1, _, _ = validate(val_loader, model, criterion, config, epoch=epoch)
+            acc1, acc5, _ = validate(val_loader, model, criterion, config, epoch=epoch)
+
+            if is_main_process():
+                if compression_ctrl.__class__.__name__ == 'QuantizationController':
+                    logger.info('#QAAS# | Val Epoch: {epoch} | Acc@1: {top1:.3f} | Acc@5: {top5:.3f} |'.format(
+                                    epoch=epoch, top1=acc1, top5=acc5))
 
         compression_stage = compression_ctrl.compression_stage()
         # remember best acc@1, considering compression stage. If current acc@1 less then the best acc@1, checkpoint
@@ -359,8 +364,14 @@ def train(config, compression_ctrl, model, criterion, criterion_fn, lr_scheduler
                 'optimizer': optimizer.state_dict(),
             }
 
-            torch.save(checkpoint, checkpoint_path)
-            make_additional_checkpoints(checkpoint_path, is_best, epoch + 1, config)
+            if config.get("only_best_ckpt", True): 
+                if is_best:
+                    logger.info('#QAAS-ckpt# | Best Epoch: {epoch} |'.format(epoch=epoch))
+                    best_path = osp.join(config.checkpoint_save_dir, '{}_best.pth'.format(config.name))
+                    torch.save(checkpoint, best_path)
+            else:
+                torch.save(checkpoint, checkpoint_path)
+                make_additional_checkpoints(checkpoint_path, is_best, epoch + 1, config)
 
             for key, value in prepare_for_tensorboard(statistics).items():
                 config.mlflow.safe_call('log_metric', 'compression/statistics/{0}'.format(key), value, epoch)
