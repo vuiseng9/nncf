@@ -147,7 +147,8 @@ def create_compressed_model(model: Module,
 
     builder.apply_to(compressed_model)
     compression_ctrl = builder.build_controller(compressed_model)
-    compression_ctrl.qenv = builder.qenv #FIXME QAAS duck tape
+    if hasattr(builder, 'qenv'):
+        compression_ctrl.qenv = builder.qenv #FIXME QAAS duck tape
     if is_state_loadable:
         compression_ctrl.load_state(compression_state[BaseController.CONTROLLER_STATE])
 

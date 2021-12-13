@@ -8,7 +8,7 @@
     "input_info": {
       "sample_size": [1, 3, 224, 224]
     },
-    "target_device": "TRIAL",
+    "target_device": "TRIAL", // We only use TRIAL for NEMO experiments
     "num_classes": 1000,
     "compression": {
         "algorithm": "quantization",

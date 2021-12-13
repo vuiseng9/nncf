@@ -12,7 +12,7 @@ PALETTE = np.array([to_hex(c) for c in plt.get_cmap("tab20b").colors]).reshape(-
 from collections import Counter
 from collections import defaultdict
 from copy import deepcopy
-
+import json
 
 from nncf.torch.quantization.algo import QuantizationController
 from nncf.torch.automl.environment.quantization_env import QuantizationEnv, QuantizationEnvParams
@@ -34,14 +34,13 @@ class Qaas:
             self.qenv.nncf_config = self.nncf_cfg # This is for batchnorm adaptation! qenv.qctrl.config will be lost due to regeneration of experimental qctrl
             self.bool_perf_bw = self.nncf_cfg.get("quantizer_coupling", False)
             
-            self.qenv.eval_fn = eval_fn # override autoq eval fn that only return top5, we are returning top1, and top5
+            self.qenv.eval_fn = eval_fn # override autoq eval fn that only return top5, the new eval_fn should be returning top1, and top5 and loss for imagenet case
             self.val_loader = val_loader
             self.test_loader = test_loader
         else:
             raise ValueError("Qaas requires a quantization wrapped controller and model")
-        # self.base_ft_cfg = self.get_filter_pruning_algo_cfg()
-        # assert self.base_ft_cfg is not None, "PruneEnv does not instantiated with a valid nncf cfg that contains filter pruning" #TODO
-        # self.pruned_model_init_sd = deepcopy(self.pruned_model.state_dict())
+        self.base_ft_cfg = self.get_quantization_algo_cfg()
+        assert self.base_ft_cfg is not None, "Qaas does not instantiated with a valid nncf cfg that contains quantization"
         
         self.g = self.qenv.qctrl.model.get_graph()
         self.qid_to_nncfnode_map, self.nncfnode_to_qid_map = self.create_qid_to_nncfnode_map()
@@ -70,6 +69,58 @@ class Qaas:
     @property
     def original_bop(self):
         return int(self.qenv.compression_ratio_calculator.maximum_bits_complexity * 4) # orignally 8bit as baseline, normalized to 32bit
+
+    def get_quantization_algo_cfg(self):
+        def _finditem(obj, key):
+            if isinstance(obj, list):
+                for e in obj:
+                    item = _finditem(e, key) 
+                    if item is not None:
+                        return item
+            elif isinstance(obj, dict):
+                if key in obj: return obj
+                for k, v in obj.items():
+                    item = _finditem(v, key)
+                    if item is not None:
+                        return item
+            return None
+        compression = _finditem(self.nncf_cfg, 'algorithm')
+        if compression is not None and compression['algorithm'] == 'quantization':
+            base_ft_cfg =  deepcopy(self.nncf_cfg)
+        return base_ft_cfg
+
+    def generate_ft_cfg(self):
+        # this generates based on what is captured in action of master_df
+
+        bitwidth_per_scope = [[bw, qp] for qp, bw in self.qenv.master_df['action'].to_dict().items()]
+
+        # bitwidth_per_scope = []
+        # for qp in self.feature_df.index.to_list():
+        #     bw = input_bw_cfg[qp]
+        #     assert bw in self.bw_space, "invalid bitwidth"
+        #     bitwidth_per_scope.append([int(bw), qp])
+        # assert len(bitwidth_per_scope) == len(self.feature_df), "unexpected length of input_bw_cfg"
+
+        ft_cfg = deepcopy(self.base_ft_cfg)
+
+        if 'log_dir' in ft_cfg:
+            service_str = '\n\n// QAAS service on | {} | at log path: | {} |'.format(os.uname().nodename, ft_cfg['log_dir'])
+        else:
+            service_str = None
+            
+        for key in ['log_dir', 'episodic_nncfcfg', 'restful', 'eval_cache', 'quantizer_coupling']:
+            if key in ft_cfg:
+                del ft_cfg[key]
+
+        ft_cfg['compression']['initializer']['precision'] = dict(bitwidth_per_scope=bitwidth_per_scope)
+
+        bw_dist_comment = "\n// " + self.qenv.qctrl.statistics().to_str().replace("\n","\n// ")
+        if service_str is not None:
+            bw_dist_comment += service_str
+
+        ft_cfg_str = json.dumps(ft_cfg, indent=4)
+        index_of_last_closing_curly_bracket = ft_cfg_str.rfind('}') 
+        return ft_cfg_str[0:index_of_last_closing_curly_bracket]+bw_dist_comment+"\n}"
 
     def generate_sample_request(self):
         def rand_bw():
