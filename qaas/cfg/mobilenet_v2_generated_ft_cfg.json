@@ -1,0 +1,566 @@
+{
+    "model": "mobilenet_v2",
+    "pretrained": true,
+    "batch_size": 200,
+    "input_info": {
+        "sample_size": [
+            1,
+            3,
+            224,
+            224
+        ]
+    },
+    "target_device": "TRIAL",
+    "num_classes": 1000,
+    "compression": {
+        "algorithm": "quantization",
+        "weights": {
+            "mode": "asymmetric",
+            "per_channel": true
+        },
+        "activations": {
+            "mode": "asymmetric",
+            "per_channel": true
+        },
+        "initializer": {
+            "batchnorm_adaptation": {
+                "num_bn_adaptation_samples": 5000
+            },
+            "range": {
+                "num_init_samples": 5000
+            },
+            "precision": {
+                "bitwidth_per_scope": [
+                    [
+                        6,
+                        "/nncf_model_input_0|OUTPUT"
+                    ],
+                    [
+                        7,
+                        "MobileNetV2/Sequential[features]/ConvBNActivation[0]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        2,
+                        "MobileNetV2/Sequential[features]/ConvBNActivation[0]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        5,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[1]/Sequential[conv]/ConvBNActivation[0]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        5,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[1]/Sequential[conv]/ConvBNActivation[0]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        8,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[1]/Sequential[conv]/NNCFConv2d[1]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        7,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[1]/Sequential[conv]/NNCFBatchNorm[2]/batch_norm_0|OUTPUT"
+                    ],
+                    [
+                        8,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[2]/Sequential[conv]/ConvBNActivation[0]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        8,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[2]/Sequential[conv]/ConvBNActivation[0]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        6,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[2]/Sequential[conv]/ConvBNActivation[1]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        7,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[2]/Sequential[conv]/ConvBNActivation[1]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        4,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[2]/Sequential[conv]/NNCFConv2d[2]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        6,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[2]/Sequential[conv]/NNCFBatchNorm[3]/batch_norm_0|OUTPUT"
+                    ],
+                    [
+                        2,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[3]/Sequential[conv]/ConvBNActivation[0]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        7,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[3]/Sequential[conv]/ConvBNActivation[0]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        6,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[3]/Sequential[conv]/ConvBNActivation[1]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        6,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[3]/Sequential[conv]/ConvBNActivation[1]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        8,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[3]/Sequential[conv]/NNCFConv2d[2]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        7,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[3]/Sequential[conv]/NNCFBatchNorm[3]/batch_norm_0|OUTPUT"
+                    ],
+                    [
+                        4,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[3]/__add___0|OUTPUT"
+                    ],
+                    [
+                        2,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[4]/Sequential[conv]/ConvBNActivation[0]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        4,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[4]/Sequential[conv]/ConvBNActivation[0]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        6,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[4]/Sequential[conv]/ConvBNActivation[1]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        2,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[4]/Sequential[conv]/ConvBNActivation[1]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        2,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[4]/Sequential[conv]/NNCFConv2d[2]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        3,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[4]/Sequential[conv]/NNCFBatchNorm[3]/batch_norm_0|OUTPUT"
+                    ],
+                    [
+                        4,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[5]/Sequential[conv]/ConvBNActivation[0]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        8,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[5]/Sequential[conv]/ConvBNActivation[0]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        3,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[5]/Sequential[conv]/ConvBNActivation[1]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        6,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[5]/Sequential[conv]/ConvBNActivation[1]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        5,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[5]/Sequential[conv]/NNCFConv2d[2]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        5,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[5]/Sequential[conv]/NNCFBatchNorm[3]/batch_norm_0|OUTPUT"
+                    ],
+                    [
+                        4,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[5]/__add___0|OUTPUT"
+                    ],
+                    [
+                        5,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[6]/Sequential[conv]/ConvBNActivation[0]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        3,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[6]/Sequential[conv]/ConvBNActivation[0]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        6,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[6]/Sequential[conv]/ConvBNActivation[1]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        7,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[6]/Sequential[conv]/ConvBNActivation[1]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        2,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[6]/Sequential[conv]/NNCFConv2d[2]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        8,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[6]/Sequential[conv]/NNCFBatchNorm[3]/batch_norm_0|OUTPUT"
+                    ],
+                    [
+                        5,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[6]/__add___0|OUTPUT"
+                    ],
+                    [
+                        8,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[7]/Sequential[conv]/ConvBNActivation[0]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        7,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[7]/Sequential[conv]/ConvBNActivation[0]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        8,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[7]/Sequential[conv]/ConvBNActivation[1]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        8,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[7]/Sequential[conv]/ConvBNActivation[1]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        6,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[7]/Sequential[conv]/NNCFConv2d[2]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        7,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[7]/Sequential[conv]/NNCFBatchNorm[3]/batch_norm_0|OUTPUT"
+                    ],
+                    [
+                        2,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[8]/Sequential[conv]/ConvBNActivation[0]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        2,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[8]/Sequential[conv]/ConvBNActivation[0]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        3,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[8]/Sequential[conv]/ConvBNActivation[1]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        6,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[8]/Sequential[conv]/ConvBNActivation[1]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        3,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[8]/Sequential[conv]/NNCFConv2d[2]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        8,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[8]/Sequential[conv]/NNCFBatchNorm[3]/batch_norm_0|OUTPUT"
+                    ],
+                    [
+                        8,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[8]/__add___0|OUTPUT"
+                    ],
+                    [
+                        7,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[9]/Sequential[conv]/ConvBNActivation[0]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        8,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[9]/Sequential[conv]/ConvBNActivation[0]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        3,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[9]/Sequential[conv]/ConvBNActivation[1]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        6,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[9]/Sequential[conv]/ConvBNActivation[1]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        5,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[9]/Sequential[conv]/NNCFConv2d[2]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        8,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[9]/Sequential[conv]/NNCFBatchNorm[3]/batch_norm_0|OUTPUT"
+                    ],
+                    [
+                        5,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[9]/__add___0|OUTPUT"
+                    ],
+                    [
+                        2,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[10]/Sequential[conv]/ConvBNActivation[0]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        6,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[10]/Sequential[conv]/ConvBNActivation[0]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        2,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[10]/Sequential[conv]/ConvBNActivation[1]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        5,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[10]/Sequential[conv]/ConvBNActivation[1]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        7,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[10]/Sequential[conv]/NNCFConv2d[2]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        6,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[10]/Sequential[conv]/NNCFBatchNorm[3]/batch_norm_0|OUTPUT"
+                    ],
+                    [
+                        7,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[10]/__add___0|OUTPUT"
+                    ],
+                    [
+                        3,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[11]/Sequential[conv]/ConvBNActivation[0]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        7,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[11]/Sequential[conv]/ConvBNActivation[0]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        2,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[11]/Sequential[conv]/ConvBNActivation[1]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        2,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[11]/Sequential[conv]/ConvBNActivation[1]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        8,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[11]/Sequential[conv]/NNCFConv2d[2]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        6,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[11]/Sequential[conv]/NNCFBatchNorm[3]/batch_norm_0|OUTPUT"
+                    ],
+                    [
+                        3,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[12]/Sequential[conv]/ConvBNActivation[0]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        7,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[12]/Sequential[conv]/ConvBNActivation[0]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        5,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[12]/Sequential[conv]/ConvBNActivation[1]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        6,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[12]/Sequential[conv]/ConvBNActivation[1]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        2,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[12]/Sequential[conv]/NNCFConv2d[2]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        4,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[12]/Sequential[conv]/NNCFBatchNorm[3]/batch_norm_0|OUTPUT"
+                    ],
+                    [
+                        6,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[12]/__add___0|OUTPUT"
+                    ],
+                    [
+                        6,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[13]/Sequential[conv]/ConvBNActivation[0]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        8,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[13]/Sequential[conv]/ConvBNActivation[0]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        4,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[13]/Sequential[conv]/ConvBNActivation[1]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        6,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[13]/Sequential[conv]/ConvBNActivation[1]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        5,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[13]/Sequential[conv]/NNCFConv2d[2]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        4,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[13]/Sequential[conv]/NNCFBatchNorm[3]/batch_norm_0|OUTPUT"
+                    ],
+                    [
+                        7,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[13]/__add___0|OUTPUT"
+                    ],
+                    [
+                        7,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[14]/Sequential[conv]/ConvBNActivation[0]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        5,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[14]/Sequential[conv]/ConvBNActivation[0]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        3,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[14]/Sequential[conv]/ConvBNActivation[1]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        8,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[14]/Sequential[conv]/ConvBNActivation[1]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        8,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[14]/Sequential[conv]/NNCFConv2d[2]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        2,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[14]/Sequential[conv]/NNCFBatchNorm[3]/batch_norm_0|OUTPUT"
+                    ],
+                    [
+                        4,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[15]/Sequential[conv]/ConvBNActivation[0]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        3,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[15]/Sequential[conv]/ConvBNActivation[0]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        6,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[15]/Sequential[conv]/ConvBNActivation[1]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        5,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[15]/Sequential[conv]/ConvBNActivation[1]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        3,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[15]/Sequential[conv]/NNCFConv2d[2]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        3,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[15]/Sequential[conv]/NNCFBatchNorm[3]/batch_norm_0|OUTPUT"
+                    ],
+                    [
+                        3,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[15]/__add___0|OUTPUT"
+                    ],
+                    [
+                        8,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[16]/Sequential[conv]/ConvBNActivation[0]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        3,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[16]/Sequential[conv]/ConvBNActivation[0]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        2,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[16]/Sequential[conv]/ConvBNActivation[1]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        4,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[16]/Sequential[conv]/ConvBNActivation[1]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        6,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[16]/Sequential[conv]/NNCFConv2d[2]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        4,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[16]/Sequential[conv]/NNCFBatchNorm[3]/batch_norm_0|OUTPUT"
+                    ],
+                    [
+                        2,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[16]/__add___0|OUTPUT"
+                    ],
+                    [
+                        2,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[17]/Sequential[conv]/ConvBNActivation[0]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        5,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[17]/Sequential[conv]/ConvBNActivation[0]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        8,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[17]/Sequential[conv]/ConvBNActivation[1]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        3,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[17]/Sequential[conv]/ConvBNActivation[1]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        6,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[17]/Sequential[conv]/NNCFConv2d[2]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        8,
+                        "MobileNetV2/Sequential[features]/InvertedResidual[17]/Sequential[conv]/NNCFBatchNorm[3]/batch_norm_0|OUTPUT"
+                    ],
+                    [
+                        2,
+                        "MobileNetV2/Sequential[features]/ConvBNActivation[18]/NNCFConv2d[0]/conv2d_0|WEIGHT"
+                    ],
+                    [
+                        8,
+                        "MobileNetV2/Sequential[features]/ConvBNActivation[18]/ReLU6[2]/hardtanh_0|OUTPUT"
+                    ],
+                    [
+                        2,
+                        "MobileNetV2/adaptive_avg_pool2d_0|OUTPUT"
+                    ],
+                    [
+                        4,
+                        "MobileNetV2/Sequential[classifier]/NNCFLinear[1]/linear_0|WEIGHT"
+                    ]
+                ]
+            }
+        }
+    }
+
+// Statistics of the quantization algorithm:
+// +--------------------------------+-------+
+// |        Statistic's name        | Value |
+// +================================+=======+
+// | Ratio of enabled quantizations | 100   |
+// +--------------------------------+-------+
+// 
+// Statistics of the quantization share:
+// +----------------------------------+--------------------+
+// |         Statistic's name         |       Value        |
+// +==================================+====================+
+// | Symmetric WQs / All placed WQs   | 0.00 % (0 / 53)    |
+// +----------------------------------+--------------------+
+// | Asymmetric WQs / All placed WQs  | 100.00 % (53 / 53) |
+// +----------------------------------+--------------------+
+// | Signed WQs / All placed WQs      | 100.00 % (53 / 53) |
+// +----------------------------------+--------------------+
+// | Unsigned WQs / All placed WQs    | 0.00 % (0 / 53)    |
+// +----------------------------------+--------------------+
+// | Per-tensor WQs / All placed WQs  | 0.00 % (0 / 53)    |
+// +----------------------------------+--------------------+
+// | Per-channel WQs / All placed WQs | 100.00 % (53 / 53) |
+// +----------------------------------+--------------------+
+// | Placed WQs / Potential WQs       | 100.00 % (53 / 53) |
+// +----------------------------------+--------------------+
+// | Symmetric AQs / All placed AQs   | 0.00 % (0 / 64)    |
+// +----------------------------------+--------------------+
+// | Asymmetric AQs / All placed AQs  | 100.00 % (64 / 64) |
+// +----------------------------------+--------------------+
+// | Signed AQs / All placed AQs      | 100.00 % (64 / 64) |
+// +----------------------------------+--------------------+
+// | Unsigned AQs / All placed AQs    | 0.00 % (0 / 64)    |
+// +----------------------------------+--------------------+
+// | Per-tensor AQs / All placed AQs  | 0.00 % (0 / 64)    |
+// +----------------------------------+--------------------+
+// | Per-channel AQs / All placed AQs | 100.00 % (64 / 64) |
+// +----------------------------------+--------------------+
+// 
+// Statistics of the bitwidth distribution:
+// +--------------+---------------------+--------------------+--------------------+
+// | Num bits (N) | N-bits WQs / Placed |    N-bits AQs /    | N-bits Qs / Placed |
+// |              |         WQs         |     Placed AQs     |         Qs         |
+// +==============+=====================+====================+====================+
+// | 8            | 16.98 % (9 / 53)    | 18.75 % (12 / 64)  | 17.95 % (21 / 117) |
+// +--------------+---------------------+--------------------+--------------------+
+// | 7            | 7.55 % (4 / 53)     | 17.19 % (11 / 64)  | 12.82 % (15 / 117) |
+// +--------------+---------------------+--------------------+--------------------+
+// | 6            | 16.98 % (9 / 53)    | 18.75 % (12 / 64)  | 17.95 % (21 / 117) |
+// +--------------+---------------------+--------------------+--------------------+
+// | 5            | 11.32 % (6 / 53)    | 12.50 % (8 / 64)   | 11.97 % (14 / 117) |
+// +--------------+---------------------+--------------------+--------------------+
+// | 4            | 9.43 % (5 / 53)     | 10.94 % (7 / 64)   | 10.26 % (12 / 117) |
+// +--------------+---------------------+--------------------+--------------------+
+// | 3            | 15.09 % (8 / 53)    | 10.94 % (7 / 64)   | 12.82 % (15 / 117) |
+// +--------------+---------------------+--------------------+--------------------+
+// | 2            | 22.64 % (12 / 53)   | 10.94 % (7 / 64)   | 16.24 % (19 / 117) |
+// +--------------+---------------------+--------------------+--------------------+
+
+// QAAS service on | csr-dgx1-03 | at log path: | /tmp/qaas-imgnet-log/mobilenet_v2_imagenet_mixed_int/2021-12-13__17-20-53 |
+}

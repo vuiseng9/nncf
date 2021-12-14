@@ -346,7 +346,7 @@ def create_app() -> Flask:
                     'executed_bw_cfg': bw_cfg,
                     'executed_wt_bnadap': bool_bnadap,
                     'quantizer_coupling': env.bool_perf_bw,
-                    'ft_cfg_str': env.generate_ft_cfg()
+                    'ft_cfg_str': env.generate_ft_cfg(retval[-1])
                     }
 
                 jsonresponse['processing_time'] = str(end_time - start_time)

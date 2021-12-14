@@ -89,7 +89,7 @@ class Qaas:
             base_ft_cfg =  deepcopy(self.nncf_cfg)
         return base_ft_cfg
 
-    def generate_ft_cfg(self):
+    def generate_ft_cfg(self, dict_of_metric):
         # this generates based on what is captured in action of master_df
 
         bitwidth_per_scope = [[bw, qp] for qp, bw in self.qenv.master_df['action'].to_dict().items()]
@@ -107,7 +107,12 @@ class Qaas:
             service_str = '\n\n// QAAS service on | {} | at log path: | {} |'.format(os.uname().nodename, ft_cfg['log_dir'])
         else:
             service_str = None
-            
+
+        if 'model_size' in dict_of_metric:
+            del dict_of_metric['model_size']
+
+        service_str += json.dumps(dict_of_metric, indent=4).replace("\n","\n// ")
+
         for key in ['log_dir', 'episodic_nncfcfg', 'restful', 'eval_cache', 'quantizer_coupling']:
             if key in ft_cfg:
                 del ft_cfg[key]
