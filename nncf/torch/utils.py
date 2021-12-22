@@ -246,6 +246,8 @@ def compute_FLOPs_hook(module, input_, output, dict_to_save, module_node_name: N
             mac_count = input_[0].shape[0] * output.shape[-1]
         else:
             mac_count = np.prod(input_[0].shape[1:]) * output.shape[-1]
+    elif isinstance(module, nn.Embedding):
+        mac_count = 0
     else:
         return
     dict_to_save[module_node_name] = 2 * mac_count

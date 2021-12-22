@@ -1,0 +1,55 @@
+{
+    "restful": true,
+    "eval_cache": true,
+    "input_info": [
+        {
+            "sample_size": [1, 384],
+            "type": "long"
+        },
+        {
+            "sample_size": [1, 384],
+            "type": "long"
+        },
+        {
+            "sample_size": [1, 384],
+            "type": "long"
+        }
+    ],
+    "target_device": "TRIAL",
+    "compression": {
+        "algorithm": "quantization",
+        "initializer": {
+            "range": {
+                "num_init_samples": 32,
+                "type": "percentile",
+                "params":
+                {
+                    "min_percentile": 0.01,
+                    "max_percentile": 99.99
+                }
+            },
+
+            "batchnorm_adaptation": {
+                "num_bn_adaptation_samples": 200
+            },
+            "precision": {
+                "type": "autoq",
+                "bits": [2, 3, 4, 5, 6, 7, 8],
+                "iter_number": 300,
+                "compression_ratio": 0.15,
+                "eval_subset_ratio": 0.20,
+                "dump_init_precision_data": true
+            }
+        },
+        "activations":
+        {
+            "mode": "symmetric"
+        },
+        "weights":
+        {
+            "mode": "symmetric",
+            "signed": true,
+            "per_channel": false
+        }
+    }
+}

@@ -15,7 +15,7 @@ from typing import Dict
 from nncf.common.graph import NNCFNodeName
 from nncf.common.quantization.quantizer_setup import QuantizationPointId
 from nncf.common.quantization.quantizer_setup import SingleConfigQuantizerSetup
-
+from warnings import warn
 
 class CompressionRatioCalculator:
     """
@@ -48,6 +48,9 @@ class CompressionRatioCalculator:
         bits_complexity = 0
         for w_qp_id, w_qp in weight_qps:
             wq_num_bits = w_qp.qconfig.num_bits
+            if w_qp_id not in self._weight_qp_id_per_activation_qp_id:
+                warn("{} weight quantization point has not coressponding activation quantization point".format(w_qp_id))
+                continue
             a_qp_id = self._weight_qp_id_per_activation_qp_id[w_qp_id]
             a_qp = quantization_points[a_qp_id]
             aq_num_bits = a_qp.qconfig.num_bits

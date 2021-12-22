@@ -79,6 +79,7 @@ EXTERNAL_QUANTIZERS_STORAGE_NAME = "external_quantizers"
 
 Module = TypeVar('Module', bound=nn.Module)
 
+from warnings import warn
 
 class ExtraCompressionModuleType(Enum):
     EXTERNAL_QUANTIZER = 0
@@ -620,7 +621,10 @@ class NNCFNetwork(nn.Module, PostGraphBuildActing):
         hook_list = []
         for nncf_node in self._original_graph.get_all_nodes():
             node_module = self.get_containing_module(nncf_node.node_name)
-            hook_list.append(node_module.register_forward_hook(get_hook(nncf_node.node_name)))
+            if node_module is None:
+                warn("{} has no corresponding pt module!".format(nncf_node))
+            else:
+                hook_list.append(node_module.register_forward_hook(get_hook(nncf_node.node_name)))
         model.do_dummy_forward(force_eval=True)
 
         for h in hook_list:

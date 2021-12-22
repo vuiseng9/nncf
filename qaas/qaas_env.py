@@ -45,9 +45,9 @@ class Qaas:
         self.g = self.qenv.qctrl.model.get_graph()
         self.qid_to_nncfnode_map, self.nncfnode_to_qid_map = self.create_qid_to_nncfnode_map()
         self.visualize_adjacent_quantizers()
+        self.node_type_lut, self.connectivity_lut = self.extract_graph_connectivity()
         self.feature_df = self.extract_quantizable_layer_features()
         self.node_name_to_qenv_index = self.feature_df['node_name'].reset_index().set_index('node_name').to_dict()['index']
-        self.node_type_lut, self.connectivity_lut = self.extract_graph_connectivity()
         # self.print_groupwise_nodes()
 
     @property
@@ -69,6 +69,7 @@ class Qaas:
     @property
     def original_bop(self):
         return int(self.qenv.compression_ratio_calculator.maximum_bits_complexity * 4) # orignally 8bit as baseline, normalized to 32bit
+        #FIXME return -1
 
     def get_quantization_algo_cfg(self):
         def _finditem(obj, key):
@@ -149,13 +150,23 @@ class Qaas:
 
     def evaluate_valset(self, bw_cfg, bool_bnadap):
         self._setup_bnadap_pipeline(bool_bnadap)
-        self.qenv.eval_loader=self.val_loader
+        if os.environ['workload'] == 'imgnet':
+            self.qenv.eval_loader=self.val_loader
+        elif os.environ['workload'] == 'bert-squad':
+            self.qenv.eval_fn = self.validate_fn
+        else:
+            raise ValueError("This should never occur. Pls report to maintainer")
         strategy = [bw_cfg[id] for id in self.qenv.master_df.index]
         return self.qenv.evaluate_strategy(strategy, skip_constraint=True) # always skip constraints
 
     def evaluate_testset(self, bw_cfg, bool_bnadap):
         self._setup_bnadap_pipeline(bool_bnadap)
-        self.qenv.eval_loader=self.test_loader
+        if os.environ['workload'] == 'imgnet':
+            self.qenv.eval_loader=self.test_loader
+        elif os.environ['workload'] == 'bert-squad':
+            self.qenv.eval_fn = self.test_fn
+        else:
+            raise ValueError("This should never occur. Pls report to maintainer")
         strategy = [bw_cfg[id] for id in self.qenv.master_df.index]
         return self.qenv.evaluate_strategy(strategy, skip_constraint=True) # always skip constraints
 
@@ -163,7 +174,7 @@ class Qaas:
         nx_node = '{} {}'.format(str(nncfnode.node_id), nncfnode.node_name)
         return nx_node
     
-    def _qid_to_node_name(self, qid_obj):
+    def _qid_to_target_node_name(self, qid_obj):
         target_nncfnode = self.g.get_node_by_name(qid_obj.target_node_name)
         return self._to_nx_node(target_nncfnode)
 
@@ -174,8 +185,25 @@ class Qaas:
         # 'weight_quantizer', 'n_op', 'action', 'unconstrained_action']
         feature_cols = ['gid', 'is_wt_quantizer', 'cin', 'conv_dw', 'cout', 'ifm_size', 'kernel', 'param', 'stride']
         feature_df = self.qenv.master_df[feature_cols]
-        # node_name is actually nx_node where nncfnode is prefixed with node id
-        feature_df['node_name'] = self.qenv.master_df['qid_obj'].apply(lambda x: self._qid_to_node_name(x))
+        # target_node_name is actually nx_node where nncfnode is prefixed with node id, target_node_name is the original node of a model that can have quantizers to weight, input and/or output 
+        feature_df['target_node_name'] = self.qenv.master_df['qid_obj'].apply(lambda x: self._qid_to_target_node_name(x))
+        feature_df['node_name'] = self.qenv.master_df['qid_obj'].apply(lambda x: self._to_nx_node(self.qid_to_nncfnode_map[x]))
+        # Following is kept for reference - not a good design
+        # we do need to multiply 10 to original node id
+        # duplicated_node_names = feature_df['node_name'][feature_df['node_name'].duplicated()].tolist()
+        # if len(duplicated_node_names) > 0:
+        #     for node in duplicated_node_names:
+        #         for cnt, id in enumerate(feature_df.index[feature_df.node_name == node]):
+        #             if cnt == 0:
+        #                 continue
+        #             tokens = feature_df.loc[id, 'node_name'].split()
+        #             tokens[0] = str(int(tokens[0])+cnt)
+        #             new_name = ' '.join(tokens)
+        #             feature_df.loc[id, 'node_name'] = new_name
+
+        if len(feature_df['node_name'][feature_df['node_name'].duplicated()].tolist()) > 0:
+            raise ValueError('Duplicated node_name persist, pls debug')
+
         return feature_df
 
     def extract_graph_connectivity(self):       

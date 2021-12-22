@@ -17,7 +17,7 @@ mutex= Lock()
 
 from .qaas_env import Qaas
 from examples.torch.classification.main import main as imgnet
-
+from run_qa import main as qa
 from copy import deepcopy
 import logging, pandas
 from datetime import datetime
@@ -36,26 +36,27 @@ def init_workload():
             '--config', os.environ['config'],
             '--data',   os.environ['data']]
         return Qaas(*imgnet(_args))
-    elif os.environ['workload'] == 'facedet':
-        # run_id = '{:%Y-%m-%d__%H-%M-%S}'.format(datetime.now())
-        # work_dir = '/tmp/qaas-facedet-log/face-detection-0200-{}'.format(run_id)
-        work_dir = '/tmp/qaas-facedet-log/face-detection-0200'
+    elif os.environ['workload'] == 'bert-squad':
         _args = [
-            os.environ['config'],
-            "--update_config", 
-            "data.train.dataset.ann_file={}/instances_train_quarter.json".format(os.environ['data']),
-            "data.train.dataset.img_prefix={}".format(os.environ['data']),
-            "data.val.ann_file={}/instances_val.json".format(os.environ['data']),
-            "data.val.img_prefix={}".format(os.environ['data']),
-            "load_from={}".format(os.environ['ckpt']),
-            "--work-dir", work_dir,
-            "--gpu-ids", "0"
+            "--model_name_or_path",
+            "vuiseng9/bert-base-uncased-squad", 
+            "--dataset_name", "squad",
+            "--do_eval",
+            "--do_predict",
+            "--per_device_eval_batch_size", "240",
+            "--max_seq_length", "384",
+            "--doc_stride", "128",
+            "--nncf_config", os.environ['config'],
+            "--output_dir", '/tmp/qaas-bert-squad-log/',
+            "--overwrite_output_dir"
         ]
-        controller, pruned_model, mmdet_cfg, val_fn, test_fn = face_detection(_args)   
-        controller.config['log_dir']=mmdet_cfg.work_dir
-        controller.config['restful']=mmdet_cfg.restful
-        controller.config['eval_cache']=mmdet_cfg.get('eval_cache', True)
-        return PruneEnv(controller, controller._model, controller.config, val_fn, test_fn)
+        # handling for qa evaluate with val and testset
+        compression_ctrl, model, nncf_config, autoq_validate, autoq_predict = qa(_args)
+        env = Qaas(compression_ctrl, model, nncf_config, None, None, None)
+        env.validate_fn = autoq_validate
+        env.test_fn = autoq_predict
+        return env
+        
     else:
         raise ValueError("Environment variable workload is not valid")
 
@@ -290,7 +291,7 @@ def create_app() -> Flask:
             for node, bw in input_bw_cfg.items():
                 if node in env.node_name_to_qenv_index: #Filter away unquantizable node prediction
                     assert bw in env.bw_space, "invalid bitwidth"
-                    bw_cfg[env.node_name_to_qenv_index[node]]=bw #TODO need to check valid bw, also need to ensure the confg is complete!
+                    bw_cfg[env.node_name_to_qenv_index[node]]=bw
                     # print(node)
                     # print(env.node_name_to_qenv_index[node])
                     # print()
