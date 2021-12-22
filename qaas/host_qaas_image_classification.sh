@@ -10,6 +10,7 @@ export config=/workspace/nncf/qaas/cfg/resnet18_imgnet_qaas.json
 # ideally train should be a stratified sampled of full imagenet dataset
 # val should be the original full imagenet dataset
 export data=/data/dataset/imagenet/ilsvrc2012/imgnet-train5k-val50k
+export PYTHONPATH=/workspace/transformers/examples/pytorch/question-answering
 
 WORKDIR=/workspace/nncf
 
