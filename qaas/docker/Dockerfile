@@ -61,3 +61,9 @@ RUN git clone https://github.com/vuiseng9/nncf && \
     ninja_executable=$(python -c "import ninja; print(ninja.__path__[0])")/data/bin/ninja && \
     chmod +x $ninja_executable && \
     python -c "import nncf; print(\"NNCF {} is installed\".format(nncf.__version__))"
+
+RUN git clone https://github.com/vuiseng9/transformers && \
+    cd transformers && git checkout qaas-dec2021 && \
+    pip install -e . && \
+    cd examples/pytorch/question-answering && \
+    pip install -r requirements.txt
