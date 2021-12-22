@@ -1,16 +1,19 @@
 import os
 import re
+from typing import OrderedDict
 import networkx as nx
 from nncf.torch.graph.graph import PTNNCFGraph
 from networkx.drawing.nx_agraph import to_agraph
 import matplotlib._color_data as mcd
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 # PALETTE = np.array(list(mcd.CSS4_COLORS.keys())).reshape(-1, 4).transpose().reshape(-1).tolist()
 from matplotlib.colors import to_hex
 PALETTE = np.array([to_hex(c) for c in plt.get_cmap("tab20b").colors]).reshape(-1, 5).transpose().reshape(-1).tolist()
 from collections import Counter
 from collections import defaultdict
+from collections import OrderedDict
 from copy import deepcopy
 import json
 
@@ -47,7 +50,8 @@ class Qaas:
         self.visualize_adjacent_quantizers()
         self.node_type_lut, self.connectivity_lut = self.extract_graph_connectivity()
         self.feature_df = self.extract_quantizable_layer_features()
-        self.node_name_to_qenv_index = self.feature_df['node_name'].reset_index().set_index('node_name').to_dict()['index']
+        # Following will be carried out in method above
+        # self.node_name_to_qenv_index = self.feature_df['node_name'].reset_index().set_index('node_name').to_dict()['index']
         # self.print_groupwise_nodes()
 
     @property
@@ -69,7 +73,6 @@ class Qaas:
     @property
     def original_bop(self):
         return int(self.qenv.compression_ratio_calculator.maximum_bits_complexity * 4) # orignally 8bit as baseline, normalized to 32bit
-        #FIXME return -1
 
     def get_quantization_algo_cfg(self):
         def _finditem(obj, key):
@@ -179,31 +182,83 @@ class Qaas:
         return self._to_nx_node(target_nncfnode)
 
     def extract_quantizable_layer_features(self):
-        # ['qid', 'gid', 'qconf_space', 'qp_id_set', 'state_scope', 'qid_obj',
-        # 'qmodule', 'is_wt_quantizer', 'state_module', 'cin', 'conv_dw', 'cout',
-        # 'ifm_size', 'kernel', 'param', 'prev_action', 'stride', 'layer_idx',
-        # 'weight_quantizer', 'n_op', 'action', 'unconstrained_action']
-        feature_cols = ['gid', 'is_wt_quantizer', 'cin', 'conv_dw', 'cout', 'ifm_size', 'kernel', 'param', 'stride']
-        feature_df = self.qenv.master_df[feature_cols]
-        # target_node_name is actually nx_node where nncfnode is prefixed with node id, target_node_name is the original node of a model that can have quantizers to weight, input and/or output 
-        feature_df['target_node_name'] = self.qenv.master_df['qid_obj'].apply(lambda x: self._qid_to_target_node_name(x))
-        feature_df['node_name'] = self.qenv.master_df['qid_obj'].apply(lambda x: self._to_nx_node(self.qid_to_nncfnode_map[x]))
-        # Following is kept for reference - not a good design
-        # we do need to multiply 10 to original node id
-        # duplicated_node_names = feature_df['node_name'][feature_df['node_name'].duplicated()].tolist()
-        # if len(duplicated_node_names) > 0:
-        #     for node in duplicated_node_names:
-        #         for cnt, id in enumerate(feature_df.index[feature_df.node_name == node]):
-        #             if cnt == 0:
-        #                 continue
-        #             tokens = feature_df.loc[id, 'node_name'].split()
-        #             tokens[0] = str(int(tokens[0])+cnt)
-        #             new_name = ' '.join(tokens)
-        #             feature_df.loc[id, 'node_name'] = new_name
+        if False:
+            # ['qid', 'gid', 'qconf_space', 'qp_id_set', 'state_scope', 'qid_obj',
+            # 'qmodule', 'is_wt_quantizer', 'state_module', 'cin', 'conv_dw', 'cout',
+            # 'ifm_size', 'kernel', 'param', 'prev_action', 'stride', 'layer_idx',
+            # 'weight_quantizer', 'n_op', 'action', 'unconstrained_action']
+            feature_cols = ['gid', 'is_wt_quantizer', 'cin', 'conv_dw', 'cout', 'ifm_size', 'kernel', 'param', 'stride']
+            feature_df = self.qenv.master_df[feature_cols]
+            # target_node_name is actually nx_node where nncfnode is prefixed with node id, target_node_name is the original node of a model that can have quantizers to weight, input and/or output 
+            feature_df['target_node_name'] = self.qenv.master_df['qid_obj'].apply(lambda x: self._qid_to_target_node_name(x))
+            feature_df['node_name'] = self.qenv.master_df['qid_obj'].apply(lambda x: self._to_nx_node(self.qid_to_nncfnode_map[x]))
+            # Following is kept for reference - not a good design
+            # we do need to multiply 10 to original node id
+            # duplicated_node_names = feature_df['node_name'][feature_df['node_name'].duplicated()].tolist()
+            # if len(duplicated_node_names) > 0:
+            #     for node in duplicated_node_names:
+            #         for cnt, id in enumerate(feature_df.index[feature_df.node_name == node]):
+            #             if cnt == 0:
+            #                 continue
+            #             tokens = feature_df.loc[id, 'node_name'].split()
+            #             tokens[0] = str(int(tokens[0])+cnt)
+            #             new_name = ' '.join(tokens)
+            #             feature_df.loc[id, 'node_name'] = new_name
+
+        else:
+            feature_cols = ['gid', 'is_wt_quantizer']
+            feature_df = self.qenv.master_df[feature_cols]
+            feature_df['target_node'] = self.qenv.master_df['qid_obj'].apply(lambda x: self.g.get_node_by_name(x.target_node_name))
+            feature_df['node'] = self.qenv.master_df['qid_obj'].apply(lambda x: self.qid_to_nncfnode_map[x])
+            
+            def extract_feature(row):
+                tnode = row['target_node']
+                qnode = row['node']
+
+                if tnode.node_id < qnode.node_id:
+                    edge_id = (self._to_nx_node(tnode), self._to_nx_node(qnode))
+                    edge = self.g._nx_graph.edges[edge_id]
+                elif qnode.node_id < tnode.node_id:
+                    edge_id = (self._to_nx_node(qnode), self._to_nx_node(tnode))
+                    edge = self.g._nx_graph.edges[edge_id]
+                else:
+                    raise ValueError("Unexpected, pls debug")
+
+                input_tensor_shape = edge['activation_shape']
+                n_axis = len(input_tensor_shape)
+                n_feature = np.prod(input_tensor_shape)
+                target_node_type = tnode.node_type
+                return {'n_axis': n_axis, 
+                        'n_feature': n_feature, 
+                        'target_node_type': target_node_type}
+
+            _df = feature_df.apply(extract_feature, axis=1, result_type='expand')
+            feature_df = pd.concat([feature_df, _df], axis=1)
+
+            feature_df['target_node_name'] = self.qenv.master_df['qid_obj'].apply(lambda x: self._qid_to_target_node_name(x))
+            feature_df['node_name'] = self.qenv.master_df['qid_obj'].apply(lambda x: self._to_nx_node(self.qid_to_nncfnode_map[x]))
+
+            feature_df = feature_df.drop(columns=['target_node', 'node'])
 
         if len(feature_df['node_name'][feature_df['node_name'].duplicated()].tolist()) > 0:
             raise ValueError('Duplicated node_name persist, pls debug')
 
+        feature_df['is_wt_quantizer'] = feature_df['is_wt_quantizer']*1.0
+
+        if 'target_node_type' in feature_df.columns:
+            from sklearn.preprocessing import OneHotEncoder
+            target_nodetype_encoder = OneHotEncoder()
+            one_hot_encoded_target_node_type = target_nodetype_encoder.fit_transform(np.array(feature_df['target_node_type'].tolist()).reshape(-1,1)).toarray()
+            
+            d = OrderedDict()
+            for iii, id in enumerate(feature_df.index):
+                d[id] = one_hot_encoded_target_node_type[iii].tolist()
+
+            feature_df['target_optype'] = pd.Series(d)
+            feature_df = feature_df.drop(columns=['target_node_type'])
+
+        self.node_name_to_qenv_index = feature_df['node_name'].reset_index().set_index('node_name').to_dict()['index']
+        feature_df = feature_df.drop(columns=['target_node_name'])
         return feature_df
 
     def extract_graph_connectivity(self):       

@@ -11,6 +11,7 @@ from multiprocessing.sharedctypes import Value
 from sklearn.preprocessing import OneHotEncoder
 import pandas as pd
 from natsort import natsorted
+from collections import OrderedDict
 import hashlib
 lock = Semaphore(1)
 mutex= Lock()
@@ -184,6 +185,16 @@ def create_app() -> Flask:
                 for ii, item in enumerate(features_per_node['gid']):
                     features_per_node['gid'][ii] = features_per_node['gid'][ii].tolist()
                     features_per_node['optype'][ii] = features_per_node['optype'][ii].tolist()
+
+                if 'target_optype' in features_per_node.columns:
+                    null_target_optype = [0.0] * len(quantizable_df.target_optype[0])
+                    d = OrderedDict()
+                    for iii, id in enumerate(features_per_node.index):
+                        if features_per_node.loc[id, 'target_optype'] == 0.0:
+                            d[id] = null_target_optype
+                        else:
+                            d[id] = features_per_node.loc[id, 'target_optype']
+                    features_per_node['target_optype'] = pd.Series(d)
 
                 feature_dict = features_per_node.to_dict()
 
