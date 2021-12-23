@@ -11,6 +11,8 @@ export config=/workspace/nncf/qaas/cfg/bert_squad_qaas.json
 # val should be the original full imagenet dataset
 export PYTHONPATH=/workspace/transformers/examples/pytorch/question-answering
 
+export CUDA_VISIBLE_DEVICES=0
+
 WORKDIR=/workspace/nncf
 
 cd $WORKDIR

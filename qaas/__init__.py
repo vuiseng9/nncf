@@ -52,8 +52,9 @@ def init_workload():
             "--overwrite_output_dir"
         ]
         # handling for qa evaluate with val and testset
-        compression_ctrl, model, nncf_config, autoq_validate, autoq_predict = qa(_args)
+        compression_ctrl, model, nncf_config, autoq_validate, autoq_predict, trainer = qa(_args)
         env = Qaas(compression_ctrl, model, nncf_config, None, None, None)
+        trainer.model = env.qenv.qmodel
         env.validate_fn = autoq_validate
         env.test_fn = autoq_predict
         return env
