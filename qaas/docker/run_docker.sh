@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-container=autoqaas:v1.0
+container=autoqaas:v1.4
 
 docker run \
     -d \

@@ -41,15 +41,13 @@
                 "dump_init_precision_data": true
             }
         },
-        "activations":
-        {
-            "mode": "symmetric"
+        "weights": {
+            "mode": "asymmetric",
+            "per_channel": true
         },
-        "weights":
-        {
-            "mode": "symmetric",
-            "signed": true,
-            "per_channel": false
+        "activations": {
+            "mode": "asymmetric",
+            "per_channel": true
         }
     }
 }

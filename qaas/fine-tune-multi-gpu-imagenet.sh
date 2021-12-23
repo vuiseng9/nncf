@@ -21,7 +21,7 @@ FTCFG=/workspace/nncf/qaas/cfg/mobilenet_v2_generated_ft_cfg.json
 
 mkdir -p $RUNDIR
 
-export CUDA_VISIBLE_DEVICES=0,1.2,3
+export CUDA_VISIBLE_DEVICES=0,1,2,3
 cd /workspace/nncf/examples/torch/classification
 python main.py \
     -m train \
