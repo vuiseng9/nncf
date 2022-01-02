@@ -74,6 +74,22 @@ class MagnitudeSparsityController(BaseSparsityAlgoController):
 
         self.set_sparsity_level(sparsity_init)
 
+    def sparsify_params(self):
+        from collections import OrderedDict
+        sparse_sd = OrderedDict()
+        with torch.no_grad():    
+            for sparse_info in self.sparsified_module_info:
+                for n, m in self.model.named_modules():
+                    if m == sparse_info.module:
+                        sparse_sd[n+'.weight'] = m.weight*sparse_info.operand.binary_mask
+
+        model_sd = self.model.state_dict()
+        for k, v in sparse_sd.items():
+            assert k in model_sd, "key not exists!"
+            model_sd[k] = sparse_sd[k]
+        self.model.load_state_dict(model_sd)
+
+
     def statistics(self, quickly_collected_only: bool = False) -> NNCFStatistics:
         collector = PTSparseModelStatisticsCollector(self.model, self.sparsified_module_info)
         model_statistics = collector.collect()
