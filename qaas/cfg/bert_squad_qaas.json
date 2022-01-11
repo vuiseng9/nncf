@@ -43,11 +43,11 @@
         },
         "weights": {
             "mode": "asymmetric",
-            "per_channel": true
+            "per_channel": false
         },
         "activations": {
             "mode": "asymmetric",
-            "per_channel": true
+            "per_channel": false
         }
     }
 }
