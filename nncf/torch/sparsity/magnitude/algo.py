@@ -89,6 +89,10 @@ class MagnitudeSparsityController(BaseSparsityAlgoController):
             model_sd[k] = sparse_sd[k]
         self.model.load_state_dict(model_sd)
 
+    def reverse_masking(self):
+        for sparse_info in self.sparsified_module_info:
+            sparse_info.operand.binary_mask = (sparse_info.module.weight != 0.0).type(torch.float32)
+
 
     def statistics(self, quickly_collected_only: bool = False) -> NNCFStatistics:
         collector = PTSparseModelStatisticsCollector(self.model, self.sparsified_module_info)
