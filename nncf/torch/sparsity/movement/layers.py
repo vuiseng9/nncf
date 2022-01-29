@@ -22,6 +22,10 @@ from enum import Enum
 from typing import Dict, List, Optional, Any
 from copy import deepcopy
 
+from torch.nn.modules import sparse
+import itertools as it
+import numpy as np
+
 class SparseStructure(str, Enum):
     FINE = "fine"
     BLOCK = "block"
@@ -132,7 +136,6 @@ class MovementSparsifyingWeight(BinaryMask):
                 score_shape.append(dim//factor)
             return score_shape, True
 
-
     def _expand_importance(self, importance):
         #TODO only works dense layer for now
         if self._bool_expand_importance:
@@ -158,6 +161,17 @@ class MovementSparsifyingWeight(BinaryMask):
                     self._expand_importance(self._importance)
                 ), p=1) / self._importance.numel())
 
+    def get_structured_mask(self, grain_size=None):
+        if grain_size is None:
+            grain_size = self.sparse_cfg.sparse_factors
+        
+        structured_mask_shape = [dim//grain_size[axes] for axes, dim in enumerate(list(self.binary_mask.shape))]
+        temp_shape = list(it.chain(*zip(list(structured_mask_shape), list(grain_size))))
+        structured_mask = self.binary_mask.detach().clone()
+        structured_mask = structured_mask.reshape(temp_shape)
+        structured_mask = structured_mask.amax(dim=(tuple((np.arange(len(self.binary_mask.shape)) * 2 + 1))))
+        # print("Mask Shape from {} to {}".format(structured_mask.shape, self.binary_mask.shape))
+        return structured_mask
 
 class MaskCalculationHook():
     def __init__(self, module):
