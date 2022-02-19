@@ -23,8 +23,11 @@ from typing import Dict, List, Optional, Any
 from copy import deepcopy
 
 from torch.nn.modules import sparse
+from torch import nn
 import itertools as it
 import numpy as np
+from nncf.torch.sparsity.functions import apply_binary_mask as apply_binary_mask_impl
+from nncf.torch.utils import is_tracing_state, no_jit_trace
 
 class SparseStructure(str, Enum):
     FINE = "fine"
@@ -39,35 +42,38 @@ class SparseConfig:
 
 
 @COMPRESSION_MODULES.register()
-class MovementSparsifyingWeight(BinaryMask):
+class MovementSparsifier(nn.Module):
     def __init__(self, 
                  weight_shape: List[int], 
                  frozen=True, 
                  compression_lr_multiplier=None, 
                  eps=1e-6, 
                  sparse_cfg=None):
-        super().__init__(weight_shape)
+        super().__init__()
 
         self.frozen = frozen
         self.eps = eps
         
+        self.weight_ctx = BinaryMask(weight_shape)
         self.sparse_cfg = sparse_cfg
-        self._importance_shape, self._bool_expand_importance = self._get_importance_shape(weight_shape)
-        self._importance = CompressionParameter(
-                                torch.zeros(self._importance_shape),
+
+        self._weight_importance_shape, self._bool_expand_weight_importance = self._get_importance_shape(weight_shape)
+        self._weight_importance = CompressionParameter(
+                                # torch.rand(self._weight_importance_shape),
+                                torch.zeros(self._weight_importance_shape),
                                 requires_grad=not self.frozen,
                                 compression_lr_multiplier=compression_lr_multiplier)
 
         self.lmbd = 0.5 # module_level_loss_weightage
         
         self.masking_threshold = 0.0
-        self.binary_mask = binary_mask_by_threshold(self._importance, self._masking_threshold)
+        self.weight_ctx.binary_mask = binary_mask_by_threshold(self._weight_importance, self._masking_threshold)
 
-        self.mask_calculation_hook = MaskCalculationHook(self)
+        self.weight_ctx_mask_calculation_hook = MaskCalculationHook(self)
 
     @property
     def importance(self):
-        return self._importance.data
+        return self._weight_importance.data
 
     @property
     def masking_threshold(self):
@@ -87,16 +93,26 @@ class MovementSparsifyingWeight(BinaryMask):
 
     def freeze_importance(self):
         self.frozen = True
-        self._importance.requires_grad=False
+        self._weight_importance.requires_grad=False
 
     def unfreeze_importance(self):
         self.frozen = False
-        self._importance.requires_grad=True
+        self._weight_importance.requires_grad=True
 
     def extra_repr(self):
         return '{}, {}'.format(
             self.sparse_cfg.mode, self.sparse_cfg.sparse_args)
 
+    def forward(self, weight):
+        if is_tracing_state():
+            with no_jit_trace():
+                return weight.mul_(self.binary_mask)
+        tmp_tensor = self._calc_training_binary_mask(weight)
+        return apply_binary_mask_impl(tmp_tensor, weight)
+
+    def apply_binary_mask(self, weight):
+        return self.weight_ctx.apply_binary_mask(weight)
+        
     def _get_importance_shape(self, weight_shape):
         #TODO:remove  weight_shape, r=32, c=32):
         # Default to fine_grained sparsity
@@ -120,10 +136,10 @@ class MovementSparsifyingWeight(BinaryMask):
 
         if self.sparse_cfg.mode == SparseStructure.PER_DIM:
             if len(self.sparse_cfg.sparse_args) != 1 or not isinstance(self.sparse_cfg.sparse_args[0], int):
-                raise ValueError("Invalid sparse_arg {}, per_dim expects a single digit that indicates axes".format(self.sparse_cfg.sparse_args))
+                raise ValueError("Invalid sparse_arg {}, per_dim expects a single digit that indicates axis".format(self.sparse_cfg.sparse_args))
 
             if self.sparse_cfg.sparse_args[0] < 0 or self.sparse_cfg.sparse_args[0] >= len(weight_shape):
-                raise ValueError("Invalid axes id {}, axes range {}".format(
+                raise ValueError("Invalid axis id {}, axes range {}".format(
                                                                         self.sparse_cfg.sparse_args[0],
                                                                         list(range(len(weight_shape)))))
             self.sparse_cfg.sparse_factors = deepcopy(weight_shape)
@@ -138,7 +154,7 @@ class MovementSparsifyingWeight(BinaryMask):
 
     def _expand_importance(self, importance):
         #TODO only works dense layer for now
-        if self._bool_expand_importance:
+        if self._bool_expand_weight_importance:
             return importance.repeat_interleave(
                 self.sparse_cfg.sparse_factors[0], dim=0).repeat_interleave(
                 self.sparse_cfg.sparse_factors[1], dim=1)
@@ -147,30 +163,30 @@ class MovementSparsifyingWeight(BinaryMask):
     def _calc_training_binary_mask(self, weight):
         if self.training and not self.frozen:
             _mask = binary_mask_by_threshold(
-                self._expand_importance(self._importance), 
+                self._expand_importance(self._weight_importance), 
                 self._masking_threshold
             )
-            self.binary_mask = _mask
+            self.weight_ctx.binary_mask = _mask
             return _mask
         else:
-            return self.binary_mask
+            return self.weight_ctx.binary_mask
 
     def loss(self):
         return self.lmbd * (torch.norm(
                 torch.sigmoid(
-                    self._expand_importance(self._importance)
-                ), p=1) / self._importance.numel())
+                    self._expand_importance(self._weight_importance)
+                ), p=1) / self._weight_importance.numel())
 
     def get_structured_mask(self, grain_size=None):
         if grain_size is None:
             grain_size = self.sparse_cfg.sparse_factors
         
-        structured_mask_shape = [dim//grain_size[axes] for axes, dim in enumerate(list(self.binary_mask.shape))]
+        structured_mask_shape = [dim//grain_size[axes] for axes, dim in enumerate(list(self.weight_ctx.binary_mask.shape))]
         temp_shape = list(it.chain(*zip(list(structured_mask_shape), list(grain_size))))
-        structured_mask = self.binary_mask.detach().clone()
+        structured_mask = self.weight_ctx.binary_mask.detach().clone()
         structured_mask = structured_mask.reshape(temp_shape)
-        structured_mask = structured_mask.amax(dim=(tuple((np.arange(len(self.binary_mask.shape)) * 2 + 1))))
-        # print("Mask Shape from {} to {}".format(structured_mask.shape, self.binary_mask.shape))
+        structured_mask = structured_mask.amax(dim=(tuple((np.arange(len(self.weight_ctx.binary_mask.shape)) * 2 + 1))))
+        # print("Mask Shape from {} to {}".format(structured_mask.shape, self.weight_ctx.binary_mask.shape))
         return structured_mask
 
 class MaskCalculationHook():
@@ -179,11 +195,11 @@ class MaskCalculationHook():
         self.hook = module._register_state_dict_hook(self.hook_fn)
 
     def hook_fn(self, module, destination, prefix, local_metadata):
-        module.binary_mask = binary_mask_by_threshold(
+        module.weight_ctx.binary_mask = binary_mask_by_threshold(
                                 module._expand_importance(module.importance), 
                                 module.masking_threshold
                              )
-        destination[prefix + '_binary_mask'] = module.binary_mask
+        destination[prefix + 'weight_ctx._binary_mask'] = module.weight_ctx.binary_mask
         return destination
 
     def close(self):

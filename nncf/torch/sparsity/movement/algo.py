@@ -24,7 +24,7 @@ from nncf.common.graph import NNCFNode
 from nncf.torch.compression_method_api import PTCompressionAlgorithmController
 from nncf.torch.nncf_network import NNCFNetwork
 from nncf.torch.sparsity.base_algo import BaseSparsityAlgoBuilder, BaseSparsityAlgoController, SparseModuleInfo
-from nncf.torch.sparsity.movement.layers import MovementSparsifyingWeight, SparseConfig, SparseStructure
+from nncf.torch.sparsity.movement.layers import MovementSparsifier, SparseConfig, SparseStructure
 from nncf.torch.sparsity.movement.loss import ImportanceLoss, SparseLossForPerLayerSparsity
 from nncf.torch.utils import get_world_size
 from nncf.common.utils.helpers import matches_any
@@ -34,7 +34,7 @@ from nncf.common.sparsity.schedulers import SPARSITY_SCHEDULERS
 from nncf.common.schedulers import StubCompressionScheduler
 from nncf.common.sparsity.statistics import MovementSparsityStatistics
 from nncf.common.statistics import NNCFStatistics
-from nncf.torch.search_building_blocks.search_blocks import get_building_blocks
+from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlock, get_building_blocks
 from collections import namedtuple
 from nncf.torch.dynamic_graph.operation_address import OperationAddress
 import networkx as nx
@@ -55,7 +55,7 @@ class MovementSparsityBuilder(BaseSparsityAlgoBuilder):
         if sparse_cfg is None:
             sparse_cfg = SparseConfig()
 
-        return MovementSparsifyingWeight(
+        return MovementSparsifier(
                     target_module_node.layer_attributes.get_weight_shape(), 
                     frozen=False,
                     compression_lr_multiplier=compression_lr_multiplier,
@@ -91,7 +91,7 @@ class MovementSparsityController(BaseSparsityAlgoController):
         #TODO: review - perhaps not the right place
         self.config = config
         self.prunableops_per_group = self._get_group_of_prunable_ops()
-        self.visualize_groups_of_prunables()
+        # self.visualize_groups_of_prunables()
 
     def compression_stage(self) -> CompressionStage:
         if self._mode == 'local':
@@ -234,7 +234,7 @@ class MovementSparsityController(BaseSparsityAlgoController):
         graph = nncf_network.get_original_graph()
         all_nodes_per_skipped_block_idxs = {}
         for idx, block in enumerate(blocks):
-            start_node, end_node = block
+            start_node, end_node = block.start_node, block.end_node
             start_node_key, end_node_key = None, None
             for node in graph._nx_graph._node.values():
                 if start_node == str(node['node_name']):
