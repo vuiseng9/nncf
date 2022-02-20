@@ -67,7 +67,7 @@ from nncf.torch.knowledge_distillation.knowledge_distillation_handler import Kno
 from nncf.torch.layer_utils import _NNCFModuleMixin
 from nncf.torch.layers import NNCF_MODULES
 from nncf.torch.layers import NNCF_WRAPPED_USER_MODULES_DICT
-from nncf.torch.module_operations import UpdateWeight
+from nncf.torch.module_operations import UpdateWeight, UpdateWeightAndBias
 from nncf.torch.quantization.layers import QUANTIZATION_MODULES
 from nncf.torch.utils import compute_FLOPs_hook
 from nncf.torch.utils import get_all_modules_by_type
@@ -717,7 +717,9 @@ class PTModelTransformer(ModelTransformer):
                                      input_port_id=target_point.input_port_id)
             fn = transformation_command.fn
             if target_point.type is TargetType.OPERATION_WITH_WEIGHTS:
-                fn = UpdateWeight(fn)
+                # TODO: how to set this according
+                # fn = UpdateWeight(fn)
+                fn = UpdateWeightAndBias(fn)
             tup = (fn, transformation_command.priority)
             if pt_ip not in fns_grouped_by_points:
                 fns_grouped_by_points[pt_ip] = [tup]

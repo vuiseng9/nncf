@@ -56,7 +56,7 @@ class MovementSparsityBuilder(BaseSparsityAlgoBuilder):
             sparse_cfg = SparseConfig()
 
         return MovementSparsifier(
-                    target_module_node.layer_attributes.get_weight_shape(), 
+                    target_module_node, 
                     frozen=False,
                     compression_lr_multiplier=compression_lr_multiplier,
                     eps=1e-6, 

@@ -44,32 +44,43 @@ class SparseConfig:
 @COMPRESSION_MODULES.register()
 class MovementSparsifier(nn.Module):
     def __init__(self, 
-                 weight_shape: List[int], 
+                 target_module_node, 
                  frozen=True, 
                  compression_lr_multiplier=None, 
                  eps=1e-6, 
                  sparse_cfg=None):
         super().__init__()
 
+        self.prune_bias = target_module_node.layer_attributes.bias
+
         self.frozen = frozen
         self.eps = eps
-        
-        self.weight_ctx = BinaryMask(weight_shape)
+        self.lmbd = 0.5 # module_level_loss_weightage
+        self.masking_threshold = 0.0
         self.sparse_cfg = sparse_cfg
-
-        self._weight_importance_shape, self._bool_expand_weight_importance = self._get_importance_shape(weight_shape)
+        
+        weight_shape = target_module_node.layer_attributes.get_weight_shape()
+        self.weight_ctx = BinaryMask(weight_shape)
+        self._weight_importance_shape, self._bool_expand_importance = self._get_importance_shape(weight_shape)
         self._weight_importance = CompressionParameter(
                                 # torch.rand(self._weight_importance_shape),
                                 torch.zeros(self._weight_importance_shape),
                                 requires_grad=not self.frozen,
                                 compression_lr_multiplier=compression_lr_multiplier)
-
-        self.lmbd = 0.5 # module_level_loss_weightage
-        
-        self.masking_threshold = 0.0
         self.weight_ctx.binary_mask = binary_mask_by_threshold(self._weight_importance, self._masking_threshold)
 
-        self.weight_ctx_mask_calculation_hook = MaskCalculationHook(self)
+        if self.prune_bias is True:
+            bias_shape = target_module_node.layer_attributes.get_bias_shape()
+            self.bias_ctx = BinaryMask(bias_shape)
+            self._bias_importance_shape = self._weight_importance_shape[0]
+            self._bias_importance = CompressionParameter(
+                                # torch.rand(self._bias_importance_shape),
+                                torch.zeros(self._bias_importance_shape),
+                                requires_grad=not self.frozen,
+                                compression_lr_multiplier=compression_lr_multiplier)
+            self.bias_ctx.binary_mask = binary_mask_by_threshold(self._bias_importance, self._masking_threshold)
+
+        self.mask_calculation_hook = MaskCalculationHook(self)
 
     @property
     def importance(self):
@@ -94,24 +105,51 @@ class MovementSparsifier(nn.Module):
     def freeze_importance(self):
         self.frozen = True
         self._weight_importance.requires_grad=False
+        if self.prune_bias is True:
+            self._bias_importance.requires_grad=False
 
     def unfreeze_importance(self):
         self.frozen = False
         self._weight_importance.requires_grad=True
+        if self.prune_bias is True:
+            self._bias_importance.requires_grad=True
+
 
     def extra_repr(self):
         return '{}, {}'.format(
             self.sparse_cfg.mode, self.sparse_cfg.sparse_args)
 
-    def forward(self, weight):
+    def forward(self, weight, bias):
         if is_tracing_state():
             with no_jit_trace():
                 return weight.mul_(self.binary_mask)
-        tmp_tensor = self._calc_training_binary_mask(weight)
-        return apply_binary_mask_impl(tmp_tensor, weight)
+        tmp_wtensor, tmp_btensor = self._calc_training_binary_mask(weight, bias)
+        wtensor = apply_binary_mask_impl(tmp_wtensor, weight)
+        btensor = apply_binary_mask_impl(tmp_btensor, bias)
+        return wtensor, btensor
 
-    def apply_binary_mask(self, weight):
-        return self.weight_ctx.apply_binary_mask(weight)
+    def _calc_training_binary_mask(self, weight, bias):
+        if self.training and not self.frozen:
+            w_mask = binary_mask_by_threshold(
+                self._expand_importance(self._weight_importance), 
+                self._masking_threshold
+            )
+            self.weight_ctx.binary_mask = w_mask
+            
+            b_mask = binary_mask_by_threshold(
+                self._expand_importance(self._bias_importance, isbias=True), 
+                self._masking_threshold
+            )
+            self.bias_ctx.binary_mask = b_mask
+            return w_mask, b_mask
+        else:
+            return self.weight_ctx.binary_mask, self.bias_ctx.binary_mask
+
+
+    def apply_binary_mask(self, param_tensor, isbias=False):
+        if isbias is True:
+            return self.bias_ctx.apply_binary_mask(param_tensor)
+        return self.weight_ctx.apply_binary_mask(param_tensor)
         
     def _get_importance_shape(self, weight_shape):
         #TODO:remove  weight_shape, r=32, c=32):
@@ -152,30 +190,23 @@ class MovementSparsifier(nn.Module):
                 score_shape.append(dim//factor)
             return score_shape, True
 
-    def _expand_importance(self, importance):
+    def _expand_importance(self, importance, isbias=False):
         #TODO only works dense layer for now
-        if self._bool_expand_weight_importance:
-            return importance.repeat_interleave(
-                self.sparse_cfg.sparse_factors[0], dim=0).repeat_interleave(
-                self.sparse_cfg.sparse_factors[1], dim=1)
+        if self._bool_expand_importance:
+            if isbias is False:
+                return importance.repeat_interleave(
+                    self.sparse_cfg.sparse_factors[0], dim=0).repeat_interleave(
+                    self.sparse_cfg.sparse_factors[1], dim=1)
+            else:
+                return importance.repeat_interleave(
+                    self.sparse_cfg.sparse_factors[0], dim=0)
         return importance
 
-    def _calc_training_binary_mask(self, weight):
-        if self.training and not self.frozen:
-            _mask = binary_mask_by_threshold(
-                self._expand_importance(self._weight_importance), 
-                self._masking_threshold
-            )
-            self.weight_ctx.binary_mask = _mask
-            return _mask
-        else:
-            return self.weight_ctx.binary_mask
-
     def loss(self):
-        return self.lmbd * (torch.norm(
-                torch.sigmoid(
-                    self._expand_importance(self._weight_importance)
-                ), p=1) / self._weight_importance.numel())
+        return self.lmbd * (
+            torch.norm(torch.sigmoid(self._expand_importance(self._weight_importance)), p=1) / self._weight_importance.numel() + \
+            torch.norm(torch.sigmoid(self._expand_importance(self._bias_importance, isbias=True)), p=1) / self._bias_importance.numel()
+        )
 
     def get_structured_mask(self, grain_size=None):
         if grain_size is None:
@@ -196,10 +227,17 @@ class MaskCalculationHook():
 
     def hook_fn(self, module, destination, prefix, local_metadata):
         module.weight_ctx.binary_mask = binary_mask_by_threshold(
-                                module._expand_importance(module.importance), 
+                                module._expand_importance(module._weight_importance), 
                                 module.masking_threshold
                              )
         destination[prefix + 'weight_ctx._binary_mask'] = module.weight_ctx.binary_mask
+
+        if module.prune_bias is True:
+            module.bias_ctx.binary_mask = binary_mask_by_threshold(
+                                module._expand_importance(module._bias_importance, isbias=True), 
+                                module.masking_threshold
+                            )
+            destination[prefix + 'bias_ctx._binary_mask'] = module.bias_ctx.binary_mask
         return destination
 
     def close(self):
