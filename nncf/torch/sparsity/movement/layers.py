@@ -63,22 +63,28 @@ class MovementSparsifier(nn.Module):
         self.weight_ctx = BinaryMask(weight_shape)
         self._weight_importance_shape, self._bool_expand_importance = self._get_importance_shape(weight_shape)
         self._weight_importance = CompressionParameter(
-                                # torch.rand(self._weight_importance_shape),
-                                torch.zeros(self._weight_importance_shape),
+                                torch.rand(self._weight_importance_shape),
+                                # torch.zeros(self._weight_importance_shape),
                                 requires_grad=not self.frozen,
                                 compression_lr_multiplier=compression_lr_multiplier)
-        self.weight_ctx.binary_mask = binary_mask_by_threshold(self._weight_importance, self._masking_threshold)
+        self.weight_ctx.binary_mask = binary_mask_by_threshold(
+                                            self._expand_importance(self._weight_importance), 
+                                            self._masking_threshold
+                                        )
 
         if self.prune_bias is True:
             bias_shape = target_module_node.layer_attributes.get_bias_shape()
             self.bias_ctx = BinaryMask(bias_shape)
             self._bias_importance_shape = self._weight_importance_shape[0]
             self._bias_importance = CompressionParameter(
-                                # torch.rand(self._bias_importance_shape),
-                                torch.zeros(self._bias_importance_shape),
+                                torch.rand(self._bias_importance_shape),
+                                # torch.zeros(self._bias_importance_shape),
                                 requires_grad=not self.frozen,
                                 compression_lr_multiplier=compression_lr_multiplier)
-            self.bias_ctx.binary_mask = binary_mask_by_threshold(self._bias_importance, self._masking_threshold)
+            self.bias_ctx.binary_mask = binary_mask_by_threshold(
+                                            self._expand_importance(self._bias_importance, isbias=True), 
+                                            self._masking_threshold
+                                        )
 
         self.mask_calculation_hook = MaskCalculationHook(self)
 
@@ -116,13 +122,13 @@ class MovementSparsifier(nn.Module):
 
 
     def extra_repr(self):
-        return '{}, {}'.format(
+        return 'sparse_structure: {}, {}'.format(
             self.sparse_cfg.mode, self.sparse_cfg.sparse_args)
 
     def forward(self, weight, bias):
         if is_tracing_state():
             with no_jit_trace():
-                return weight.mul_(self.binary_mask)
+                return weight.mul_(self.weight_ctx.binary_mask), bias.mul_(self.bias_ctx.binary_mask)
         tmp_wtensor, tmp_btensor = self._calc_training_binary_mask(weight, bias)
         wtensor = apply_binary_mask_impl(tmp_wtensor, weight)
         btensor = apply_binary_mask_impl(tmp_btensor, bias)
@@ -226,17 +232,17 @@ class MaskCalculationHook():
         self.hook = module._register_state_dict_hook(self.hook_fn)
 
     def hook_fn(self, module, destination, prefix, local_metadata):
-        module.weight_ctx.binary_mask = binary_mask_by_threshold(
-                                module._expand_importance(module._weight_importance), 
-                                module.masking_threshold
-                             )
+        # module.weight_ctx.binary_mask = binary_mask_by_threshold(
+        #                         module._expand_importance(module._weight_importance), 
+        #                         module.masking_threshold
+        #                      )
         destination[prefix + 'weight_ctx._binary_mask'] = module.weight_ctx.binary_mask
 
         if module.prune_bias is True:
-            module.bias_ctx.binary_mask = binary_mask_by_threshold(
-                                module._expand_importance(module._bias_importance, isbias=True), 
-                                module.masking_threshold
-                            )
+            # module.bias_ctx.binary_mask = binary_mask_by_threshold(
+            #                     module._expand_importance(module._bias_importance, isbias=True), 
+            #                     module.masking_threshold
+            #                 )
             destination[prefix + 'bias_ctx._binary_mask'] = module.bias_ctx.binary_mask
         return destination
 

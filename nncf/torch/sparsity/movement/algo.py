@@ -21,12 +21,17 @@ from nncf.config.extractors import extract_algo_specific_config
 from nncf.torch.algo_selector import PT_COMPRESSION_ALGORITHMS
 from nncf.api.compression import CompressionStage
 from nncf.common.graph import NNCFNode
+from nncf.common.graph.transformations.commands import TargetType
+from nncf.common.utils.logger import logger as nncf_logger
 from nncf.torch.compression_method_api import PTCompressionAlgorithmController
 from nncf.torch.nncf_network import NNCFNetwork
 from nncf.torch.sparsity.base_algo import BaseSparsityAlgoBuilder, BaseSparsityAlgoController, SparseModuleInfo
+from nncf.torch.graph.transformations.commands import PTInsertionCommand
+from nncf.torch.graph.transformations.commands import PTTargetPoint
+from nncf.torch.graph.transformations.commands import TransformationPriority
 from nncf.torch.sparsity.movement.layers import MovementSparsifier, SparseConfig, SparseStructure
 from nncf.torch.sparsity.movement.loss import ImportanceLoss, SparseLossForPerLayerSparsity
-from nncf.torch.utils import get_world_size
+from nncf.torch.utils import get_world_size, get_model_device
 from nncf.common.utils.helpers import matches_any
 from nncf.common.accuracy_aware_training.training_loop import ADAPTIVE_COMPRESSION_CONTROLLERS
 from nncf.torch.sparsity.collector import PTSparseModelStatisticsCollector
@@ -44,6 +49,34 @@ import os
 
 @PT_COMPRESSION_ALGORITHMS.register('movement_sparsity')
 class MovementSparsityBuilder(BaseSparsityAlgoBuilder):
+    def _sparsify_weights(self, target_model: NNCFNetwork) -> List[PTInsertionCommand]:
+        device = get_model_device(target_model)
+        sparsified_module_nodes = target_model.get_weighted_original_graph_nodes(
+            nncf_module_names=self.compressed_nncf_module_names)
+        insertion_commands = []
+        for module_node in sparsified_module_nodes:
+            node_name = module_node.node_name
+
+            if not self._should_consider_scope(node_name):
+                nncf_logger.info("Ignored adding Weight Sparsifier in scope: {}".format(node_name))
+                continue
+
+            nncf_logger.info("Adding Weight Sparsifier in scope: {}".format(node_name))
+            compression_lr_multiplier = \
+                self.config.get_redefinable_global_param_value_for_algo('compression_lr_multiplier',
+                                                                        self.name)
+            operation = self.create_weight_sparsifying_operation(module_node, compression_lr_multiplier)
+            hook = operation.to(device)
+            # TODO: hardcoded to OPERATION_WITH_WEIGHT_WT_BIAS
+            insertion_commands.append(PTInsertionCommand(PTTargetPoint(TargetType.OPERATION_WITH_WEIGHT_WT_BIAS,
+                                                                       target_node_name=node_name),
+                                                         hook, TransformationPriority.SPARSIFICATION_PRIORITY))
+            sparsified_module = target_model.get_containing_module(node_name)
+            self._sparsified_module_info.append(
+                SparseModuleInfo(node_name, sparsified_module, hook))
+
+        return insertion_commands
+
     def create_weight_sparsifying_operation(self, target_module_node: NNCFNode, compression_lr_multiplier: float):
         sparse_cfg=None
         if 'sparse_structure_by_scopes' in self._algo_config:
@@ -202,6 +235,34 @@ class MovementSparsityController(BaseSparsityAlgoController):
         """
         self._propagate_masks()
 
+    def _propagate_masks(self):
+        def calc_sparsity(tensor):
+            return 1-tensor.count_nonzero()/tensor.numel()
+        # nncf_logger.debug("MVMT - Propagating pruning masks")
+        # 1. Propagate masks for all modules
+        from collections import OrderedDict
+        sparse_sd = OrderedDict()
+        with torch.no_grad():    
+            for sparse_info in self.sparsified_module_info:
+                for n, m in self.model.named_modules():
+                    if m == sparse_info.module:
+                        # print("- SparseModule: {} -".format(n))
+                        # print("\tw_mask sparsity: {:.3f}".format(calc_sparsity(sparse_info.operand.weight_ctx.binary_mask)))
+                        # print("\tw_sd   sparsity: {:.3f}".format(calc_sparsity(m.weight)))
+                        sparse_sd[n+'.weight'] = sparse_info.operand.apply_binary_mask(m.weight)
+                        # print("\t*w_sd  sparsity: {:.3f}".format(calc_sparsity(sparse_sd[n+'.weight'])))
+
+                        if hasattr(m, 'bias'):
+                            # print("\tb_mask sparsity: {:.3f}".format(calc_sparsity(sparse_info.operand.bias_ctx.binary_mask)))
+                            # print("\tb_sd   sparsity: {:.3f}".format(calc_sparsity(m.bias)))
+                            sparse_sd[n+'.bias'] = sparse_info.operand.apply_binary_mask(m.bias, isbias=True)
+                            # print("\t*w_sd  sparsity: {:.3f}".format(calc_sparsity(sparse_sd[n+'.bias'])))
+
+        model_sd = self.model.state_dict()
+        for k, v in sparse_sd.items():
+            assert k in model_sd, "key not exists!"
+            model_sd[k] = sparse_sd[k]
+        self.model.load_state_dict(model_sd)
 
     def print_prunableops_per_group(self):
         for group, op_list in self.prunableops_per_group.items():
