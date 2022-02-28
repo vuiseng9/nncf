@@ -11,7 +11,7 @@
  limitations under the License.
 """
 from copy import deepcopy
-from typing import List
+from typing import DefaultDict, List, OrderedDict
 
 import torch
 import torch.distributed as dist
@@ -40,11 +40,13 @@ from nncf.common.schedulers import StubCompressionScheduler
 from nncf.common.sparsity.statistics import MovementSparsityStatistics
 from nncf.common.statistics import NNCFStatistics
 from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlock, get_building_blocks
-from collections import namedtuple
+from collections import defaultdict, namedtuple
 from nncf.torch.dynamic_graph.operation_address import OperationAddress
 import networkx as nx
 from nncf.torch.layers import NNCF_MODULES_OP_NAMES
 import os
+import numpy as np
+import pandas as pd
 
 
 @PT_COMPRESSION_ALGORITHMS.register('movement_sparsity')
@@ -98,6 +100,40 @@ class MovementSparsityBuilder(BaseSparsityAlgoBuilder):
     def _build_controller(self, model: NNCFNetwork) -> PTCompressionAlgorithmController:
         return MovementSparsityController(model, self._sparsified_module_info, self.config)
 
+class StructuredMask:
+    def __init__(self, 
+                 target_module_node, 
+                 sparsifying_node_name, 
+                 grid_size,
+                 dependent_group_id,
+                 sparse_module_info):
+
+        self.target_module_node=target_module_node
+        self.sparsifying_node_name=sparsifying_node_name
+        self.grid_size=grid_size
+        self.dependent_group_id=dependent_group_id
+        self.sparse_module_info=sparse_module_info
+
+    @property
+    def independent_structured_mask(self):
+        return self._independent_structured_mask
+    
+    @independent_structured_mask.setter
+    def independent_structured_mask(self, tensor):
+        with torch.no_grad():
+            self._independent_structured_mask = tensor
+            # self._independent_structured_mask.set_(tensor)
+
+    @property
+    def dependent_structured_mask(self):
+        return self._dependent_structured_mask
+    
+    @dependent_structured_mask.setter
+    def dependent_structured_mask(self, tensor):
+        # TODO: check dim
+        with torch.no_grad():
+            self._dependent_structured_mask = tensor
+            # self._dependent_structured_mask.set_(tensor)
 
 @ADAPTIVE_COMPRESSION_CONTROLLERS.register('pt_movement_sparsity')
 class MovementSparsityController(BaseSparsityAlgoController):
@@ -125,6 +161,7 @@ class MovementSparsityController(BaseSparsityAlgoController):
         self.config = config
         self.prunableops_per_group = self._get_group_of_prunable_ops()
         # self.visualize_groups_of_prunables()
+        self.create_structured_sparsity_context()
 
     def compression_stage(self) -> CompressionStage:
         if self._mode == 'local':
@@ -190,44 +227,253 @@ class MovementSparsityController(BaseSparsityAlgoController):
         nncf_stats.register('movement_sparsity', stats)
         return nncf_stats
 
+    def create_structured_sparsity_context(self):
+        DEBUG=False
+        # Structured_mask per tensor -------------------
+        node_name_sparse_mod_info_map = {sparse_info.module_node_name: sparse_info for sparse_info in self.sparsified_module_info}
+        self.node_name_sparse_mod_info_map = node_name_sparse_mod_info_map
+
+        self.structured_ctx_by_group = defaultdict(list)
+        masks_per_group = dict()
+        op2namedmodule = dict()
+
+        for group_id, op_list in self.prunableops_per_group.items():
+            masks_per_group[group_id]=dict()
+            for op in op_list:
+                sparsifying_node_name = str(op.op_addr)
+
+                # find op's torch module name
+                for n, m in self.model.named_modules():
+                    if m == op.op_mod:
+                        op2namedmodule[sparsifying_node_name] = n
+                        break
+                
+                sparse_module_info = node_name_sparse_mod_info_map[sparsifying_node_name]
+
+                if any(map(sparsifying_node_name.__contains__, ['query','key','value'])):
+                    # these matrices must be pruned by group(s) of cols
+                    nrow_per_head = self.model.nncf_module.bert.config.hidden_size//self.model.nncf_module.bert.config.num_attention_heads
+                    ncol_per_head = self.model.nncf_module.bert.config.hidden_size
+                    grid_size = (nrow_per_head, ncol_per_head)
+                    
+                    if DEBUG is True:
+                        masks_per_group[group_id]['qkv_grain'] = grid_size
+                        mask = sparse_module_info.operand.get_structured_mask(grid_size)
+                        if 'qkv' not in masks_per_group[group_id]:
+                            masks_per_group[group_id]['qkv'] = [mask]
+                            masks_per_group[group_id]['qkv_nodes'] = [sparsifying_node_name]
+                        else:
+                            masks_per_group[group_id]['qkv'].append(mask)
+                            masks_per_group[group_id]['qkv_nodes'].append(sparsifying_node_name)
+                        print("{:15} | {:20} | {}".format('group_of_rows', str(mask.shape), sparsifying_node_name))
+
+                    structured_mask_ctx = StructuredMask(
+                                                sparse_module_info.module_node_name,
+                                                sparsifying_node_name,
+                                                grid_size,
+                                                group_id,
+                                                sparse_module_info)
+
+                    structured_mask_ctx.independent_structured_mask = sparse_module_info.operand.get_structured_mask(grid_size)
+                    sparse_module_info.operand.structured_mask_ctx = structured_mask_ctx
+                    self.structured_ctx_by_group[group_id].append(sparse_module_info.operand.structured_mask_ctx)
+
+                    if DEBUG is True:
+                        assert ((mask==structured_mask_ctx.independent_structured_mask).sum() == mask.numel()).item(), "qkv: Logical Bug, pls debug"
+                    
+                elif 'BertSelfOutput' in sparsifying_node_name:
+                    # this matrix must be pruned by group(s) of cols
+                    ncol_per_head = self.model.nncf_module.bert.config.hidden_size//self.model.nncf_module.bert.config.num_attention_heads
+                    nrow_per_head = self.model.nncf_module.bert.config.hidden_size
+                    grid_size = (nrow_per_head, ncol_per_head)
+
+                    if DEBUG is True:
+                        masks_per_group[group_id]['concat_grain'] = grid_size
+                        mask = sparse_module_info.operand.get_structured_mask(grid_size)
+                        masks_per_group[group_id]['concat'] = mask
+                        masks_per_group[group_id]['concat_node'] = sparsifying_node_name
+                        print("{:15} | {:20} | {}".format('group_of_cols', str(mask.shape), sparsifying_node_name))
+
+                    structured_mask_ctx = StructuredMask(
+                                                sparse_module_info.module_node_name,
+                                                sparsifying_node_name,
+                                                grid_size,
+                                                group_id,
+                                                sparse_module_info)
+
+                    structured_mask_ctx.independent_structured_mask = sparse_module_info.operand.get_structured_mask(grid_size)
+                    sparse_module_info.operand.structured_mask_ctx = structured_mask_ctx
+                    self.structured_ctx_by_group[group_id].append(sparse_module_info.operand.structured_mask_ctx)
+
+                    if DEBUG is True:
+                        assert ((mask==structured_mask_ctx.independent_structured_mask).sum() == mask.numel()).item(), "BertSelfOutput: Logical Bug, pls debug"
+
+                elif any(map(sparsifying_node_name.__contains__, ['BertIntermediate','BertOutput'])):
+                    mask = sparse_module_info.operand.get_structured_mask()
+                    grid_size = sparse_module_info.operand.sparse_cfg.sparse_factors
+
+                    if DEBUG is True:
+                        if 'BertIntermediate' in sparsifying_node_name:
+                            masks_per_group[group_id]['ffnn_w1_grain'] = grid_size
+                            masks_per_group[group_id]['ffnn_w1'] = mask
+                            masks_per_group[group_id]['ffnn_w1_node'] = sparsifying_node_name
+                        elif 'BertOutput' in sparsifying_node_name:
+                            masks_per_group[group_id]['ffnn_w2_grain'] = grid_size
+                            masks_per_group[group_id]['ffnn_w2'] = mask
+                            masks_per_group[group_id]['ffnn_w2_node'] = sparsifying_node_name
+                        print("{:15} | {:20} | {}".format('per_dim', str(mask.shape), sparsifying_node_name))
+
+                    structured_mask_ctx = StructuredMask(
+                                                sparse_module_info.module_node_name,
+                                                sparsifying_node_name,
+                                                grid_size,
+                                                group_id,
+                                                sparse_module_info)
+
+                    structured_mask_ctx.independent_structured_mask = sparse_module_info.operand.get_structured_mask(grid_size)
+                    sparse_module_info.operand.structured_mask_ctx = structured_mask_ctx
+                    self.structured_ctx_by_group[group_id].append(sparse_module_info.operand.structured_mask_ctx)
+
+                    if DEBUG is True:
+                        assert ((mask==structured_mask_ctx.independent_structured_mask).sum() == mask.numel()).item(), "ffnn: Logical Bug, pls debug"
+                else:
+                    raise ValueError("Invalid entry, pls debug")
+        
+        self.op2namedmodule = op2namedmodule
+
+        # This Structure can be improved but good for now: TODO: revision of structure
+        # masks_per_group[group_id][sparsifying_node_name] = mask
+
+    def reset_independent_structured_mask(self):
+        for group_id, ctxes in self.structured_ctx_by_group.items():
+            for ctx in ctxes:
+                ctx.independent_structured_mask = ctx.sparse_module_info.operand.get_structured_mask(ctx.grid_size)
+
+    def populate_structured_mask(self):
+        def inflate_structured_mask(mask, grid_size):
+            assert len(mask.shape) == len(grid_size), "Unmatching dimension"
+            inflated_mask = mask.detach().clone()
+            for axis, repeat in enumerate(grid_size):
+                inflated_mask = inflated_mask.repeat_interleave(repeat, dim=axis)
+            return inflated_mask
+
+        for group_id, ctxes in self.structured_ctx_by_group.items():
+            for ctx in ctxes:
+                ctx.sparse_module_info.operand.set_structured_mask(
+                    inflate_structured_mask(ctx.dependent_structured_mask, ctx.grid_size)
+                )
+
+    def resolve_structured_mask(self):
+        for group_id, ctxes in self.structured_ctx_by_group.items():
+            allnodenames = list(map(lambda x: x.target_module_node, ctxes))
+            
+            if any(map(ctxes[0].target_module_node.__contains__, ['query','key','value','BertSelfOutput'])):
+                qid = list(map(lambda x: x.__contains__('query'), allnodenames)).index(True)
+                kid = list(map(lambda x: x.__contains__('key'), allnodenames)).index(True)
+                vid = list(map(lambda x: x.__contains__('value'), allnodenames)).index(True)
+                oid = list(map(lambda x: x.__contains__('BertSelfOutput'), allnodenames)).index(True)
+
+                coarse_mask = ctxes[qid].independent_structured_mask.logical_or(
+                                ctxes[kid].independent_structured_mask).logical_or(
+                                    ctxes[vid].independent_structured_mask).logical_or(
+                                        ctxes[oid].independent_structured_mask.transpose(0, 1)
+                                    ).to(torch.float32)
+                ctxes[qid].dependent_structured_mask = coarse_mask
+                ctxes[kid].dependent_structured_mask = coarse_mask
+                ctxes[vid].dependent_structured_mask = coarse_mask
+                ctxes[oid].dependent_structured_mask = coarse_mask.transpose(0, 1)
+            elif any(map(ctxes[0].target_module_node.__contains__, ['BertIntermediate','BertOutput'])):
+                w1_id = list(map(lambda x: x.__contains__('BertIntermediate'), allnodenames)).index(True)
+                w2_id = list(map(lambda x: x.__contains__('BertOutput'), allnodenames)).index(True)
+                coarse_mask = ctxes[w1_id].independent_structured_mask.logical_or(
+                                ctxes[w2_id].independent_structured_mask.transpose(0, 1)
+                              ).to(torch.float32)
+
+                ctxes[w1_id].dependent_structured_mask = coarse_mask
+                ctxes[w2_id].dependent_structured_mask = coarse_mask.transpose(0, 1)
+            else:
+                raise ValueError("logical bug, pls debug")
+
+        # # Structured_mask alignment by group -------------------
+
+        # for group_id, mask_dict in masks_per_group.items():
+        #     if 'qkv' in mask_dict:
+        #         final_mask = torch.zeros_like(mask_dict['qkv'][0]).to(torch.bool)
+        #         for each_mask in mask_dict['qkv']:
+        #             final_mask = final_mask.logical_or(each_mask)
+        #         final_mask = final_mask.logical_or(mask_dict['concat'].transpose(0, 1))
+        #         final_mask = final_mask.to(torch.float32)
+
+        #         masks_per_group[group_id]['final_structured_mask'] = dict(
+        #             qkv=final_mask,
+        #             concat=final_mask.transpose(0, 1)
+        #         )
+
+        #     elif 'ffnn_w1' in mask_dict:
+        #         final_mask = mask_dict['ffnn_w1'].logical_or(mask_dict['ffnn_w2'].transpose(0, 1))
+        #         final_mask = final_mask.to(torch.float32)
+
+        #         masks_per_group[group_id]['final_structured_mask'] = dict(
+        #             ffnn_w1=final_mask,
+        #             ffnn_w2=final_mask.transpose(0, 1)
+        #         )
+        #     else:
+        #         raise ValueError("Invalid entry, pls debug")
+
+    def report_structured_sparsity(self, dirname):
+        listofentry=[]
+        for group_id, ctxes in self.structured_ctx_by_group.items():
+            for ctx in ctxes:
+                nncf_graph_node_name = ctx.sparsifying_node_name
+                named_mod = self.op2namedmodule[nncf_graph_node_name]
+                block_id = group_id
+                orig_wshape = tuple(list(ctx.sparse_module_info.module.weight.shape))
+                if hasattr(ctx.sparse_module_info.module, 'bias'):
+                    orig_bshape = tuple(list(ctx.sparse_module_info.module.bias.shape))
+
+                if any(map(nncf_graph_node_name.__contains__, ['BertIntermediate','BertOutput'])):
+                    head_id_to_keep = 'skip reporting'
+                    if nncf_graph_node_name.__contains__('BertIntermediate'):
+                        final_wshape = (ctx.sparse_module_info.operand.weight_ctx.binary_mask.amax(dim=1).count_nonzero().item(), orig_wshape[1])
+                        final_bshape = (ctx.sparse_module_info.operand.bias_ctx.binary_mask.count_nonzero().item(),)
+                    else:
+                        final_wshape = (orig_wshape[0], ctx.sparse_module_info.operand.weight_ctx.binary_mask.amax(dim=0).count_nonzero().item())
+                        final_bshape = (ctx.sparse_module_info.operand.bias_ctx.binary_mask.count_nonzero().item(),)
+                else:
+                    ndiv = ctx.dependent_structured_mask.reshape(-1).shape[0]
+                    head_id_to_keep = torch.masked_select(torch.range(0, ndiv-1, dtype=int), 
+                                        ctx.dependent_structured_mask.reshape(-1).cpu().to(bool)).tolist()
+
+                    if any(map(nncf_graph_node_name.__contains__, ['query','key','value'])):
+                        # prune by row
+                        final_wshape = (ctx.sparse_module_info.operand.weight_ctx.binary_mask.amax(dim=1).count_nonzero().item(), orig_wshape[1])
+                        final_bshape = (ctx.sparse_module_info.operand.bias_ctx.binary_mask.count_nonzero().item(),)
+                    else:
+                        # prune by col
+                        final_wshape = (orig_wshape[0], ctx.sparse_module_info.operand.weight_ctx.binary_mask.amax(dim=0).count_nonzero().item())
+                        final_bshape = (ctx.sparse_module_info.operand.bias_ctx.binary_mask.count_nonzero().item(),)
+
+                listofentry.append(
+                    OrderedDict(
+                        pt_module_name=named_mod,
+                        block_id=block_id,
+                        weight_shape=orig_wshape,
+                        prune_w_shape=final_wshape,
+                        bias_shape=orig_bshape,
+                        prune_b_shape=final_bshape,
+                        head_id_to_keep=head_id_to_keep,
+                        nncf_graph_node=nncf_graph_node_name
+                    )
+                )
+        df = pd.DataFrame.from_dict(listofentry)
+        df.to_csv(os.path.join(dirname, 'structured_sparsity.csv'))
+        with open(os.path.join(dirname, 'structured_sparsity.md'), 'w') as f:
+            df.to_markdown(f)
+
+
     @property
     def compression_rate(self):
         return self.statistics().movement_sparsity.model_statistics.sparsity_level
-
-    def _propagate_masks(self):
-        # nncf_logger.debug("MVMT - Propagating pruning masks")
-        # 1. Propagate masks for all modules
-        from collections import OrderedDict
-        sparse_sd = OrderedDict()
-        with torch.no_grad():    
-            for sparse_info in self.sparsified_module_info:
-                for n, m in self.model.named_modules():
-                    if m == sparse_info.module:
-                        # print(n, 1-sparse_info.operand.binary_mask.count_nonzero()/sparse_info.operand.binary_mask.numel())
-                        # print("pre", 1-m.weight.count_nonzero()/m.weight.numel())
-                        # print("mask", 1-sparse_info.operand.binary_mask.count_nonzero()/sparse_info.operand.binary_mask.numel())
-                        sparse_sd[n+'.weight'] = m.weight*sparse_info.operand.binary_mask
-                        # print("post", 1-sparse_sd[n+'.weight'].count_nonzero()/sparse_sd[n+'.weight'].numel())
-                # sd = sparse_info.module.state_dict()
-                # sd['weight'] = sparse_info.module.weight*sparse_info.operand.binary_mask
-                # sparse_info.module.load_state_dict(sd)
-
-        model_sd = self.model.state_dict()
-        for k, v in sparse_sd.items():
-            assert k in model_sd, "key not exists!"
-            model_sd[k] = sparse_sd[k]
-        self.model.load_state_dict(model_sd)
-
-        # init_output_masks_in_graph(graph, self.pruned_module_groups_info.get_all_nodes())
-        # MaskPropagationAlgorithm(graph, PT_PRUNING_OPERATOR_METATYPES).mask_propagation()
-
-        # # 2. Set the masks for Batch/Group Norms
-        # pruned_node_modules = []
-        # for node, pruning_block, node_module in self._pruned_norms_operators:
-        #     if node_module not in pruned_node_modules:
-        #         # Setting masks for BN nodes
-        #         pruning_block.binary_filter_pruning_mask = node.data['output_mask'].tensor
-        #         pruned_node_modules.append(node_module)
 
     def prepare_for_export(self):
         """

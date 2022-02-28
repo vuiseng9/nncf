@@ -409,6 +409,7 @@ class PolynomialThresholdScheduler(BaseCompressionScheduler):
         else:
             self.current_importance_threshold  = self._calculate_threshold_level()
 
+        # self.current_importance_threshold = 0.1
         self._update_importance_masking_threshold()
         # if _cached_threshold != self.current_importance_threshold  or _cached_regu_lambda != self.current_importance_lambda:
         #     for n, m in self._controller.model.named_modules():

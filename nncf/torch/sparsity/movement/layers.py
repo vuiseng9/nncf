@@ -51,6 +51,9 @@ class MovementSparsifier(nn.Module):
                  sparse_cfg=None):
         super().__init__()
 
+        DEBUG=False
+
+        self.target_module_node = target_module_node
         self.prune_bias = target_module_node.layer_attributes.bias
 
         self.frozen = frozen
@@ -63,8 +66,7 @@ class MovementSparsifier(nn.Module):
         self.weight_ctx = BinaryMask(weight_shape)
         self._weight_importance_shape, self._bool_expand_importance = self._get_importance_shape(weight_shape)
         self._weight_importance = CompressionParameter(
-                                torch.rand(self._weight_importance_shape),
-                                # torch.zeros(self._weight_importance_shape),
+                                torch.rand(self._weight_importance_shape) if DEBUG is True else torch.zeros(self._weight_importance_shape),
                                 requires_grad=not self.frozen,
                                 compression_lr_multiplier=compression_lr_multiplier)
         self.weight_ctx.binary_mask = binary_mask_by_threshold(
@@ -77,8 +79,7 @@ class MovementSparsifier(nn.Module):
             self.bias_ctx = BinaryMask(bias_shape)
             self._bias_importance_shape = self._weight_importance_shape[0]
             self._bias_importance = CompressionParameter(
-                                torch.rand(self._bias_importance_shape),
-                                # torch.zeros(self._bias_importance_shape),
+                                torch.rand(self._bias_importance_shape) if DEBUG is True else torch.zeros(self._bias_importance_shape),
                                 requires_grad=not self.frozen,
                                 compression_lr_multiplier=compression_lr_multiplier)
             self.bias_ctx.binary_mask = binary_mask_by_threshold(
@@ -224,7 +225,19 @@ class MovementSparsifier(nn.Module):
         structured_mask = structured_mask.reshape(temp_shape)
         structured_mask = structured_mask.amax(dim=(tuple((np.arange(len(self.weight_ctx.binary_mask.shape)) * 2 + 1))))
         # print("Mask Shape from {} to {}".format(structured_mask.shape, self.weight_ctx.binary_mask.shape))
+        if self.prune_bias is True:
+            structured_bias_mask_shape = structured_mask_shape[0]
+            structured_bias_mask = self.bias_ctx.binary_mask.detach().clone()
+            structured_bias_mask = structured_bias_mask.reshape((structured_bias_mask_shape, -1))
+            structured_bias_mask = structured_bias_mask.amax(dim=1)
+            dim_aligned = structured_bias_mask.repeat(structured_mask.shape[1]).reshape(-1, structured_mask.shape[1])
+            structured_mask = structured_mask.logical_or(dim_aligned).to(torch.float32)
         return structured_mask
+
+    def set_structured_mask(self, structured_mask):
+        self.weight_ctx.binary_mask=structured_mask
+        if self.prune_bias is True:
+            self.bias_ctx.binary_mask=structured_mask.amax(dim=1)
 
 class MaskCalculationHook():
     def __init__(self, module):
