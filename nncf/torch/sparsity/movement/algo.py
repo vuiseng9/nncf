@@ -47,6 +47,7 @@ from nncf.torch.layers import NNCF_MODULES_OP_NAMES
 import os
 import numpy as np
 import pandas as pd
+import functools
 
 
 @PT_COMPRESSION_ALGORITHMS.register('movement_sparsity')
@@ -159,7 +160,8 @@ class MovementSparsityController(BaseSparsityAlgoController):
 
         #TODO: review - perhaps not the right place
         self.config = config
-        self.prunableops_per_group = self._get_group_of_prunable_ops()
+        # self.prunableops_per_group = self._get_group_of_prunable_ops()
+        self.prunableops_per_group = self._get_group_of_prunable_ops_wav2vec2()
         # self.visualize_groups_of_prunables()
         self.create_structured_sparsity_context()
 
@@ -237,6 +239,14 @@ class MovementSparsityController(BaseSparsityAlgoController):
         masks_per_group = dict()
         op2namedmodule = dict()
 
+        # qkv_keywords = ['query','key','value']
+        # attn_o_keyword = 'BertSelfOutput'
+        # ffnn_keywords = ['BertIntermediate','BertOutput']
+
+        qkv_keywords = ['q_proj','k_proj','v_proj']
+        attn_o_keyword = 'out_proj'
+        ffnn_keywords = ['intermediate_dense','output_dense']
+
         for group_id, op_list in self.prunableops_per_group.items():
             masks_per_group[group_id]=dict()
             for op in op_list:
@@ -248,12 +258,19 @@ class MovementSparsityController(BaseSparsityAlgoController):
                         op2namedmodule[sparsifying_node_name] = n
                         break
                 
-                sparse_module_info = node_name_sparse_mod_info_map[sparsifying_node_name]
+                if 'Wav2Vec2ForSequenceClassification/Wav2Vec2Model[wav2vec2]/Wav2Vec2Encoder[encoder]/Wav2Vec2PositionalConvEmbedding[pos_conv_embed]/NNCFConv1d[conv]/conv1d_0' == sparsifying_node_name:
+                    continue
+                else:
+                    sparse_module_info = node_name_sparse_mod_info_map[sparsifying_node_name]
 
-                if any(map(sparsifying_node_name.__contains__, ['query','key','value'])):
+                if any(map(sparsifying_node_name.__contains__, qkv_keywords)):
                     # these matrices must be pruned by group(s) of cols
-                    nrow_per_head = self.model.nncf_module.bert.config.hidden_size//self.model.nncf_module.bert.config.num_attention_heads
-                    ncol_per_head = self.model.nncf_module.bert.config.hidden_size
+                    # nrow_per_head = self.model.nncf_module.bert.config.hidden_size//self.model.nncf_module.bert.config.num_attention_heads
+                    # ncol_per_head = self.model.nncf_module.bert.config.hidden_size
+
+                    nrow_per_head = self.model.nncf_module.config.hidden_size//self.model.nncf_module.config.num_attention_heads
+                    ncol_per_head = self.model.nncf_module.config.hidden_size
+
                     grid_size = (nrow_per_head, ncol_per_head)
                     
                     if DEBUG is True:
@@ -281,10 +298,14 @@ class MovementSparsityController(BaseSparsityAlgoController):
                     if DEBUG is True:
                         assert ((mask==structured_mask_ctx.independent_structured_mask).sum() == mask.numel()).item(), "qkv: Logical Bug, pls debug"
                     
-                elif 'BertSelfOutput' in sparsifying_node_name:
+                elif attn_o_keyword in sparsifying_node_name:
                     # this matrix must be pruned by group(s) of cols
-                    ncol_per_head = self.model.nncf_module.bert.config.hidden_size//self.model.nncf_module.bert.config.num_attention_heads
-                    nrow_per_head = self.model.nncf_module.bert.config.hidden_size
+                    # nrow_per_head = self.model.nncf_module.bert.config.hidden_size
+                    # ncol_per_head = self.model.nncf_module.bert.config.hidden_size//self.model.nncf_module.bert.config.num_attention_heads
+
+                    nrow_per_head = self.model.nncf_module.config.hidden_size
+                    ncol_per_head = self.model.nncf_module.config.hidden_size//self.model.nncf_module.config.num_attention_heads
+
                     grid_size = (nrow_per_head, ncol_per_head)
 
                     if DEBUG is True:
@@ -308,7 +329,7 @@ class MovementSparsityController(BaseSparsityAlgoController):
                     if DEBUG is True:
                         assert ((mask==structured_mask_ctx.independent_structured_mask).sum() == mask.numel()).item(), "BertSelfOutput: Logical Bug, pls debug"
 
-                elif any(map(sparsifying_node_name.__contains__, ['BertIntermediate','BertOutput'])):
+                elif any(map(sparsifying_node_name.__contains__, ffnn_keywords)):
                     mask = sparse_module_info.operand.get_structured_mask()
                     grid_size = sparse_module_info.operand.sparse_cfg.sparse_factors
 
@@ -347,7 +368,14 @@ class MovementSparsityController(BaseSparsityAlgoController):
     def reset_independent_structured_mask(self):
         for group_id, ctxes in self.structured_ctx_by_group.items():
             for ctx in ctxes:
+                print("Mask {} | grain {} | s.Mask {} | {}".format(
+                    tuple(ctx.sparse_module_info.operand.weight_ctx.binary_mask.shape),
+                    ctx.grid_size,
+                    tuple(ctx.independent_structured_mask.shape),
+                    '/'.join(ctx.sparse_module_info.module_node_name.split("/")[-4:])))
                 ctx.independent_structured_mask = ctx.sparse_module_info.operand.get_structured_mask(ctx.grid_size)
+                print("=> s.Mask {}".format(tuple(ctx.independent_structured_mask.shape)))
+                print("--------------")
 
     def populate_structured_mask(self):
         def inflate_structured_mask(mask, grid_size):
@@ -364,14 +392,33 @@ class MovementSparsityController(BaseSparsityAlgoController):
                 )
 
     def resolve_structured_mask(self):
+        # q_keyword = 'query'
+        # k_keyword = 'key'
+        # v_keyword = 'value'
+        # o_keyword = 'BertSelfOutput'
+
+        # ffnn_w1_keyword = 'BertIntermediate'
+        # ffnn_w2_keyword = 'BertOutput'
+
+        q_keyword = 'q_proj'
+        k_keyword = 'k_proj'
+        v_keyword = 'v_proj'
+        o_keyword = 'out_proj'
+
+        ffnn_w1_keyword = 'intermediate_dense'
+        ffnn_w2_keyword = 'output_dense'
+
+        mhsa_keywords = [q_keyword, k_keyword, v_keyword, o_keyword]
+        ffnn_keywords = [ffnn_w1_keyword, ffnn_w2_keyword]
+
         for group_id, ctxes in self.structured_ctx_by_group.items():
             allnodenames = list(map(lambda x: x.target_module_node, ctxes))
             
-            if any(map(ctxes[0].target_module_node.__contains__, ['query','key','value','BertSelfOutput'])):
-                qid = list(map(lambda x: x.__contains__('query'), allnodenames)).index(True)
-                kid = list(map(lambda x: x.__contains__('key'), allnodenames)).index(True)
-                vid = list(map(lambda x: x.__contains__('value'), allnodenames)).index(True)
-                oid = list(map(lambda x: x.__contains__('BertSelfOutput'), allnodenames)).index(True)
+            if any(map(ctxes[0].target_module_node.__contains__, mhsa_keywords)):
+                qid = list(map(lambda x: x.__contains__(q_keyword), allnodenames)).index(True)
+                kid = list(map(lambda x: x.__contains__(k_keyword), allnodenames)).index(True)
+                vid = list(map(lambda x: x.__contains__(v_keyword), allnodenames)).index(True)
+                oid = list(map(lambda x: x.__contains__(o_keyword), allnodenames)).index(True)
 
                 coarse_mask = ctxes[qid].independent_structured_mask.logical_or(
                                 ctxes[kid].independent_structured_mask).logical_or(
@@ -382,9 +429,9 @@ class MovementSparsityController(BaseSparsityAlgoController):
                 ctxes[kid].dependent_structured_mask = coarse_mask
                 ctxes[vid].dependent_structured_mask = coarse_mask
                 ctxes[oid].dependent_structured_mask = coarse_mask.transpose(0, 1)
-            elif any(map(ctxes[0].target_module_node.__contains__, ['BertIntermediate','BertOutput'])):
-                w1_id = list(map(lambda x: x.__contains__('BertIntermediate'), allnodenames)).index(True)
-                w2_id = list(map(lambda x: x.__contains__('BertOutput'), allnodenames)).index(True)
+            elif any(map(ctxes[0].target_module_node.__contains__, ffnn_keywords)):
+                w1_id = list(map(lambda x: x.__contains__(ffnn_w1_keyword), allnodenames)).index(True)
+                w2_id = list(map(lambda x: x.__contains__(ffnn_w2_keyword), allnodenames)).index(True)
                 coarse_mask = ctxes[w1_id].independent_structured_mask.logical_or(
                                 ctxes[w2_id].independent_structured_mask.transpose(0, 1)
                               ).to(torch.float32)
@@ -461,8 +508,8 @@ class MovementSparsityController(BaseSparsityAlgoController):
                         prune_w_shape=final_wshape,
                         bias_shape=orig_bshape,
                         prune_b_shape=final_bshape,
-                        head_id_to_keep=head_id_to_keep,
-                        nncf_graph_node=nncf_graph_node_name
+                        # head_id_to_keep=head_id_to_keep,
+                        # nncf_graph_node=nncf_graph_node_name
                     )
                 )
         df = pd.DataFrame.from_dict(listofentry)
@@ -535,6 +582,67 @@ class MovementSparsityController(BaseSparsityAlgoController):
                             self.model.get_module_by_scope(op_address.scope_in_model)
                         )
                     )
+        return prunableops_per_group
+
+    def _get_group_of_prunable_ops_wav2vec2(self):
+        def create_multiindex(list_of_string, level_delimiter="/"):
+            def pad_tokenlist_to_depth(tokens, depth):
+                gap = depth - len(tokens)
+                tokens += [None] * gap
+                return tokens
+            
+            list_of_tokenlist = list(map(lambda x: x.split(sep="/"), list_of_string))
+            depth = max(map(len, list_of_tokenlist))
+            mapfunc = functools.partial(pad_tokenlist_to_depth, depth=depth)
+            equal_depth_tokenlist = list(map(mapfunc, list_of_tokenlist))
+            midx = pd.MultiIndex.from_arrays(np.array(equal_depth_tokenlist).transpose())
+            return midx
+            
+        node_name_sparse_mod_info_map = {sparse_info.module_node_name: sparse_info for sparse_info in self.sparsified_module_info}
+        nodelist = list(node_name_sparse_mod_info_map.keys())
+
+        q_keyword = 'q_proj'
+        k_keyword = 'k_proj'
+        v_keyword = 'v_proj'
+        o_keyword = 'out_proj'
+
+        ffnn_w1_keyword = 'intermediate_dense'
+        ffnn_w2_keyword = 'output_dense'
+
+        mhsa_keywords = [q_keyword, k_keyword, v_keyword, o_keyword]
+        ffnn_keywords = [ffnn_w1_keyword, ffnn_w2_keyword]
+
+        s = pd.Series(nodelist)
+
+        mhsa_bitmask = np.any(np.array(list(map(s.str.contains, mhsa_keywords))), axis=0).tolist()
+        ffnn_bitmask = np.any(np.array(list(map(s.str.contains, ffnn_keywords))), axis=0).tolist()
+
+        df=pd.concat([pd.Series(dict(zip(nodelist, mhsa_bitmask)), name='is_mhsa'),
+                      pd.Series(dict(zip(nodelist, ffnn_bitmask)), name='is_ffnn')], axis=1)
+
+        midx = create_multiindex(df.index.values.tolist())
+        df = df.set_index(midx)
+
+        df['group_id']=None
+        df.loc[df.is_mhsa, 'group_id'] = list(map(lambda x: int((x[4].split('[')[1]).split(']')[0])*2, df.index.values[df.is_mhsa].tolist()))
+        df.loc[df.is_ffnn, 'group_id'] = list(map(lambda x: int((x[4].split('[')[1]).split(']')[0])*2+1, df.index.values[df.is_ffnn].tolist()))
+
+        df['nodename'] = nodelist
+
+        def create_PrunableOp(str_op_addr):
+            PrunableOp = namedtuple("PrunableOp", "op_addr op_mod")
+            op_address = OperationAddress.from_str(str_op_addr)
+            if op_address.operator_name in NNCF_MODULES_OP_NAMES:
+                return PrunableOp(
+                            op_address,
+                            self.model.get_module_by_scope(op_address.scope_in_model))
+        df['PrunableOp'] = df.nodename.apply(create_PrunableOp)
+
+        prunableops_per_group = OrderedDict()
+
+        for gid in df.group_id.unique().tolist():
+            prunableops_per_group[gid] = df.loc[df.group_id == gid, 'PrunableOp'].values.tolist()
+
         return prunableops_per_group
 
     def _get_all_node_op_addresses_in_block(self, nncf_network, blocks):

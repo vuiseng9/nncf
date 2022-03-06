@@ -13,7 +13,7 @@
 import os
 from collections import defaultdict
 from copy import deepcopy
-from typing import Any, Callable, Dict, KeysView, List, Tuple, Type, ValuesView
+from typing import Any, Callable, Dict, KeysView, List, OrderedDict, Tuple, Type, ValuesView
 from typing import Generator
 
 import networkx as nx
@@ -488,6 +488,106 @@ class NNCFGraph:
                                 'PNG rendering.')
         except Exception: #pylint:disable=broad-except
             nncf_logger.warning('Failed to render graph to PNG')
+    
+    def dump_human_readable_graph(self, model=None, path=None):
+        import networkx as nx
+        from nncf.torch.graph.graph import PTNNCFGraph
+        from networkx.drawing.nx_agraph import to_agraph
+        import matplotlib._color_data as mcd
+        import matplotlib.pyplot as plt
+        import numpy as np
+        palette = np.array(list(mcd.CSS4_COLORS.keys())).reshape(-1, 4).transpose().reshape(-1).tolist()
+
+        from matplotlib.colors import to_hex
+        palette = np.array([to_hex(c) for c in plt.get_cmap("tab20b").colors]).reshape(-1, 5).transpose().reshape(-1).tolist()
+        fillcolor = np.random.choice(palette)
+        # learnable_node_color_map = dict()
+        # opbook = dict()
+
+        # for group_id, op_list in self.prunableops_per_group.items():
+        #     color = palette[group_id % len(palette)]
+        #     for op in op_list:
+        #         learnable_node_color_map[str(op.op_addr)] = color
+        #         opbook[str(op.op_addr)] = op
+
+        # building_blocks  = get_building_blocks(self.model, allow_nested_blocks=False)
+        # node_op_address_per_block = self._get_all_node_op_addresses_in_block(self.model, building_blocks)
+        # node_color_map = dict()
+        # for group_id, op_list in node_op_address_per_block.items():
+        #     color = palette[group_id % len(palette)]
+        #     for op in op_list:
+        #         node_color_map[op] = color
+
+        if model is not None:
+            scopestr_to_mod = OrderedDict()
+            for scope, mod in model.get_nncf_modules().items():
+                scopestr_to_mod[str(scope)] = mod
+
+        g = self
+        out_graph = nx.DiGraph()
+        for node_name, node in g._nx_graph.nodes.items():
+            # ia_op_exec_context = node[PTNNCFGraph.IA_OP_EXEC_CONTEXT_NODE_ATTR]
+
+            attrs_node = {}
+            label = node['key']
+            # label = str(node[PTNNCFGraph.ID_NODE_ATTR]) + ' ' + str(ia_op_exec_context)
+            # if 'conv2d' in label.lower():
+            #     label = "*prunable*\n" + label
+            tokens=label.split("/")
+            new_tokens=[]
+            for i, token in enumerate(tokens):
+                if (i+1)%2==0:
+                    token += "\n"
+                new_tokens.append(token)
+            attrs_node['label'] = '/'.join(new_tokens)
+
+            if model is not None:
+                if node['layer_name'] in scopestr_to_mod:
+                    if hasattr(scopestr_to_mod[node['layer_name']], 'weight'):
+                        attrs_node['label'] += "\nw {}\n".format(str(tuple(scopestr_to_mod[node['layer_name']].weight.shape)))
+                    if hasattr(scopestr_to_mod[node['layer_name']], 'bias'):
+                        if scopestr_to_mod[node['layer_name']].bias is None:
+                            attrs_node['label'] += "no bias\n"
+                        else:
+                            attrs_node['label'] += "b {}\n".format(str(tuple(scopestr_to_mod[node['layer_name']].bias.shape)))
+                    attrs_node['color'] = fillcolor
+                    attrs_node['style'] = 'filled'
+
+            if False:
+                if node['node_name'] in node_color_map:              
+                    attrs_node['color'] = node_color_map[node['node_name']]
+                    if node['node_name'] in learnable_node_color_map:
+                        attrs_node['label'] += "\n{}\n".format(str(tuple(opbook[node['node_name']].op_mod.weight.shape)))
+                        attrs_node['style'] = 'filled'
+                    else:
+                        attrs_node['style'] = 'diagonals'
+                        # At present, there are 8 style values recognized: filled , invisible , diagonals , rounded . dashed , dotted , solid and bold
+
+            out_graph.add_node(node_name, **attrs_node)
+
+        for u, v in g._nx_graph.edges:
+            out_graph.add_edge(u, v, label=g._nx_graph.edges[u, v][PTNNCFGraph.ACTIVATION_SHAPE_EDGE_ATTR])
+
+        mapping = {k: v["label"] for k, v in out_graph.nodes.items()}
+        out_graph = nx.relabel_nodes(out_graph, mapping)
+        for node in out_graph.nodes.values():
+            node.pop("label")
+
+        if path is None:
+            path = 'mvmt_prunableops_group_viz.dot'
+        # path = os.path.join(self.config.get("log_dir", "."), path)
+        
+        nx.drawing.nx_pydot.write_dot(out_graph, path)
+
+        try:
+            A = to_agraph(out_graph)
+            A.layout('dot')
+            png_path = os.path.splitext(path)[0]+'.png'
+            A.draw(png_path)
+        except ImportError:
+            print("Graphviz is not installed - only the .dot model visualization format will be used. "
+                                "Install pygraphviz into your Python environment and graphviz system-wide to enable "
+                                "PNG rendering.")
 
     def get_graph_for_structure_analysis(self, extended: bool = False) -> nx.DiGraph:
         """
