@@ -181,9 +181,9 @@ def staged_quantization_main_worker(current_gpu, config):
     if model_state_dict is not None:
         load_state(model, model_state_dict, is_resume=True)
 
-    if not isinstance(compression_ctrl, (BinarizationController, QuantizationController)):
-        raise RuntimeError(
-            "The stage quantization sample worker may only be run with the binarization and quantization algorithms!")
+    # if not isinstance(compression_ctrl, (BinarizationController, QuantizationController)):
+    #     raise RuntimeError(
+    #         "The stage quantization sample worker may only be run with the binarization and quantization algorithms!")
 
     model, _ = prepare_model_for_execution(model, config)
     original_model.to(config.device)
@@ -193,8 +193,17 @@ def staged_quantization_main_worker(current_gpu, config):
 
     params_to_optimize = model.parameters()
 
-    compression_config = config['compression']
-    quantization_config = compression_config if isinstance(compression_config, dict) else compression_config[0]
+    compression_config = config.get('compression', {})
+    if isinstance(compression_config, list):
+        for algo in compression_config:
+            algo_type = algo.get("algorithm")
+            if algo_type == "quantization":
+                quantization_config = algo
+    elif isinstance(compression_config, dict):
+        quantization_config = compression_config
+
+    # compression_config = config['compression']
+    # quantization_config = compression_config if isinstance(compression_config, dict) else compression_config[0]
     optimizer = get_quantization_optimizer(params_to_optimize, quantization_config)
     optimizer_scheduler = PolyLRDropScheduler(optimizer, quantization_config)
     kd_loss_calculator = KDLossCalculator(original_model)
@@ -234,11 +243,32 @@ def staged_quantization_main_worker(current_gpu, config):
                      train_loader, train_sampler, val_loader, kd_loss_calculator, batch_multiplier, best_acc1)
 
     if 'test' in config.mode:
-        validate(val_loader, model, criterion, config)
+        valtop1, valtop5, valloss = validate(val_loader, model, criterion, config)
+
+    config.mlflow.end_run()
 
     if 'export' in config.mode:
-        compression_ctrl.export_model(config.to_onnx)
-        logger.info("Saved to {}".format(config.to_onnx))
+        checkpoint_path = osp.join(config.log_dir, 'onnx-source-model.pth')
+        checkpoint = {
+                MODEL_STATE_ATTR: model.state_dict(),
+                COMPRESSION_STATE_ATTR: compression_ctrl.get_compression_state(),
+                'acc1': valtop1,
+                'acc5': valtop5,
+                'loss': valloss
+        }
+        torch.save(checkpoint, checkpoint_path)
+
+        import os
+        ir_dir = osp.join(config.log_dir, "ir")
+        os.makedirs(ir_dir, exist_ok=True)
+        onnx_pth = osp.join(ir_dir, get_name(config) + '.nncf.onnx')
+        compression_ctrl.export_model(onnx_pth)
+        logger.info("Saved to {}".format(onnx_pth))
+
+        if osp.exists(onnx_pth):
+            import subprocess
+            subprocess.run(["mo", "--input_model", onnx_pth, "--model_name", get_name(config), "--output_dir", ir_dir], check=True)
+
 
 
 

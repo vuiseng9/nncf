@@ -182,6 +182,7 @@ def get_common_argument_parser():
 
 def parse_args(parser, argv):
     args = parser.parse_args(argv)
-    if 'export' in args.mode and args.to_onnx is None:
-        raise RuntimeError("--mode export requires --to-onnx argument to be set")
+    if len(args.mode) == 1:
+        if 'export' in args.mode and args.to_onnx is None:
+            raise RuntimeError("--mode export requires --to-onnx argument to be set")
     return args
