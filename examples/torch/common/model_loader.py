@@ -24,7 +24,7 @@ from examples.torch.common.example_logger import logger
 from examples.torch.common import restricted_pickle_module
 from nncf.torch.checkpoint_loading import load_state
 from nncf.torch.utils import safe_thread_call
-
+from timm.models import create_model, list_models
 
 def load_model(model, pretrained=True, num_classes=1000, model_params=None,
                weights_path: str = None) -> torch.nn.Module:
@@ -46,6 +46,8 @@ def load_model(model, pretrained=True, num_classes=1000, model_params=None,
                                 **model_params)
     elif model == "mobilenet_v2_32x32":
         load_model_fn = partial(MobileNetV2For32x32, num_classes=100)
+    elif model in list_models():
+        load_model_fn = partial(create_model, model_name=model, pretrained=pretrained, num_classes=num_classes)
     else:
         raise Exception("Undefined model name")
     loaded_model = safe_thread_call(load_model_fn)
