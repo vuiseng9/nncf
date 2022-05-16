@@ -19,6 +19,7 @@ from nncf.common.pruning.statistics import FilterPruningStatistics
 from nncf.common.sparsity.statistics import MagnitudeSparsityStatistics
 from nncf.common.sparsity.statistics import RBSparsityStatistics
 from nncf.common.sparsity.statistics import ConstSparsityStatistics
+from nncf.common.sparsity.statistics import WBSparsifiedModelStatistics
 
 
 def prepare_for_tensorboard(nncf_stats: NNCFStatistics) -> Dict[str, float]:
@@ -64,4 +65,20 @@ def _(stats, algorithm_name):
     if target_sparsity_level is not None:
         tensorboard_stats[f'{algorithm_name}/target_sparsity_level'] = target_sparsity_level
 
+    return tensorboard_stats
+
+@convert_to_dict.register(WBSparsifiedModelStatistics)
+def _(stats, algorithm_name):
+    tensorboard_stats = {
+        f'{algorithm_name}/model_sparsity': stats.model_sparsity,
+        f'{algorithm_name}/relative_sparsity': stats.relative_sparsity,
+        f'{algorithm_name}/weight_sparstiy': stats.relative_weight_sparsity,
+        f'{algorithm_name}/bias_sparsity': stats.relative_bias_sparsity,
+    }
+    # tensorboard_stats = {
+    #     f'{algorithm_name}/model_sparsity': '{:.4f}'.format(stats.model_sparsity),
+    #     f'{algorithm_name}/relative_sparsity': '{:.4f}'.format(stats.relative_sparsity),
+    #     f'{algorithm_name}/weight_sparstiy': '{:.4f}'.format(stats.relative_weight_sparsity),
+    #     f'{algorithm_name}/bias_sparsity': '{:.4f}'.format(stats.relative_bias_sparsity),
+    # }
     return tensorboard_stats

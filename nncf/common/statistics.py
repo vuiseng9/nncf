@@ -19,7 +19,7 @@ from nncf.common.sparsity.statistics import RBSparsityStatistics
 from nncf.common.sparsity.statistics import ConstSparsityStatistics
 from nncf.common.quantization.statistics import QuantizationStatistics
 from nncf.common.pruning.statistics import FilterPruningStatistics
-
+from nncf.common.sparsity.statistics import WBSparsifiedModelStatistics
 
 class NNCFStatistics(Statistics):
     """
@@ -52,6 +52,16 @@ class NNCFStatistics(Statistics):
         :return: Instance of the `RBSparsityStatistics` class.
         """
         return self._storage.get('rb_sparsity')
+
+    @property
+    def hs_sparsity(self) -> Optional[WBSparsifiedModelStatistics]:
+        """
+        Returns statistics of the RB-sparsity algorithm. If statistics
+        have not been collected, `None` will be returned.
+
+        :return: Instance of the `RBSparsityStatistics` class.
+        """
+        return self._storage.get('hs_sparsity')
 
     @property
     def const_sparsity(self) -> Optional[ConstSparsityStatistics]:
@@ -108,7 +118,7 @@ class NNCFStatistics(Statistics):
         """
 
         available_algorithms = [
-            'magnitude_sparsity', 'rb_sparsity', 'const_sparsity',
+            'magnitude_sparsity', 'rb_sparsity', 'hs_sparsity', 'const_sparsity',
             'quantization', 'filter_pruning', 'binarization'
         ]
         if algorithm_name not in available_algorithms:

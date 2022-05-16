@@ -86,6 +86,57 @@ class SparsifiedModelStatistics(Statistics):
         return pretty_string
 
 
+class WBSparsifiedModelStatistics(Statistics):
+    """
+    Contains statistics of the sparsified model.
+    """
+
+    def __init__(self,
+                 model_sparsity: float,
+                 relative_sparsity: float,
+                 relative_weight_sparsity: float,
+                 relative_bias_sparsity: float,
+                 sparsified_layers_summary: List[SparsifiedLayerSummary]):
+        """
+        TODO :revise docstring
+        Initializes statistics of the sparsified model.
+
+        :param sparsity_level: Sparsity level of the whole model.
+        :param sparsity_level_for_layers: Sparsity level of all
+            sparsified layers (i.e. layers for which the algorithm was applied).
+        :param sparsified_layers_summary: Detailed summary for the
+            sparsified layers.
+        """
+        self.model_sparsity = model_sparsity
+        self.relative_sparsity = relative_sparsity
+        self.relative_weight_sparsity = relative_weight_sparsity
+        self.relative_bias_sparsity = relative_bias_sparsity
+        self.sparsified_layers_summary = sparsified_layers_summary
+
+    def to_str(self) -> str:
+        model_string = create_table(
+            header=['Statistic\'s name', 'Value'],
+            rows=[
+                ['Model Sparsity', self.model_sparsity],
+                ['Relative Sparsity', self.relative_sparsity],
+                ['Relative Weight Sparsity', self.relative_weight_sparsity],
+                ['Relative Bias Sparsity', self.relative_bias_sparsity],
+            ]
+        )
+
+        layers_string = create_table(
+            header=['Layer\'s name', 'Weight\'s shape', 'Sparsity level', 'Weight\'s percentage'],
+            rows=[
+                [s.name, s.weight_shape, s.sparsity_level, s.weight_percentage] for s in self.sparsified_layers_summary
+            ]
+        )
+
+        pretty_string = (
+            f'Statistics of the sparsified model:\n{model_string}\n\n'
+            f'Statistics by sparsified layers:\n{layers_string}'
+        )
+        return pretty_string
+
 class LayerThreshold:
     def __init__(self, name: str, threshold: float):
         self.name = name

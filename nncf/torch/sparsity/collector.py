@@ -13,7 +13,7 @@
 
 from typing import List
 
-from nncf.common.sparsity.collector import BaseSparseModelStatisticsCollector
+from nncf.common.sparsity.collector import BaseSparseModelStatisticsCollector, BaseWBSparseModelStatisticsCollector
 from nncf.common.sparsity.collector import WeightDescription
 from nncf.torch.layer_utils import COMPRESSION_MODULES
 from nncf.torch.sparsity.base_algo import SparseModuleInfo
@@ -72,3 +72,65 @@ class PTSparseModelStatisticsCollector(BaseSparseModelStatisticsCollector):
                 )
 
         return weights_descriptions
+
+
+class PTWBSparseModelStatisticsCollector(BaseWBSparseModelStatisticsCollector):
+    """
+    Collects statistics for the sparse NNCFNetwork.
+    """
+
+    def __init__(self, model: NNCFNetwork, sparse_modules_info: List[SparseModuleInfo]):
+        """
+        Initializes statistics collector of the sparse tf.keras.Model.
+
+        :param model: Sparse model.
+        :param sparse_modules_info: List of `SparseModuleInfo`.
+        """
+        self._model = model
+        self._sparse_modules_info = sparse_modules_info
+
+    def _collect_weights_descriptions(self) -> List[WeightDescription]:
+        weights_descriptions = []
+        bias_descriptions = []
+        processed_modules = []
+
+        for minfo in self._sparse_modules_info:
+            sparse_weight = minfo.operand.apply_binary_mask(minfo.module.weight)
+
+            weights_descriptions.append(
+                WeightDescription(
+                    minfo.module_node_name,
+                    list(sparse_weight.shape),
+                    sparse_weight.count_nonzero().item(),
+                    is_sparse=True
+                )
+            )
+
+            if hasattr(minfo.module, 'bias') and minfo.module.bias is not None:
+                bias = minfo.module.bias
+                sparse_bias = minfo.operand.apply_binary_mask(bias, isbias=True)
+                name = f'{minfo.module_node_name}/bias'
+                bias_descriptions.append(
+                    WeightDescription(name, list(sparse_bias.shape), sparse_bias.count_nonzero().item(), is_sparse=True)
+                )
+
+            processed_modules.append(minfo.module)
+
+        compression_types = tuple(COMPRESSION_MODULES.registry_dict.values())
+        for module_name, module in self._model.get_nncf_wrapped_model().named_modules():
+            if isinstance(module, compression_types) or module in processed_modules:
+                continue
+
+            for param_name, param in module.named_parameters(recurse=False):
+                if 'bias' == param_name:
+                    name = f'{module_name}/{param_name}'
+                    bias_descriptions.append(
+                        WeightDescription(name, list(param.shape), param.count_nonzero().item(), is_sparse=False)
+                    )
+                else:
+                    name = f'{module_name}/{param_name}'
+                    weights_descriptions.append(
+                        WeightDescription(name, list(param.shape), param.count_nonzero().item(), is_sparse=False)
+                    )
+
+        return weights_descriptions, bias_descriptions

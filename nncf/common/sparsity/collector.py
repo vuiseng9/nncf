@@ -17,7 +17,7 @@ from abc import abstractmethod
 import numpy as np
 
 from nncf.common.collector import StatisticsCollector
-from nncf.common.sparsity.statistics import SparsifiedModelStatistics
+from nncf.common.sparsity.statistics import SparsifiedModelStatistics, WBSparsifiedModelStatistics
 from nncf.common.sparsity.statistics import SparsifiedLayerSummary
 
 
@@ -127,6 +127,71 @@ class BaseSparseModelStatisticsCollector(StatisticsCollector):
         sparse_model_stats = SparsifiedModelStatistics(
             sparsity_level_for_model,
             sparsity_level_for_sparse_layers,
+            sparse_layers_summary
+        )
+
+        return sparse_model_stats
+
+
+class BaseWBSparseModelStatisticsCollector(StatisticsCollector):
+    """
+    Base class for the sparse model statistics collector.
+    """
+
+    @abstractmethod
+    def _collect_weights_descriptions(self) -> List[WeightDescription]:
+        """
+        Collects descriptions of the weights of the model.
+
+        :return: Descriptions of the weights of the model.
+        """
+
+    def collect(self) -> SparsifiedModelStatistics:
+        """
+        Collects statistics for the sparse model.
+
+        :return: An instance of the `SparsifiedModelStatistics` class.
+        """
+        weights_descriptions, bias_descriptions = self._collect_weights_descriptions()
+        all_param_descriptions = weights_descriptions + bias_descriptions
+        model_sparsity = _calculate_sparsity_level_for_model(all_param_descriptions)
+
+        total_params = sum(w.num_params for w in all_param_descriptions if w.is_sparse)
+        total_num_zero = sum(w.num_zero for w in all_param_descriptions if w.is_sparse)
+        relative_sparsity = total_num_zero / total_params
+
+        total_params = sum(w.num_params for w in weights_descriptions if w.is_sparse)
+        total_num_zero = sum(w.num_zero for w in weights_descriptions if w.is_sparse)
+        relative_weight_sparsity = total_num_zero / total_params
+
+        total_params = sum(w.num_params for w in bias_descriptions if w.is_sparse)
+        total_num_zero = sum(w.num_zero for w in bias_descriptions if w.is_sparse)
+        relative_bias_sparsity = total_num_zero / total_params
+
+        sparse_layers_summary = []
+        for w in weights_descriptions:
+            if not w.is_sparse:
+                continue
+
+            weight_percentage = 100 * (w.num_params / total_params)
+            sparse_layers_summary.append(
+                SparsifiedLayerSummary(w.name, w.shape, w.sparsity_level, weight_percentage)
+            )
+
+        for w in bias_descriptions:
+            if not w.is_sparse:
+                continue
+
+            weight_percentage = 100 * (w.num_params / total_params)
+            sparse_layers_summary.append(
+                SparsifiedLayerSummary(w.name, w.shape, w.sparsity_level, weight_percentage)
+            )
+
+        sparse_model_stats = WBSparsifiedModelStatistics(
+            model_sparsity,
+            relative_sparsity,
+            relative_weight_sparsity,
+            relative_bias_sparsity,
             sparse_layers_summary
         )
 

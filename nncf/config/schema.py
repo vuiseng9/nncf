@@ -715,6 +715,28 @@ RB_SPARSITY_SCHEMA = {
     "additionalProperties": False
 }
 
+HS_SPARSITY_ALGO_NAME_IN_CONFIG = "hs_sparsity"
+HS_SPARSITY_SCHEMA = {
+    **BASIC_COMPRESSION_ALGO_SCHEMA,
+    "properties": {
+        "algorithm": {
+            "const": HS_SPARSITY_ALGO_NAME_IN_CONFIG
+        },
+        **COMPRESSION_LR_MULTIPLIER_PROPERTY,
+        "sparsity_init": with_attributes(NUMBER,
+                                         description="Initial value of the sparsity level applied to the "
+                                                     "model"),
+        "params":
+            {
+                "type": "object",
+                "properties": COMMON_SPARSITY_PARAM_PROPERTIES,
+                "additionalProperties": False
+            },
+        **COMMON_COMPRESSION_ALGORITHM_PROPERTIES
+    },
+    "additionalProperties": False
+}
+
 FILTER_PRUNING_ALGO_NAME_IN_CONFIG = 'filter_pruning'
 FILTER_PRUNING_SCHEMA = {
     **BASIC_COMPRESSION_ALGO_SCHEMA,
@@ -854,6 +876,7 @@ REF_VS_ALGO_SCHEMA = {BINARIZATION_ALGO_NAME_IN_CONFIG: BINARIZATION_SCHEMA,
                       CONST_SPARSITY_ALGO_NAME_IN_CONFIG: CONST_SPARSITY_SCHEMA,
                       MAGNITUDE_SPARSITY_ALGO_NAME_IN_CONFIG: MAGNITUDE_SPARSITY_SCHEMA,
                       RB_SPARSITY_ALGO_NAME_IN_CONFIG: RB_SPARSITY_SCHEMA,
+                      HS_SPARSITY_ALGO_NAME_IN_CONFIG: HS_SPARSITY_SCHEMA,
                       FILTER_PRUNING_ALGO_NAME_IN_CONFIG: FILTER_PRUNING_SCHEMA,
                       KNOWLEDGE_DISTILLATION_ALGO_NAME_IN_CONFIG: KNOWLEDGE_DISTILLATION_SCHEMA}
 

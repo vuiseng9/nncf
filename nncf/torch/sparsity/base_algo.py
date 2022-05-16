@@ -74,7 +74,8 @@ class BaseSparsityAlgoBuilder(PTCompressionAlgorithmBuilder):
                                                                         self.name)
             operation = self.create_weight_sparsifying_operation(module_node, compression_lr_multiplier)
             hook = operation.to(device)
-            insertion_commands.append(PTInsertionCommand(PTTargetPoint(TargetType.OPERATION_WITH_WEIGHTS,
+            # TODO: hardcoded to OPERATION_WITH_WEIGHT_WT_BIAS
+            insertion_commands.append(PTInsertionCommand(PTTargetPoint(TargetType.OPERATION_WITH_WEIGHT_WT_BIAS,
                                                                        target_node_name=node_name),
                                                          hook, TransformationPriority.SPARSIFICATION_PRIORITY))
             sparsified_module = target_model.get_containing_module(node_name)
