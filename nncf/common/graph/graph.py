@@ -572,14 +572,13 @@ class NNCFGraph:
 
             if readable is True:
                 attrs_node['label'] = get_readable_str(attrs_node['label'])
-            if 'NNCF' in attrs_node['label']:
+            if 'quantize' in attrs_node['label']:
+                attrs_node['style'] = 'filled'
+                attrs_node['color'] = 'aquamarine'
+            elif 'NNCF' in attrs_node['label']:
                 if 'batch_norm' not in attrs_node['label']:
                     attrs_node['style'] = 'filled'
-                    if 'quantize' in attrs_node['label']:
-                        attrs_node['color'] = 'aquamarine'
-                    else:
-                        attrs_node['color'] = 'lawngreen'
-                
+                    attrs_node['color'] = 'lawngreen'
                     # At present, there are 8 style values recognized: filled , invisible , diagonals , rounded . dashed , dotted , solid and bold
             node_key = self.get_node_key_by_id(node.node_id)
             out_graph.add_node(node_key, **attrs_node)
