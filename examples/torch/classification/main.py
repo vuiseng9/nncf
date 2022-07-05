@@ -215,6 +215,7 @@ def main_worker(current_gpu, config: SampleConfig):
         load_state(model, model_state_dict, is_resume=True)
 
     if is_export_only:
+        raise ValueError("Intentionally raise error for this condition")
         compression_ctrl.export_model(config.to_onnx)
         logger.info("Saved to {}".format(config.to_onnx))
         return
@@ -286,9 +287,23 @@ def main_worker(current_gpu, config: SampleConfig):
     config.mlflow.end_run()
 
     if 'export' in config.mode:
-        compression_ctrl.export_model(config.to_onnx)
-        logger.info("Saved to {}".format(config.to_onnx))
+        checkpoint_path = osp.join(config.log_dir, 'onnx-source-model.pth')
+        checkpoint = {
+                MODEL_STATE_ATTR: model.state_dict(),
+                COMPRESSION_STATE_ATTR: compression_ctrl.get_compression_state(),
+        }
+        torch.save(checkpoint, checkpoint_path)
 
+        import os
+        ir_dir = osp.join(config.log_dir, "ir")
+        os.makedirs(ir_dir, exist_ok=True)
+        onnx_pth = osp.join(ir_dir, get_name(config) + '.nncf.onnx')
+        compression_ctrl.export_model(onnx_pth)
+        logger.info("Saved to {}".format(onnx_pth))
+
+        if osp.exists(onnx_pth):
+            import subprocess
+            subprocess.run(["mo", "--input_model", onnx_pth, "--model_name", get_name(config), "--output_dir", ir_dir], check=True)
 
 def train(config, compression_ctrl, model, criterion, criterion_fn, lr_scheduler, model_name, optimizer,
           train_loader, train_sampler, val_loader, best_acc1=0):
