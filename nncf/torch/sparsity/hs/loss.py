@@ -16,16 +16,29 @@ import torch
 from nncf.torch.compression_method_api import PTCompressionLoss
 
 # Actually in responsible to lean density to target value
-class SparseLoss(PTCompressionLoss):
-    def __init__(self, sparse_layers=None, target=1.0, p=0.05):
+class HSLoss(PTCompressionLoss):
+    def __init__(self, sparse_layers=None, weight_penalty=1.0, bias_penalty=1.0):
         super().__init__()
         self._sparse_layers = sparse_layers
-        self.target = target
-        self.p = p
+        self.weight_penalty = weight_penalty
+        self.bias_penalty = bias_penalty
         self.disabled = False
-        self.current_sparsity = 0
-        self.mean_sparse_prob = 0
+        self.reset_active_layer_count()
 
+    def reset_active_layer_count(self):
+        n_active_bias=0
+        n_active_weight=0
+        for l in self._sparse_layers:
+            if l.frozen_mask_w is False:
+                n_active_weight += 1
+
+            if l.prune_bias is True:
+                if l.frozen_mask_b is False:
+                    n_active_bias += 1
+
+        self.n_active_weight = n_active_weight
+        self.n_active_bias = n_active_bias
+            
     def set_layers(self, sparse_layers):
         self._sparse_layers = sparse_layers
 
@@ -34,61 +47,25 @@ class SparseLoss(PTCompressionLoss):
             self.disabled = True
 
             for sparse_layer in self._sparse_layers:
-                sparse_layer.frozen = True
-
-    def calculate(self) -> torch.Tensor:
-        # TODO, how about frozen?
-        if self.disabled:
-            return 0
-
-        loss = 0
-        n_active_layer=0
-        for sparse_layer in self._sparse_layers:
-            loss += sparse_layer.loss()
-            n_active_layer+=1
-
-        # if self.penalty_scheduler is not None:
-        #     return self.penalty_scheduler.current_importance_lambda * (loss/n_active_layer)
-        return loss/(2*n_active_layer)*10 
-
-    @property
-    def target_sparsity_rate(self):
-        rate = 1 - self.target
-        if rate < 0 or rate > 1:
-            raise IndexError("Target is not within range(0,1)")
-        return rate
-
-    def set_target_sparsity_loss(self, sparsity_level):
-        self.target = 1 - sparsity_level
-
-
-class SparseLossForPerLayerSparsity(SparseLoss):
-    def __init__(self, sparse_layers=None, target=1.0, p=0.05):
-        super().__init__(sparse_layers, target, p)
-        self.per_layer_target = {}
-        for sparse_layer in self._sparse_layers:
-            self.per_layer_target[sparse_layer] = self.target
+                sparse_layer.frozen_mask_w = True
+                sparse_layer.frozen_mask_b = True
 
     def calculate(self) -> torch.Tensor:
         if self.disabled:
             return 0
 
-        params = 0
-        sparse_prob_sum = 0
-        sparse_layers_loss = 0
-        for sparse_layer in self._sparse_layers:
-            if not self.disabled and not sparse_layer.sparsify:
-                raise AssertionError(
-                    "Invalid state of SparseLoss and SparsifiedWeight: mask is frozen for enabled loss")
-            if sparse_layer.sparsify:
-                sw_loss = sparse_layer.loss()
-                params_layer = sw_loss.view(-1).size(0)
-                params += params_layer
-                sparse_layers_loss -= torch.abs(sw_loss.sum() / params_layer - self.per_layer_target[sparse_layer])
-                sparse_prob_sum += torch.sigmoid(sparse_layer.mask).sum()
+        loss_w = 0
+        loss_b = 0
 
-        self.mean_sparse_prob = (sparse_prob_sum / params).item()
-        return (sparse_layers_loss / self.p).pow(2)
+        for sparse_layer in self._sparse_layers:           
+            hs_w, hs_b = sparse_layer.loss()
+            loss_w += hs_w
+            loss_b += hs_b
 
-    def set_target_sparsity_loss(self, target, sparse_layer):
-        self.per_layer_target[sparse_layer] = 1 - target
+        loss = 0.0
+        if self.n_active_weight != 0:
+            loss += self.weight_penalty*loss_w/self.n_active_weight
+        if self.n_active_bias != 0:
+            loss += self.bias_penalty*loss_b/self.n_active_bias
+        
+        return loss

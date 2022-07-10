@@ -106,18 +106,19 @@ class NNCFConfig(dict):
             # No compression specified
             return
 
-        try:
-            if isinstance(compression_section, dict):
-                validate_single_compression_algo_schema(compression_section, COMMON_REF_VS_ALGO_SCHEMA)
-            else:
-                # Passed a list of dicts
-                for compression_algo_dict in compression_section:
-                    validate_single_compression_algo_schema(compression_algo_dict, COMMON_REF_VS_ALGO_SCHEMA)
-        except jsonschema.ValidationError:
-            # No need to trim the exception output here since only the compression algo
-            # specific sub-schema will be shown, which is much shorter than the global schema
-            logger.error('Invalid NNCF config supplied!')
-            raise
+        #TODO (VS): enable json validation for hoyer
+        # try:
+        #     if isinstance(compression_section, dict):
+        #         validate_single_compression_algo_schema(compression_section, COMMON_REF_VS_ALGO_SCHEMA)
+        #     else:
+        #         # Passed a list of dicts
+        #         for compression_algo_dict in compression_section:
+        #             validate_single_compression_algo_schema(compression_algo_dict, COMMON_REF_VS_ALGO_SCHEMA)
+        # except jsonschema.ValidationError:
+        #     # No need to trim the exception output here since only the compression algo
+        #     # specific sub-schema will be shown, which is much shorter than the global schema
+        #     logger.error('Invalid NNCF config supplied!')
+        #     raise
 
     @staticmethod
     def _validate_json_section_by_schema(loaded_json, schema):

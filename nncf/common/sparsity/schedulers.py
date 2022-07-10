@@ -89,6 +89,37 @@ class SparsityScheduler(BaseCompressionScheduler):
             return self.initial_level
         return self._calculate_sparsity_level()
 
+@SPARSITY_SCHEDULERS.register('freezer')
+class MaskFreezerScheduler(BaseCompressionScheduler):
+    def __init__(self, controller: SparsityController, params: dict):
+        super().__init__()
+        self._controller = controller
+        self.weight_mask_epoch = params.get('freeze_weight_mask_epoch', 9999)
+        self.bias_mask_epoch = params.get('freeze_bias_mask_epoch', 9999)
+        self.steps_per_epoch = params.get('steps_per_epoch', None)
+        self._global_step = -1
+        self.hasfrozenbias = False
+        self.hasfrozenweight = False
+        if self.steps_per_epoch is None:
+            raise ValueError("pls provide steps per epoch")
+
+    def step(self, next_step: Optional[int] = None) -> None:
+        super().step(next_step)
+        self._global_step += 1
+
+        if self._global_step/self.steps_per_epoch >= self.bias_mask_epoch and self.hasfrozenbias is False:
+            self._controller.freeze_bias_mask()
+            self.hasfrozenbias = True
+            self._controller.apply_weight_penalty()
+
+        if self._global_step/self.steps_per_epoch >= self.weight_mask_epoch and self.hasfrozenweight is False:
+            self._controller.freeze_weight_mask()
+            self.hasfrozenweight = True
+        
+    def epoch_step(self, next_epoch: Optional[int] = None) -> None:
+        super().epoch_step(next_epoch)
+        #TODO : check steps per epoch
+
 
 @SPARSITY_SCHEDULERS.register('polynomial')
 class PolynomialSparsityScheduler(SparsityScheduler):

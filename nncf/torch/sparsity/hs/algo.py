@@ -25,7 +25,7 @@ from nncf.torch.compression_method_api import PTCompressionAlgorithmController
 from nncf.torch.nncf_network import NNCFNetwork
 from nncf.torch.sparsity.base_algo import BaseSparsityAlgoBuilder, BaseSparsityAlgoController, SparseModuleInfo
 from nncf.torch.sparsity.hs.layers import HSSparsifyingWeight
-from nncf.torch.sparsity.hs.loss import SparseLoss, SparseLossForPerLayerSparsity
+from nncf.torch.sparsity.hs.loss import HSLoss
 from nncf.torch.utils import get_model_device
 from nncf.torch.utils import get_world_size
 from nncf.common.accuracy_aware_training.training_loop import ADAPTIVE_COMPRESSION_CONTROLLERS
@@ -51,6 +51,7 @@ class HSSparsityController(BaseSparsityAlgoController):
     def __init__(self, target_model: NNCFNetwork, sparsified_module_info: List[SparseModuleInfo],
                  config: NNCFConfig):
         super().__init__(target_model, sparsified_module_info)
+        self.sparsified_module_info = sparsified_module_info
         algo_config = extract_algo_specific_config(config, 'hs_sparsity')
         params = deepcopy(algo_config.get('params', {}))
 
@@ -59,25 +60,17 @@ class HSSparsityController(BaseSparsityAlgoController):
         self._check_sparsity_masks = params.get('check_sparsity_masks', False)
 
         sparsify_operations = [m.operand for m in self.sparsified_module_info]
-        if self._mode == 'local':
-            self._loss = SparseLossForPerLayerSparsity(sparsify_operations)
-            self._scheduler = StubCompressionScheduler()
-        else:
-            self._loss = SparseLoss(sparsify_operations)
+        self.hs_weight_penalty = params.get('weight_penalty', 1.0)
+        self.hs_bias_penalty = params.get('bias_penalty', 1.0)
 
-            sparsity_init = algo_config.get('sparsity_init', 0)
-            params['sparsity_init'] = sparsity_init
-            scheduler_cls = SPARSITY_SCHEDULERS.get(params.get('schedule', 'exponential'))
-            self._scheduler = scheduler_cls(self, params)
-            self.set_sparsity_level(sparsity_init)
+        # By design, weight_penalty is only applied after bias is frozen.
+        self._loss = HSLoss(sparsify_operations,
+                                weight_penalty=1.0,
+                                bias_penalty=self.hs_bias_penalty)
 
-    def set_sparsity_level(self, sparsity_level, target_sparsified_module_info: SparseModuleInfo = None):
-        if target_sparsified_module_info is None:
-            #pylint:disable=no-value-for-parameter
-            self._loss.set_target_sparsity_loss(sparsity_level)
-        else:
-            sparse_op = target_sparsified_module_info.operand
-            self._loss.set_target_sparsity_loss(sparsity_level, sparse_op)
+        scheduler_cls = SPARSITY_SCHEDULERS.get('freezer')
+        self._scheduler = scheduler_cls(self, params)
+
 
     def compression_stage(self) -> CompressionStage:
         if self._mode == 'local':
@@ -91,6 +84,25 @@ class HSSparsityController(BaseSparsityAlgoController):
 
     def freeze(self):
         self._loss.disable()
+
+    def freeze_bias_mask(self):
+        for sminfo in self.sparsified_module_info:
+            sminfo.operand.frozen_mask_b = True
+            for n, p in sminfo.module.named_parameters():
+                if n == 'bias':
+                    p.requires_grad = False
+            self._loss.reset_active_layer_count()
+    
+    def freeze_weight_mask(self):
+        for sminfo in self.sparsified_module_info:
+            sminfo.operand.frozen_mask_w = True
+            for n, p in sminfo.module.named_parameters():
+                if n == 'weight':
+                    p.requires_grad = False
+            self._loss.reset_active_layer_count()
+
+    def apply_weight_penalty(self):
+        self._loss.weight_penalty = self.hs_weight_penalty
 
     def distributed(self):
         if not dist.is_initialized():
@@ -144,10 +156,42 @@ class HSSparsityController(BaseSparsityAlgoController):
         nncf_stats.register('hs_sparsity', model_statistics)
         return nncf_stats
 
-    @property
-    def compression_rate(self):
-        return self._loss.target_sparsity_rate
+    def prepare_for_export(self):
+        """
+        Applies pruning masks to layer weights before exporting the model to ONNX.
+        """
+        self._propagate_masks()
 
-    @compression_rate.setter
-    def compression_rate(self, sparsity_level: float):
-        self.set_sparsity_level(sparsity_level)
+    def _propagate_masks(self):
+        def calc_sparsity(tensor):
+            return 1-tensor.count_nonzero()/tensor.numel()
+      
+        from collections import OrderedDict
+        sparse_sd = OrderedDict()
+        with torch.no_grad():    
+            for sparse_info in self.sparsified_module_info:
+                for modn, m in self.model.named_modules():
+                    if m == sparse_info.module:
+                        for n, p in sparse_info.module.named_parameters():
+                            if n == 'weight':
+                                sparse_sd[modn+'.weight'] = sparse_info.operand.weight_binary_mask*p
+                            if n == 'bias':
+                                sparse_sd[modn+'.bias'] = sparse_info.operand.bias_binary_mask*p
+
+                        # # print("- SparseModule: {} -".format(n))
+                        # # print("\tw_mask sparsity: {:.3f}".format(calc_sparsity(sparse_info.operand.weight_ctx.binary_mask)))
+                        # # print("\tw_sd   sparsity: {:.3f}".format(calc_sparsity(m.weight)))
+                        # sparse_sd[n+'.weight'] = sparse_info.operand.apply_binary_mask(m.weight)
+                        # # print("\t*w_sd  sparsity: {:.3f}".format(calc_sparsity(sparse_sd[n+'.weight'])))
+
+                        # if hasattr(m, 'bias'):
+                        #     # print("\tb_mask sparsity: {:.3f}".format(calc_sparsity(sparse_info.operand.bias_ctx.binary_mask)))
+                        #     # print("\tb_sd   sparsity: {:.3f}".format(calc_sparsity(m.bias)))
+                        #     sparse_sd[n+'.bias'] = sparse_info.operand.apply_binary_mask(m.bias, isbias=True)
+                        #     # print("\t*w_sd  sparsity: {:.3f}".format(calc_sparsity(sparse_sd[n+'.bias'])))
+
+        model_sd = self.model.state_dict()
+        for k, v in sparse_sd.items():
+            assert k in model_sd, "key not exists!"
+            model_sd[k] = sparse_sd[k]
+        self.model.load_state_dict(model_sd)

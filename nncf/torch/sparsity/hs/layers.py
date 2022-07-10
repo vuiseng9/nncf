@@ -28,24 +28,25 @@ class HSSparsifyingWeight(nn.Module):
         self.target_module_node = target_module_node
         self.prune_bias = target_module_node.layer_attributes.bias
 
-        self.frozen = frozen
         self.eps = eps
         
         # self._mask = CompressionParameter(logit(torch.ones(weight_shape) * 0.99), requires_grad=not self.frozen,
         #                                   compression_lr_multiplier=compression_lr_multiplier)
 
+        self.frozen_mask_w = frozen
         weight_shape = target_module_node.layer_attributes.get_weight_shape()
         self.register_buffer("_weight_binary_mask", torch.zeros(weight_shape))
         self.weight_binary_mask = torch.ones(weight_shape)
+        self.hs_w = 0.0
 
         if self.prune_bias is True:
+            self.frozen_mask_b = frozen
             bias_shape = target_module_node.layer_attributes.get_bias_shape()
             self.register_buffer("_bias_binary_mask", torch.zeros(bias_shape))
             self.bias_binary_mask = torch.ones(bias_shape)
+            self.hs_b = 0.0
 
         # self.mask_calculation_hook = MaskCalculationHook(self)
-        self.hs_w = 0.0
-        self.hs_b = 0.0
 
     @property
     def weight_binary_mask(self):
@@ -80,17 +81,30 @@ class HSSparsifyingWeight(nn.Module):
             with no_jit_trace():
                 return weight.mul_(self.binary_mask)
 
-        self.weight_binary_mask = make_binary_mask(weight)
-        self.hs_w = self._calc_hoyer_square(weight)
-        
-        if self.prune_bias is True:
-            self.bias_binary_mask = make_binary_mask(bias)
-            self.hs_b = self._calc_hoyer_square(bias)
+        self.hs_w = 0.0
+        self.hs_b = 0.0
+
+        if self.training is True:
+            if self.frozen_mask_w is True:
+                weight = self.weight_binary_mask*weight
+            else:
+                self.weight_binary_mask = make_binary_mask(weight)
+                self.hs_w = self._calc_hoyer_square(weight)
+            
+            if self.prune_bias is True:
+                if self.frozen_mask_b is True:
+                    bias = self.bias_binary_mask*bias
+                else:
+                    self.bias_binary_mask = make_binary_mask(bias)
+                    self.hs_b = self._calc_hoyer_square(bias)
+        else:
+            weight = self.weight_binary_mask*weight
+            bias = self.bias_binary_mask*bias
 
         return weight, bias
 
     def loss(self):
-        return self.hs_w + self.hs_b
+        return self.hs_w, self.hs_b
 
     def apply_binary_mask(self, param_tensor, isbias=False):
         # TODO param_tensor is dummy, this is workaround
