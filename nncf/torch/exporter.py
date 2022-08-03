@@ -160,7 +160,7 @@ class PTExporter(Exporter):
             torch.onnx.export(model, tuple(input_tensor_list), save_path,
                               input_names=input_names,
                               output_names=output_names,
-                              enable_onnx_checker=False,
+                            #   enable_onnx_checker=False,
                               opset_version=opset_version,
                               # Do not fuse Conv+BN in ONNX. May cause dropout elements to appear in ONNX.
                               training=True)
