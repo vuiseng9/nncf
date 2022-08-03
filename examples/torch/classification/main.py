@@ -79,6 +79,7 @@ from nncf.torch.structures import ExecutionParameters
 from nncf.torch.utils import is_main_process
 from nncf.torch.utils import safe_thread_call
 from timm.data import str_to_interp_mode
+from nncf.torch.algo_selector import NoCompressionAlgorithmController
 
 model_names = sorted(name for name, val in models.__dict__.items()
                      if name.islower() and not name.startswith("__")
@@ -137,6 +138,21 @@ def inception_criterion_fn(model_outputs: Any, target: Any, criterion: _Loss) ->
     loss2 = criterion(aux_outputs, target)
     return loss1 + 0.4 * loss2
 
+def generate_onnx(compression_ctrl, config):
+    import os
+    onnx_pth = os.path.join(config.log_dir, 'ir', "{}.onnx".format(compression_ctrl.model.get_nncf_wrapped_model().__class__.__name__))
+    ir_dir = os.path.dirname(onnx_pth)
+    os.makedirs(ir_dir, exist_ok=True)
+
+    # TODO: auto naming of sparse.quantized
+    compression_ctrl.export_model(onnx_pth)
+    logger.info("Saved to {}".format(onnx_pth))
+
+    if os.path.exists(onnx_pth):
+        import subprocess
+        subprocess.run(["mo", "--input_model", onnx_pth, "--model_name", os.path.basename(os.path.splitext(onnx_pth)[0]), "--output_dir", ir_dir], check=True)
+
+    return onnx_pth
 
 # pylint:disable=too-many-branches,too-many-statements
 def main_worker(current_gpu, config: SampleConfig):
@@ -228,8 +244,7 @@ def main_worker(current_gpu, config: SampleConfig):
         load_state(model, model_state_dict, is_resume=True)
 
     if is_export_only:
-        compression_ctrl.export_model(config.to_onnx)
-        logger.info("Saved to {}".format(config.to_onnx))
+        generate_onnx(compression_ctrl, config)
         return
 
     model, _ = prepare_model_for_execution(model, config)
@@ -294,23 +309,13 @@ def main_worker(current_gpu, config: SampleConfig):
                   train_loader, train_sampler, val_loader, best_acc1)
 
     if 'test' in config.mode:
-        #TODO: temporary disable this
-        # validate(val_loader, model, criterion, config)
-        pass
+        validate(val_loader, model, criterion, config)
 
     config.mlflow.end_run()
 
     if 'export' in config.mode:
-        import os
-        onnx_pth = os.path.join(config.log_dir, 'ir', "{}.onnx".format(model.get_nncf_wrapped_model().__class__.__name__))
-        ir_dir = os.path.dirname(onnx_pth)
-        os.makedirs(ir_dir, exist_ok=True)
-        compression_ctrl.export_model(onnx_pth)
-        logger.info("Saved to {}".format(onnx_pth))
+        generate_onnx(compression_ctrl, config)
 
-        if os.path.exists(onnx_pth):
-            import subprocess
-            subprocess.run(["mo", "--input_model", onnx_pth, "--model_name", os.path.basename(os.path.splitext(onnx_pth)[0]), "--output_dir", ir_dir], check=True)
 
 
 def train(config, compression_ctrl, model, criterion, criterion_fn, lr_scheduler, model_name, optimizer,

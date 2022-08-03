@@ -87,7 +87,7 @@ class FunctionsToPatchWithoutTracing:
                                 'q_per_channel_axis', 'q_per_channel_scales', 'q_per_channel_zero_points', 'q_scale',
                                 'q_zero_point', 'qr', 'qscheme', 'random_', 'record_stream', 'refine_names',
                                 'register_hook', 'rename', 'rename_', 'shape', 'size', 'sort', 'storage',
-                                'storage_offset', 'stride', 'to', 'bind', 'unbind']
+                                'storage_offset', 'stride', 'to']
 
     FUNCTIONS_TO_PATCH_WITHOUT_TRACING = TENSOR_CREATING_FUNCTIONS + TENSOR_UTILITY_FUNCTIONS
 
@@ -101,7 +101,7 @@ class MagicFunctionsToPatch:
                                        "__ifloordiv__", "__rfloordiv__", "__getitem__",
                                        "__lt__", "__le__", "__gt__",
                                        "__ge__", "__mod__", "__eq__", "__ne__", "__or__",
-                                       "__xor__", "__and__", "__pow__"]
+                                       "__xor__", "__and__", "__pow__", "__matmul__"]
     }
 
 

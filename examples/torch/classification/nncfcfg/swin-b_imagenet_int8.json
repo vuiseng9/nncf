@@ -25,8 +25,8 @@
               },
   
               "batchnorm_adaptation": {
-                  // "num_bn_adaptation_samples": 2
-                  "num_bn_adaptation_samples": 200
+                  "num_bn_adaptation_samples": 2
+                //   "num_bn_adaptation_samples": 200
               }
           },
           "activations":
@@ -38,7 +38,8 @@
               "mode": "symmetric",
               "signed": true,
               "per_channel": false
-          }
+          },
+          "ignored_scopes": ["{re}.*unbind*"]
       },
     ]
 }
