@@ -211,6 +211,18 @@ def main_worker(current_gpu, config: SampleConfig):
     if resuming_checkpoint_path is not None:
         resuming_checkpoint = load_resuming_checkpoint(resuming_checkpoint_path)
     model_state_dict, compression_state = extract_model_and_compression_states(resuming_checkpoint)
+    
+    if False:
+        from torchinfo import summary
+        batch_data=iter(val_loader).next()[0]
+        summary(model, input_data=batch_data, depth=10,
+            col_names=["input_size",
+                        "output_size",
+                        "num_params",]
+                        # "kernel_size",
+                        # "mult_adds",
+                        # "trainable"]
+        )
     compression_ctrl, model = create_compressed_model(model, nncf_config, compression_state)
     if model_state_dict is not None:
         load_state(model, model_state_dict, is_resume=True)
@@ -282,13 +294,23 @@ def main_worker(current_gpu, config: SampleConfig):
                   train_loader, train_sampler, val_loader, best_acc1)
 
     if 'test' in config.mode:
-        validate(val_loader, model, criterion, config)
+        #TODO: temporary disable this
+        # validate(val_loader, model, criterion, config)
+        pass
 
     config.mlflow.end_run()
 
     if 'export' in config.mode:
-        compression_ctrl.export_model(config.to_onnx)
-        logger.info("Saved to {}".format(config.to_onnx))
+        import os
+        onnx_pth = os.path.join(config.log_dir, 'ir', "{}.onnx".format(model.get_nncf_wrapped_model().__class__.__name__))
+        ir_dir = os.path.dirname(onnx_pth)
+        os.makedirs(ir_dir, exist_ok=True)
+        compression_ctrl.export_model(onnx_pth)
+        logger.info("Saved to {}".format(onnx_pth))
+
+        if os.path.exists(onnx_pth):
+            import subprocess
+            subprocess.run(["mo", "--input_model", onnx_pth, "--model_name", os.path.basename(os.path.splitext(onnx_pth)[0]), "--output_dir", ir_dir], check=True)
 
 
 def train(config, compression_ctrl, model, criterion, criterion_fn, lr_scheduler, model_name, optimizer,
