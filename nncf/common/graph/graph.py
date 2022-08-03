@@ -15,6 +15,7 @@ from collections import defaultdict
 from copy import deepcopy
 from typing import Any, Callable, Dict, KeysView, List, Tuple, Type, ValuesView
 from typing import Generator
+from matplotlib.colors import to_hex
 
 import networkx as nx
 import networkx.algorithms.isomorphism as iso
@@ -543,15 +544,42 @@ class NNCFGraph:
 
         return out_graph
 
-    def _get_graph_for_visualization(self) -> nx.DiGraph:
+    def _get_graph_for_visualization(self, readable = True) -> nx.DiGraph:
         """
         :return: A user-friendly graph .dot file, making it easier to debug the network and setup
         ignored/target scopes.
         """
+        import matplotlib._color_data as mcd
+        import matplotlib.pyplot as plt
+        from matplotlib.colors import to_hex
+        import numpy as np
+        PALETTE = np.array(list(mcd.CSS4_COLORS.keys())).reshape(-1, 4).transpose().reshape(-1).tolist()
+        PALETTE = np.array([to_hex(c) for c in plt.get_cmap("tab20b").colors]).reshape(-1, 5).transpose().reshape(-1).tolist()
+    
+        def get_readable_str(input_string, divider="/"):
+            tokens=input_string.split(divider)
+            new_tokens=[]
+            for i, token in enumerate(tokens):
+                if (i+1)%3==0:
+                    token += "\n"
+                new_tokens.append(token)
+            return '/'.join(new_tokens)
+
         out_graph = nx.DiGraph()
         for node in self.get_all_nodes():
             attrs_node = {}
-            attrs_node['label'] = f"{node.node_id} {node.node_name}"
+            attrs_node['label'] = f"{node.node_id}\n{node.node_name}"
+
+            if readable is True:
+                attrs_node['label'] = get_readable_str(attrs_node['label'])
+            if 'quantize' in attrs_node['label']:
+                attrs_node['style'] = 'filled'
+                attrs_node['color'] = 'aquamarine'
+            elif 'NNCF' in attrs_node['label']:
+                if 'batch_norm' not in attrs_node['label']:
+                    attrs_node['style'] = 'filled'
+                    attrs_node['color'] = 'lawngreen'
+                    # At present, there are 8 style values recognized: filled , invisible , diagonals , rounded . dashed , dotted , solid and bold
             node_key = self.get_node_key_by_id(node.node_id)
             out_graph.add_node(node_key, **attrs_node)
 
