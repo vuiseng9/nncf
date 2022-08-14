@@ -29,6 +29,8 @@ import numpy as np
 from nncf.torch.sparsity.functions import apply_binary_mask as apply_binary_mask_impl
 from nncf.torch.utils import is_tracing_state, no_jit_trace
 
+IKEYWORD='intermediate_dense'
+
 class SparseStructure(str, Enum):
     FINE = "fine"
     BLOCK = "block"
@@ -215,7 +217,7 @@ class MovementSparsifier(nn.Module):
             torch.norm(torch.sigmoid(self._expand_importance(self._bias_importance, isbias=True)), p=1) / self._bias_importance.numel()
         )
 
-    def get_structured_mask(self, grain_size=None):
+    def get_structured_mask(self, grain_size=None, skipbias=False):
         if grain_size is None:
             grain_size = self.sparse_cfg.sparse_factors
         
@@ -226,12 +228,13 @@ class MovementSparsifier(nn.Module):
         structured_mask = structured_mask.amax(dim=(tuple((np.arange(len(self.weight_ctx.binary_mask.shape)) * 2 + 1))))
         # print("Mask Shape from {} to {}".format(structured_mask.shape, self.weight_ctx.binary_mask.shape))
         if self.prune_bias is True:
-            structured_bias_mask_shape = structured_mask_shape[0]
-            structured_bias_mask = self.bias_ctx.binary_mask.detach().clone()
-            structured_bias_mask = structured_bias_mask.reshape((structured_bias_mask_shape, -1))
-            structured_bias_mask = structured_bias_mask.amax(dim=1)
-            dim_aligned = structured_bias_mask.repeat(structured_mask.shape[1]).reshape(-1, structured_mask.shape[1])
-            structured_mask = structured_mask.logical_or(dim_aligned).to(torch.float32)
+            if skipbias is False:
+                structured_bias_mask_shape = structured_mask_shape[0]
+                structured_bias_mask = self.bias_ctx.binary_mask.detach().clone()
+                structured_bias_mask = structured_bias_mask.reshape((structured_bias_mask_shape, -1))
+                structured_bias_mask = structured_bias_mask.amax(dim=1)
+                dim_aligned = structured_bias_mask.repeat(structured_mask.shape[1]).reshape(-1, structured_mask.shape[1])
+                structured_mask = structured_mask.logical_or(dim_aligned).to(torch.float32)
         return structured_mask
 
     def set_structured_mask(self, structured_mask):

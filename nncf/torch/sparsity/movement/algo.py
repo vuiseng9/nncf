@@ -50,6 +50,8 @@ import pandas as pd
 import functools
 
 
+FORCE_PRUNE_BIAS=False
+
 @PT_COMPRESSION_ALGORITHMS.register('movement_sparsity')
 class MovementSparsityBuilder(BaseSparsityAlgoBuilder):
     def _sparsify_weights(self, target_model: NNCFNetwork) -> List[PTInsertionCommand]:
@@ -366,6 +368,8 @@ class MovementSparsityController(BaseSparsityAlgoController):
         # masks_per_group[group_id][sparsifying_node_name] = mask
 
     def reset_independent_structured_mask(self):
+        ffnn_w1_keyword = 'intermediate_dense'
+
         for group_id, ctxes in self.structured_ctx_by_group.items():
             for ctx in ctxes:
                 print("Mask {} | grain {} | s.Mask {} | {}".format(
@@ -373,7 +377,11 @@ class MovementSparsityController(BaseSparsityAlgoController):
                     ctx.grid_size,
                     tuple(ctx.independent_structured_mask.shape),
                     '/'.join(ctx.sparse_module_info.module_node_name.split("/")[-4:])))
-                ctx.independent_structured_mask = ctx.sparse_module_info.operand.get_structured_mask(ctx.grid_size)
+                if FORCE_PRUNE_BIAS is True:
+                    ignorebias = ffnn_w1_keyword in ctx.sparse_module_info.module_node_name # only force prune bias of this layer
+                    ctx.independent_structured_mask = ctx.sparse_module_info.operand.get_structured_mask(grain_size=ctx.grid_size, skipbias=ignorebias)
+                else:
+                    ctx.independent_structured_mask = ctx.sparse_module_info.operand.get_structured_mask(grain_size=ctx.grid_size)
                 print("=> s.Mask {}".format(tuple(ctx.independent_structured_mask.shape)))
                 print("--------------")
 
