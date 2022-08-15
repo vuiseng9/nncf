@@ -723,7 +723,7 @@ MOVEMENT_SPARSITY_SCHEMA = {
             "const": MOVEMENT_SPARSITY_ALGO_NAME_IN_CONFIG
         },
         **COMPRESSION_LR_MULTIPLIER_PROPERTY,
-        "sparsity_init": with_attributes(_NUMBER,
+        "sparsity_init": with_attributes(NUMBER,
                                          description="Initial value of the sparsity level applied to the "
                                                      "model"),
         "params":
@@ -731,32 +731,32 @@ MOVEMENT_SPARSITY_SCHEMA = {
                 # TODO: revise config to expose
                 "type": "object",
                 "properties": {
-                    "schedule": with_attributes(_STRING,
+                    "schedule": with_attributes(STRING,
                                                 description="The type of scheduling to use for adjusting the"
                                                             "importance threshold and its regularization factor"),
-                    "power": with_attributes(_NUMBER,
+                    "power": with_attributes(NUMBER,
                                              description="For polynomial scheduler - determines the corresponding power value."),
-                    "init_importance_threshold": with_attributes(_NUMBER,
+                    "init_importance_threshold": with_attributes(NUMBER,
                                                                  description="importance masking threshold @ warmup_start_epoch"),
-                    "warmup_start_epoch": with_attributes(_NUMBER,
+                    "warmup_start_epoch": with_attributes(NUMBER,
                                                           description="Index of the starting epoch of the importance masking threshold"
                                                                         "warmup at the value of init_importance_threshold"),
-                    "final_importance_threshold": with_attributes(_NUMBER,
+                    "final_importance_threshold": with_attributes(NUMBER,
                                                                   description="importance masking threshold @ warmup_end_epoch"),
-                    "warmup_end_epoch": with_attributes(_NUMBER,
+                    "warmup_end_epoch": with_attributes(NUMBER,
                                                         description="Index of the ending epoch of the importance masking threshold"
                                                                     "warmup at the value of final_importance_threshold"),
-                    "importance_regularization_factor": with_attributes(_NUMBER,
+                    "importance_regularization_factor": with_attributes(NUMBER,
                                                                         description="regularization final lambda"),
-                    "steps_per_epoch": with_attributes(_NUMBER,
+                    "steps_per_epoch": with_attributes(NUMBER,
                                        description="Number of optimizer steps in one epoch. Required to start proper "
                                                    " scheduling in the first training epoch if "
                                                    "'update_per_optimizer_step' is true"),
-                    "update_per_optimizer_step": with_attributes(_BOOLEAN,
+                    "update_per_optimizer_step": with_attributes(BOOLEAN,
                                                                 description="Whether the function-based sparsity level schedulers "
                                                                             "should update the sparsity level after each optimizer "
                                                                             "step instead of each epoch step."),
-                    "sparsity_level_setting_mode": with_attributes(_STRING,
+                    "sparsity_level_setting_mode": with_attributes(STRING,
                                                                 description="The mode of sparsity level setting( "
                                                                             "'global' - one sparsity level is set for all layer, "
                                                                             "'local' - sparsity level is set per-layer.)"),

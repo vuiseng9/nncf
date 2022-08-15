@@ -56,7 +56,7 @@ class QuantizeSymmetric(torch.autograd.Function):
 
         if grad_output.is_cuda:
             if not grad_output.is_contiguous():
-                nncf_logger.warning("grad_output is not contiguous!")
+                # nncf_logger.warning("grad_output is not contiguous!")
                 grad_output = grad_output.contiguous()
 
             grad_input, _, grad_scale = QuantizedFunctionsCUDA.Quantize_backward(
@@ -103,7 +103,7 @@ class QuantizeAsymmetric(torch.autograd.Function):
 
         if grad_output.is_cuda:
             if not grad_output.is_contiguous():
-                nncf_logger.warning("grad_output is not contiguous!")
+                # nncf_logger.warning("grad_output is not contiguous!")
                 grad_output = grad_output.contiguous()
 
             grad_input, grad_input_low, grad_input_range = QuantizedFunctionsCUDA.Quantize_backward(

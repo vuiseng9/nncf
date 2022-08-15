@@ -359,9 +359,13 @@ class MovementSparsityController(BaseSparsityAlgoController):
 
         for group_id, ctxes in self.structured_ctx_by_group.items():
             for ctx in ctxes:
-                ctx.sparse_module_info.operand.set_structured_mask(
-                    inflate_structured_mask(ctx.dependent_structured_mask, ctx.grid_size)
-                )
+                # TODO: need to nncf backend fix
+                if hasattr(ctx, 'dependent_structured_mask'):
+                    ctx.sparse_module_info.operand.set_structured_mask(
+                        inflate_structured_mask(ctx.dependent_structured_mask, ctx.grid_size)
+                    )
+                else:
+                    nncf_logger.warning('No dependent_structured_mask: %s', ctx.sparsifying_node_name)
 
     def resolve_structured_mask(self):
         for group_id, ctxes in self.structured_ctx_by_group.items():
@@ -519,7 +523,7 @@ class MovementSparsityController(BaseSparsityAlgoController):
         PrunableOp = namedtuple("PrunableOp", "op_addr op_mod")
 
         building_blocks  = get_building_blocks(self.model, allow_nested_blocks=False)
-        all_node_op_addr_in_blocks = self._get_all_node_op_addresses_in_block(self.model, building_blocks)
+        all_node_op_addr_in_blocks = self._get_all_node_op_addresses_in_block(self.model, building_blocks[0])
 
         prunableops_per_group = {}
         for group_id, nodes_per_block in all_node_op_addr_in_blocks.items():
@@ -541,7 +545,7 @@ class MovementSparsityController(BaseSparsityAlgoController):
         graph = nncf_network.get_original_graph()
         all_nodes_per_skipped_block_idxs = {}
         for idx, block in enumerate(blocks):
-            start_node, end_node = block.start_node, block.end_node
+            start_node, end_node = block.start_node_name, block.end_node_name
             start_node_key, end_node_key = None, None
             for node in graph._nx_graph._node.values():
                 if start_node == str(node['node_name']):
