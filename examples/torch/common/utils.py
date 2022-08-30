@@ -146,9 +146,11 @@ def configure_device(current_gpu, config: SampleConfig):
         configure_distributed(config)
 
     config.device = get_device(config)
+    config.device = torch.device("hpu")
 
     if config.execution_mode == ExecutionMode.SINGLE_GPU:
-        torch.cuda.set_device(config.current_gpu)
+        torch.device("hpu")
+        #torch.cuda.set_device(config.current_gpu)
 
 
 def configure_logging(sample_logger, config):

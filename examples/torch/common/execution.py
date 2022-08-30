@@ -83,7 +83,9 @@ def prepare_model_for_execution(model, config):
         model_without_dp = model.module
 
     if config.execution_mode == ExecutionMode.SINGLE_GPU:
-        torch.cuda.set_device(config.current_gpu)
+        torch.device("hpu")
+
+        #torch.cuda.set_device(config.current_gpu)
 
     if config.execution_mode == ExecutionMode.GPU_DATAPARALLEL:
         # DataParallel will divide and allocate batch_size to all available GPUs

@@ -79,6 +79,8 @@ from nncf.torch.structures import ExecutionParameters
 from nncf.torch.utils import is_main_process
 from nncf.torch.utils import safe_thread_call
 
+import habana_frameworks.torch.core as htcore
+
 model_names = sorted(name for name, val in models.__dict__.items()
                      if name.islower() and not name.startswith("__")
                      and callable(val))
