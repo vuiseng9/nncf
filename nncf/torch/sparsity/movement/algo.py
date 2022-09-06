@@ -11,7 +11,7 @@
  limitations under the License.
 """
 from copy import deepcopy
-from typing import DefaultDict, List, OrderedDict
+from typing import DefaultDict, List
 
 import torch
 import torch.distributed as dist
@@ -48,6 +48,7 @@ import os
 import numpy as np
 import pandas as pd
 
+from collections import OrderedDict
 
 @PT_COMPRESSION_ALGORITHMS.register('movement_sparsity')
 class MovementSparsityBuilder(BaseSparsityAlgoBuilder):
@@ -159,7 +160,8 @@ class MovementSparsityController(BaseSparsityAlgoController):
 
         #TODO: review - perhaps not the right place
         self.config = config
-        self.prunableops_per_group = self._get_group_of_prunable_ops()
+        self.prunableops_per_group = self._get_group_of_prunable_ops_swin()
+        # self.prunableops_per_group = self._get_group_of_prunable_ops()
         # self.visualize_groups_of_prunables()
         self.create_structured_sparsity_context()
 
@@ -228,7 +230,7 @@ class MovementSparsityController(BaseSparsityAlgoController):
         return nncf_stats
 
     def create_structured_sparsity_context(self):
-        DEBUG=False
+        DEBUG=True
         # Structured_mask per tensor -------------------
         node_name_sparse_mod_info_map = {sparse_info.module_node_name: sparse_info for sparse_info in self.sparsified_module_info}
         self.node_name_sparse_mod_info_map = node_name_sparse_mod_info_map
@@ -240,20 +242,23 @@ class MovementSparsityController(BaseSparsityAlgoController):
         for group_id, op_list in self.prunableops_per_group.items():
             masks_per_group[group_id]=dict()
             for op in op_list:
-                sparsifying_node_name = str(op.op_addr)
+                sparsifying_node_name = op.op_nodename
+                op2namedmodule[sparsifying_node_name]=op.op_mod
+                # sparsifying_node_name = str(op.op_addr)
 
-                # find op's torch module name
-                for n, m in self.model.named_modules():
-                    if m == op.op_mod:
-                        op2namedmodule[sparsifying_node_name] = n
-                        break
+                # # find op's torch module name
+                # for n, m in self.model.named_modules():
+                #     if m == op.op_mod:
+                #         op2namedmodule[sparsifying_node_name] = n
+                #         break
                 
                 sparse_module_info = node_name_sparse_mod_info_map[sparsifying_node_name]
 
-                if any(map(sparsifying_node_name.__contains__, ['query','key','value'])):
-                    # these matrices must be pruned by group(s) of cols
-                    nrow_per_head = self.model.nncf_module.bert.config.hidden_size//self.model.nncf_module.bert.config.num_attention_heads
-                    ncol_per_head = self.model.nncf_module.bert.config.hidden_size
+                if any(map(sparsifying_node_name.__contains__, ['qkv'])):
+                    # swin preset
+                    nrow_per_head = 32
+                    qkv_offset = op.op_mod.weight.shape[0]//3
+                    ncol_per_head = op.op_mod.weight.shape[1]
                     grid_size = (nrow_per_head, ncol_per_head)
                     
                     if DEBUG is True:
@@ -263,9 +268,10 @@ class MovementSparsityController(BaseSparsityAlgoController):
                             masks_per_group[group_id]['qkv'] = [mask]
                             masks_per_group[group_id]['qkv_nodes'] = [sparsifying_node_name]
                         else:
-                            masks_per_group[group_id]['qkv'].append(mask)
-                            masks_per_group[group_id]['qkv_nodes'].append(sparsifying_node_name)
-                        print("{:15} | {:20} | {}".format('group_of_rows', str(mask.shape), sparsifying_node_name))
+                            raise ValueError("Invalud entry")
+                            # masks_per_group[group_id]['qkv'].append(mask)
+                            # masks_per_group[group_id]['qkv_nodes'].append(sparsifying_node_name)
+                        print("{:15} | {:25} | {}".format('group_of_rows', str(mask.shape), sparsifying_node_name))
 
                     structured_mask_ctx = StructuredMask(
                                                 sparse_module_info.module_node_name,
@@ -281,10 +287,10 @@ class MovementSparsityController(BaseSparsityAlgoController):
                     if DEBUG is True:
                         assert ((mask==structured_mask_ctx.independent_structured_mask).sum() == mask.numel()).item(), "qkv: Logical Bug, pls debug"
                     
-                elif 'BertSelfOutput' in sparsifying_node_name:
+                elif 'proj' in sparsifying_node_name:
                     # this matrix must be pruned by group(s) of cols
-                    ncol_per_head = self.model.nncf_module.bert.config.hidden_size//self.model.nncf_module.bert.config.num_attention_heads
-                    nrow_per_head = self.model.nncf_module.bert.config.hidden_size
+                    nrow_per_head = op.op_mod.weight.shape[0]
+                    ncol_per_head = 32 #Swin preset, d=32 per head
                     grid_size = (nrow_per_head, ncol_per_head)
 
                     if DEBUG is True:
@@ -292,7 +298,7 @@ class MovementSparsityController(BaseSparsityAlgoController):
                         mask = sparse_module_info.operand.get_structured_mask(grid_size)
                         masks_per_group[group_id]['concat'] = mask
                         masks_per_group[group_id]['concat_node'] = sparsifying_node_name
-                        print("{:15} | {:20} | {}".format('group_of_cols', str(mask.shape), sparsifying_node_name))
+                        print("{:15} | {:25} | {}".format('group_of_cols', str(mask.shape), sparsifying_node_name))
 
                     structured_mask_ctx = StructuredMask(
                                                 sparse_module_info.module_node_name,
@@ -306,22 +312,22 @@ class MovementSparsityController(BaseSparsityAlgoController):
                     self.structured_ctx_by_group[group_id].append(sparse_module_info.operand.structured_mask_ctx)
 
                     if DEBUG is True:
-                        assert ((mask==structured_mask_ctx.independent_structured_mask).sum() == mask.numel()).item(), "BertSelfOutput: Logical Bug, pls debug"
+                        assert ((mask==structured_mask_ctx.independent_structured_mask).sum() == mask.numel()).item(), "MHSA Concat: Logical Bug, pls debug"
 
-                elif any(map(sparsifying_node_name.__contains__, ['BertIntermediate','BertOutput'])):
+                elif any(map(sparsifying_node_name.__contains__, ['fc1','fc2'])):
                     mask = sparse_module_info.operand.get_structured_mask()
                     grid_size = sparse_module_info.operand.sparse_cfg.sparse_factors
 
                     if DEBUG is True:
-                        if 'BertIntermediate' in sparsifying_node_name:
+                        if 'fc1' in sparsifying_node_name:
                             masks_per_group[group_id]['ffnn_w1_grain'] = grid_size
                             masks_per_group[group_id]['ffnn_w1'] = mask
                             masks_per_group[group_id]['ffnn_w1_node'] = sparsifying_node_name
-                        elif 'BertOutput' in sparsifying_node_name:
+                        elif 'fc2' in sparsifying_node_name:
                             masks_per_group[group_id]['ffnn_w2_grain'] = grid_size
                             masks_per_group[group_id]['ffnn_w2'] = mask
                             masks_per_group[group_id]['ffnn_w2_node'] = sparsifying_node_name
-                        print("{:15} | {:20} | {}".format('per_dim', str(mask.shape), sparsifying_node_name))
+                        print("{:15} | {:25} | {}".format('per_dim', str(mask.shape), sparsifying_node_name))
 
                     structured_mask_ctx = StructuredMask(
                                                 sparse_module_info.module_node_name,
@@ -371,24 +377,23 @@ class MovementSparsityController(BaseSparsityAlgoController):
         for group_id, ctxes in self.structured_ctx_by_group.items():
             allnodenames = list(map(lambda x: x.target_module_node, ctxes))
             
-            if any(map(ctxes[0].target_module_node.__contains__, ['query','key','value','BertSelfOutput'])):
-                qid = list(map(lambda x: x.__contains__('query'), allnodenames)).index(True)
-                kid = list(map(lambda x: x.__contains__('key'), allnodenames)).index(True)
-                vid = list(map(lambda x: x.__contains__('value'), allnodenames)).index(True)
-                oid = list(map(lambda x: x.__contains__('BertSelfOutput'), allnodenames)).index(True)
+            if any(map(ctxes[0].target_module_node.__contains__, ['qkv','proj'])):
+                qkv_id = list(map(lambda x: x.__contains__('qkv'), allnodenames)).index(True)
+                oid = list(map(lambda x: x.__contains__('proj'), allnodenames)).index(True)
 
-                coarse_mask = ctxes[qid].independent_structured_mask.logical_or(
-                                ctxes[kid].independent_structured_mask).logical_or(
-                                    ctxes[vid].independent_structured_mask).logical_or(
+                # independent mask
+                q_mask, k_mask, v_mask = ctxes[qkv_id].independent_structured_mask.reshape(3, -1, 1).unbind()
+
+                coarse_mask = q_mask.logical_or(
+                                k_mask).logical_or(
+                                    v_mask).logical_or(
                                         ctxes[oid].independent_structured_mask.transpose(0, 1)
-                                    ).to(torch.float32)
-                ctxes[qid].dependent_structured_mask = coarse_mask
-                ctxes[kid].dependent_structured_mask = coarse_mask
-                ctxes[vid].dependent_structured_mask = coarse_mask
+                                        ).to(torch.float32)
+                ctxes[qkv_id].dependent_structured_mask = coarse_mask.tile(3, 1)
                 ctxes[oid].dependent_structured_mask = coarse_mask.transpose(0, 1)
-            elif any(map(ctxes[0].target_module_node.__contains__, ['BertIntermediate','BertOutput'])):
-                w1_id = list(map(lambda x: x.__contains__('BertIntermediate'), allnodenames)).index(True)
-                w2_id = list(map(lambda x: x.__contains__('BertOutput'), allnodenames)).index(True)
+            elif any(map(ctxes[0].target_module_node.__contains__, ['fc1','fc2'])):
+                w1_id = list(map(lambda x: x.__contains__('fc1'), allnodenames)).index(True)
+                w2_id = list(map(lambda x: x.__contains__('fc2'), allnodenames)).index(True)
                 coarse_mask = ctxes[w1_id].independent_structured_mask.logical_or(
                                 ctxes[w2_id].independent_structured_mask.transpose(0, 1)
                               ).to(torch.float32)
@@ -518,6 +523,41 @@ class MovementSparsityController(BaseSparsityAlgoController):
         for group, op_list in self.prunableops_per_group.items():
             print("= Group {} ======".format(group))
             print('\n'.join(list(map(lambda x: '{:12} | {}'.format(str(list(x.op_mod.weight.shape)), str(x.op_addr)), op_list))))
+
+    def _get_group_of_prunable_ops_swin(self):
+        # PrunableOp = namedtuple("PrunableOp", "op_addr op_mod")
+
+        PrunableOp = namedtuple("PrunableOp", "sparsifier_mod op_mod op_nodename")
+        txblk = OrderedDict()
+        for i, sparse_info in enumerate(self.sparsified_module_info):
+            SparseOp = PrunableOp(sparse_info.operand, sparse_info.module, sparse_info.module_node_name)
+
+            modname_tokens = sparse_info.module_node_name.split("/")
+            blkname = modname_tokens[2]+modname_tokens[4]
+
+            if blkname not in txblk:
+                txblk[blkname]={"mhsa":[],"ffnn":[]}
+            
+            if 'WindowAttention' in sparse_info.module_node_name:
+                txblk[blkname]['mhsa'].append(SparseOp)
+            elif 'Mlp' in sparse_info.module_node_name or 'fc' in sparse_info.module_node_name:
+                txblk[blkname]['ffnn'].append(SparseOp)
+            else:
+                raise ValueError("hardcoding implementation for swin, entry of this loop is unexpected, pls debug")
+
+        # for k, v in txblk.items():
+        #     print(k)
+        #     print('\n'.join(v))
+
+        group_id = 0
+        prunableops_per_group = {}
+        for blk, sparse_groups in txblk.items():
+            prunableops_per_group[group_id]=sparse_groups['mhsa']
+            group_id+=1
+            prunableops_per_group[group_id]=sparse_groups['ffnn']
+            group_id+=1
+
+        return prunableops_per_group
   
     def _get_group_of_prunable_ops(self):
         PrunableOp = namedtuple("PrunableOp", "op_addr op_mod")

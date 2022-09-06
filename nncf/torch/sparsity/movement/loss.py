@@ -19,7 +19,6 @@ class ImportanceLoss(PTCompressionLoss):
     def __init__(self, sparse_layers=None, penalty_scheduler=None):
         super().__init__()
         self._sparse_layers = sparse_layers
-        self.disabled = False
         self.penalty_scheduler = penalty_scheduler
 
     def set_layers(self, sparse_layers):
@@ -33,20 +32,18 @@ class ImportanceLoss(PTCompressionLoss):
                 sparse_layer.freeze_importance()
 
     def calculate(self) -> torch.Tensor:
-        # TODO, how about frozen?
-        if self.disabled:
+        if self.penalty_scheduler.current_step < self.penalty_scheduler.warmup_start_epoch * self.penalty_scheduler._steps_per_epoch:
             return 0
+        else:
+            loss = 0
+            n_active_layer=0
+            for sparse_layer in self._sparse_layers:
+                loss += sparse_layer.loss()
+                n_active_layer+=1
 
-        loss = 0
-        n_active_layer=0
-        for sparse_layer in self._sparse_layers:
-            loss += sparse_layer.loss()
-            n_active_layer+=1
-
-        if self.penalty_scheduler is not None:
-            return self.penalty_scheduler.current_importance_lambda * (loss/n_active_layer)
-        return loss/n_active_layer 
-
+            if self.penalty_scheduler is not None:
+                return self.penalty_scheduler.current_importance_lambda * (loss/n_active_layer)
+            return loss/n_active_layer 
 
 class SparseLossForPerLayerSparsity(ImportanceLoss):
     def __init__(self, sparse_layers=None, target=1.0, p=0.05):
