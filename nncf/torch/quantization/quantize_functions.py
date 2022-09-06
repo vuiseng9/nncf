@@ -28,7 +28,7 @@ class QuantizeSymmetric(torch.autograd.Function):
 
         if input_.is_cuda:
             if not input_.is_contiguous():
-                nncf_logger.warning("input_ is not contiguous!")
+                # nncf_logger.warning("input_ is not contiguous!")
                 input_ = input_.contiguous()
 
             # Required to support both torch.amp.autocast and models that perform explicit type casting
@@ -75,7 +75,7 @@ class QuantizeAsymmetric(torch.autograd.Function):
     def forward(ctx, input_, input_low, input_range, level_low, level_high, levels):
         if input_.is_cuda:
             if not input_.is_contiguous():
-                nncf_logger.warning("input_ is not contiguous!")
+                # nncf_logger.warning("input_ is not contiguous!")
                 input_ = input_.contiguous()
 
             # Required to support both torch.amp.autocast and models that perform explicit type casting
