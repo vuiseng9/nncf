@@ -1,0 +1,16 @@
+{
+    "model": "resnet18",
+    "pretrained": false,
+    "dataset": "cifar10",
+    "input_info": {
+      "sample_size": [1, 3, 32, 32]
+    },
+    "num_classes": 10,
+    "batch_size": 256,
+    "epochs": 50,
+    "multiprocessing_distributed": true,
+    "optimizer": {
+        "type": "Adam",
+        "base_lr": 1e-3
+    }
+}

@@ -210,7 +210,8 @@ def main_worker(current_gpu, config: SampleConfig):
     if resuming_checkpoint_path is not None:
         resuming_checkpoint = load_resuming_checkpoint(resuming_checkpoint_path)
     model_state_dict, compression_state = extract_model_and_compression_states(resuming_checkpoint)
-    compression_ctrl, model = create_compressed_model(model, nncf_config, compression_state)
+    compression_ctrl=None
+    # compression_ctrl, model = create_compressed_model(model, nncf_config, compression_state)
     if model_state_dict is not None:
         load_state(model, model_state_dict, is_resume=True)
 
@@ -245,8 +246,9 @@ def main_worker(current_gpu, config: SampleConfig):
         cudnn.benchmark = True
 
     if is_main_process():
-        statistics = compression_ctrl.statistics()
-        logger.info(statistics.to_str())
+        if compression_ctrl is not None:
+            statistics = compression_ctrl.statistics()
+            logger.info(statistics.to_str())
 
     if 'train' in config.mode:
         if is_accuracy_aware_training(config):
@@ -295,7 +297,8 @@ def train(config, compression_ctrl, model, criterion, criterion_fn, lr_scheduler
     best_compression_stage = CompressionStage.UNCOMPRESSED
     for epoch in range(config.start_epoch, config.epochs):
         # update compression scheduler state at the begin of the epoch
-        compression_ctrl.scheduler.epoch_step()
+        if compression_ctrl is not None:
+            compression_ctrl.scheduler.epoch_step()
 
         if config.distributed:
             train_sampler.set_epoch(epoch)
@@ -306,47 +309,53 @@ def train(config, compression_ctrl, model, criterion, criterion_fn, lr_scheduler
         # Learning rate scheduling should be applied after optimizer’s update
         lr_scheduler.step(epoch if not isinstance(lr_scheduler, ReduceLROnPlateau) else best_acc1)
 
-        # compute compression algo statistics
-        statistics = compression_ctrl.statistics()
+        if compression_ctrl is not None:
+            # compute compression algo statistics
+            statistics = compression_ctrl.statistics()
 
         acc1 = best_acc1
         if epoch % config.test_every_n_epochs == 0:
             # evaluate on validation set
             acc1, _, _ = validate(val_loader, model, criterion, config, epoch=epoch)
 
-        compression_stage = compression_ctrl.compression_stage()
-        # remember best acc@1, considering compression stage. If current acc@1 less then the best acc@1, checkpoint
-        # still can be best if current compression stage is larger than the best one. Compression stages in ascending
-        # order: UNCOMPRESSED, PARTIALLY_COMPRESSED, FULLY_COMPRESSED.
-        is_best_by_accuracy = acc1 > best_acc1 and compression_stage == best_compression_stage
-        is_best = is_best_by_accuracy or compression_stage > best_compression_stage
-        if is_best:
-            best_acc1 = acc1
-        config.mlflow.safe_call('log_metric', "best_acc1", best_acc1)
-        best_compression_stage = max(compression_stage, best_compression_stage)
-        acc = best_acc1 / 100
-        if config.metrics_dump is not None:
-            write_metrics(acc, config.metrics_dump)
-        if is_main_process():
-            logger.info(statistics.to_str())
+        if compression_ctrl is not None:
+            compression_stage = compression_ctrl.compression_stage()
+            # remember best acc@1, considering compression stage. If current acc@1 less then the best acc@1, checkpoint
+            # still can be best if current compression stage is larger than the best one. Compression stages in ascending
+            # order: UNCOMPRESSED, PARTIALLY_COMPRESSED, FULLY_COMPRESSED.
+            is_best_by_accuracy = acc1 > best_acc1 and compression_stage == best_compression_stage
+            is_best = is_best_by_accuracy or compression_stage > best_compression_stage
+            if is_best:
+                best_acc1 = acc1
+            config.mlflow.safe_call('log_metric', "best_acc1", best_acc1)
+            best_compression_stage = max(compression_stage, best_compression_stage)
+            acc = best_acc1 / 100
+            if config.metrics_dump is not None:
+                write_metrics(acc, config.metrics_dump)
+            if is_main_process():
+                logger.info(statistics.to_str())
 
-            checkpoint_path = osp.join(config.checkpoint_save_dir, get_name(config) + '_last.pth')
-            checkpoint = {
-                'epoch': epoch + 1,
-                'arch': model_name,
-                MODEL_STATE_ATTR: model.state_dict(),
-                COMPRESSION_STATE_ATTR: compression_ctrl.get_compression_state(),
-                'best_acc1': best_acc1,
-                'acc1': acc1,
-                'optimizer': optimizer.state_dict(),
-            }
+                checkpoint_path = osp.join(config.checkpoint_save_dir, get_name(config) + '_last.pth')
+                checkpoint = {
+                    'epoch': epoch + 1,
+                    'arch': model_name,
+                    MODEL_STATE_ATTR: model.state_dict(),
+                    COMPRESSION_STATE_ATTR: compression_ctrl.get_compression_state(),
+                    'best_acc1': best_acc1,
+                    'acc1': acc1,
+                    'optimizer': optimizer.state_dict(),
+                }
 
-            torch.save(checkpoint, checkpoint_path)
-            make_additional_checkpoints(checkpoint_path, is_best, epoch + 1, config)
+                torch.save(checkpoint, checkpoint_path)
+                make_additional_checkpoints(checkpoint_path, is_best, epoch + 1, config)
 
-            for key, value in prepare_for_tensorboard(statistics).items():
-                config.mlflow.safe_call('log_metric', 'compression/statistics/{0}'.format(key), value, epoch)
-                config.tb.add_scalar("compression/statistics/{0}".format(key), value, len(train_loader) * epoch)
+                for key, value in prepare_for_tensorboard(statistics).items():
+                    config.mlflow.safe_call('log_metric', 'compression/statistics/{0}'.format(key), value, epoch)
+                    config.tb.add_scalar("compression/statistics/{0}".format(key), value, len(train_loader) * epoch)
+        else:
+            if is_main_process():
+                checkpoint_path = osp.join(config.checkpoint_save_dir, get_name(config) + '_epoch_{}.pth'.format(str(epoch).zfill(3)))
+                torch.save(model.state_dict(), checkpoint_path)
 
 
 def get_dataset(dataset_config, config, transform, is_train):
@@ -504,7 +513,8 @@ def train_epoch(train_loader, model, criterion, criterion_fn, optimizer, compres
     if train_iters is None:
         train_iters = len(train_loader)
 
-    compression_scheduler = compression_ctrl.scheduler
+    if compression_ctrl is not None:
+        compression_scheduler = compression_ctrl.scheduler
 
     # switch to train mode
     model.train()
@@ -514,7 +524,8 @@ def train_epoch(train_loader, model, criterion, criterion_fn, optimizer, compres
         # measure data loading time
         data_time.update(time.time() - end)
 
-        compression_scheduler.step()
+        if compression_ctrl is not None:
+            compression_scheduler.step()
 
         input_ = input_.to(config.device)
         target = target.to(config.device)
@@ -523,17 +534,23 @@ def train_epoch(train_loader, model, criterion, criterion_fn, optimizer, compres
         output = model(input_)
         criterion_loss = criterion_fn(output, target, criterion)
 
-        # compute compression loss
-        compression_loss = compression_ctrl.loss()
-        loss = criterion_loss + compression_loss
+        if compression_ctrl is not None:
+            # compute compression loss
+            compression_loss = compression_ctrl.loss()
+            loss = criterion_loss + compression_loss
+        else:
+            loss = criterion_loss
 
         if isinstance(output, InceptionOutputs):
             output = output.logits
         # measure accuracy and record loss
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
         losses.update(loss.item(), input_.size(0))
-        comp_loss_val = compression_loss.item() if isinstance(compression_loss, torch.Tensor) else compression_loss
-        compression_losses.update(comp_loss_val, input_.size(0))
+
+        if compression_ctrl is not None:
+            comp_loss_val = compression_loss.item() if isinstance(compression_loss, torch.Tensor) else compression_loss
+            compression_losses.update(comp_loss_val, input_.size(0))
+
         criterion_losses.update(criterion_loss.item(), input_.size(0))
         top1.update(acc1, input_.size(0))
         top5.update(acc5, input_.size(0))
@@ -574,9 +591,10 @@ def train_epoch(train_loader, model, criterion, criterion_fn, optimizer, compres
             config.tb.add_scalar("train/top1", top1.val, i + global_step)
             config.tb.add_scalar("train/top5", top5.val, i + global_step)
 
-            statistics = compression_ctrl.statistics(quickly_collected_only=True)
-            for stat_name, stat_value in prepare_for_tensorboard(statistics).items():
-                config.tb.add_scalar('train/statistics/{}'.format(stat_name), stat_value, i + global_step)
+            if compression_ctrl is not None:
+                statistics = compression_ctrl.statistics(quickly_collected_only=True)
+                for stat_name, stat_value in prepare_for_tensorboard(statistics).items():
+                    config.tb.add_scalar('train/statistics/{}'.format(stat_name), stat_value, i + global_step)
 
         if i >= train_iters:
             break
