@@ -157,7 +157,7 @@ class AutoQPrecisionInitializer(BasePrecisionInitializer):
 
         # Control buffer length at run manager level
         if "warmup_iter_number" not in self._ddpg_hparams_override:
-            self._ddpg_hparams_override["warmup_iter_number"] = 10
+            self._ddpg_hparams_override["warmup_iter_number"] = 3 # Note for Intel on demo
 
         self._ddpg_hparams_override["rmsize"] = \
             self._ddpg_hparams_override["warmup_iter_number"] * (len(env.master_df)+1)
@@ -174,6 +174,7 @@ class AutoQPrecisionInitializer(BasePrecisionInitializer):
             self.tb_writer.add_text('AutoQ/state_embedding', temp_df.to_markdown())
 
         best_policy, best_reward = self._search(agent, env)
+        # self._params.user_init_args.config
 
         end_ts = datetime.now()
 
@@ -187,6 +188,7 @@ class AutoQPrecisionInitializer(BasePrecisionInitializer):
         logger.info('\n'.join(['[AutoQ]\n\"bitwidth_per_scope\": [', ',\n'.join(str_bw), ']']))
         logger.info('[AutoQ] best_reward: {}'.format(best_reward))
         logger.info('[AutoQ] best_policy: {}'.format(best_policy))
+        print('\033[92m\n[AutoQ] best_policy: \n{}\033[0m'.format(best_policy))
         logger.info("[AutoQ] Search Complete")
         logger.info("[AutoQ] Elapsed time of AutoQ Precision Initialization (): {}".format(end_ts-start_ts))
         return final_quantizer_setup
@@ -199,7 +201,7 @@ class AutoQPrecisionInitializer(BasePrecisionInitializer):
         episode_reward = 0.
         observation = None
         transition_buffer = []  # Transition buffer
-
+        print("[AutoQ] Mixed Precision Search begins. Bit-width space: {}".format(self._params.bits))
         while episode < self._iter_number:  # counting based on episode
             episode_start_ts = time.time()
             if observation is None:
@@ -209,6 +211,7 @@ class AutoQPrecisionInitializer(BasePrecisionInitializer):
                 agent.reset(observation)
 
             if episode < agent.warmup_iter_number:
+                # print("Warm-up {}".format(episode))
                 action = agent.random_action()
             else:
                 action = agent.select_action(observation, episode=episode)
@@ -297,6 +300,9 @@ class AutoQPrecisionInitializer(BasePrecisionInitializer):
                 if final_reward > best_reward:
                     best_reward = final_reward
                     best_policy = deepcopy(env.master_df['action'])
+                    best_model_ratio = info['model_ratio']
+                    best_accuracy = info['accuracy']
+                    best_episode = episode
                     info_tuple = (episode, best_reward, info['accuracy'], info['model_ratio'], info['bop_ratio'])
                     self._dump_best_episode(info_tuple, bit_stats_df, env)
                     log_str = '## Episode[{}] New best policy: {}, reward: {:.3f}, \
@@ -304,6 +310,9 @@ class AutoQPrecisionInitializer(BasePrecisionInitializer):
                         .format(episode, best_policy.values.tolist(), best_reward,
                                 info['accuracy'], info['model_ratio'],  info['bop_ratio'])
                     logger.info("\033[92m {}\033[00m" .format(log_str))
+                    bNewBest=True
+                    # bw_str = ','.join(map(str, env.master_df['action'].values.tolist()))
+                    # print('{}# New Episode[{}], bit-width config: {} | Top1: {:4.1f}'.format(, episode, bw_str, info['accuracy']))
 
                 episodic_info_tuple = (episode, final_reward, best_reward,
                                        info['accuracy'], info['model_ratio'], info['bop_ratio'],
@@ -313,9 +322,15 @@ class AutoQPrecisionInitializer(BasePrecisionInitializer):
                 episode_elapsed = time.time() - episode_start_ts
 
                 logger.info('## Episode[{}] Policy: \n{}\n'.format(episode, env.master_df['action'].to_string()))
+                bw_str = ','.join(map(str, env.master_df['action'].values.tolist()))
+                # new_best_str = '\033[92m (**New best) \033[0m' if bNewBest else ''
+                print('# Episode[{}], bit-width config: {} | Size Ratio: {:.4f} | Top1: {:4.1f}'.format(episode, bw_str, info['model_ratio'], info['accuracy']))
                 logger.info('## Episode[{}] Elapsed: {:.3f}\n'.format(episode, episode_elapsed))
+                bNewBest=False
 
                 episode += 1
+        best_bw_str = ','.join(map(str, best_policy.values.tolist()))
+        print('\n# Best explored bit-width config:\n\t {} | Size Ratio: {:.4f} | Top1: {:4.1f}\n'.format(best_bw_str, best_model_ratio, best_accuracy))
 
         return best_policy, best_reward
 
