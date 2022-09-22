@@ -310,21 +310,21 @@ QUANTIZATION_INITIALIZER_SCHEMA = {
                                                                       "meant for internal testing use. Users need not "
                                                                       "to configure.",
                                                           default=20),
-                    "bitwidth_per_scope": {
-                        "type": "array",
-                        "items": {
-                            "type": "array",
-                            "items":
-                                [
-                                    NUMBER,
-                                    STRING
-                                ],
-                            "description": "A tuple of a bitwidth and a scope of the quantizer to assign the "
-                                           "bitwidth to."
-                        },
-                        "description": "Manual settings for the quantizer bitwidths. Scopes are used to identify "
-                                       "the quantizers."
-                    },
+                    # "bitwidth_per_scope": {
+                    #     "type": "array",
+                    #     "items": {
+                    #         "type": "array",
+                    #         "items":
+                    #             [
+                    #                 NUMBER,
+                    #                 STRING
+                    #             ],
+                    #         "description": "A tuple of a bitwidth and a scope of the quantizer to assign the "
+                    #                        "bitwidth to."
+                    #     },
+                    #     "description": "Manual settings for the quantizer bitwidths. Scopes are used to identify "
+                    #                    "the quantizers."
+                    # },
                     "traces_per_layer_path": with_attributes(STRING,
                                                              description="Path to serialized PyTorch Tensor with "
                                                                          "average Hessian traces per quantized modules."
@@ -342,7 +342,7 @@ QUANTIZATION_INITIALIZER_SCHEMA = {
                                                                 default=True),
                     "bitwidth_assignment_mode": BITWIDTH_ASSIGNMENT_MODE_SCHEMA,
                 },
-                "additionalProperties": False,
+                "additionalProperties": True,
             }
     },
     "additionalProperties": False,
