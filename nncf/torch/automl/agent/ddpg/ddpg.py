@@ -262,6 +262,11 @@ class DDPG:
 
     def random_action(self):
         action = np.random.uniform(self.LBOUND, self.RBOUND, self.nb_actions)
+        # Ways to bias to 8 bits
+        # action = np.random.normal(loc=1.0, scale=0.3, size=self.nb_actions)
+        # action = np.random.normal(loc=0.8, scale=0.8, size=self.nb_actions)
+        # action = np.random.normal(loc=0.8, scale=1.0, size=self.nb_actions)
+        # action = np.clip(action, self.LBOUND, self.RBOUND)
         return action
 
 
