@@ -526,7 +526,7 @@ class QuantizationEnv:
         if self.pretrained_score == 0:
             return acc
         order = order_of_magnitude(self.pretrained_score)
-        return acc*(10**(-order))
+        return (acc*(10**(-order))).cpu().numpy()
 
     def step(self, action: Union[int, float]) -> Tuple:
         currently_processed_qconf_idx = len(self.collected_strategy)
