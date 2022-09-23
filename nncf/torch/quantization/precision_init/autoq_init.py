@@ -188,7 +188,7 @@ class AutoQPrecisionInitializer(BasePrecisionInitializer):
         logger.info('\n'.join(['[AutoQ]\n\"bitwidth_per_scope\": [', ',\n'.join(str_bw), ']']))
         logger.info('[AutoQ] best_reward: {}'.format(best_reward))
         logger.info('[AutoQ] best_policy: {}'.format(best_policy))
-        print('\033[92m\n[AutoQ] best_policy: \n{}\033[0m'.format(best_policy))
+        print('\033[92m\n[AutoQ] best explored mixed-precision configuration: \n{}\033[0m'.format(best_policy))
         logger.info("[AutoQ] Search Complete")
         logger.info("[AutoQ] Elapsed time of AutoQ Precision Initialization (): {}".format(end_ts-start_ts))
         return final_quantizer_setup
@@ -324,13 +324,13 @@ class AutoQPrecisionInitializer(BasePrecisionInitializer):
                 logger.info('## Episode[{}] Policy: \n{}\n'.format(episode, env.master_df['action'].to_string()))
                 bw_str = ','.join(map(str, env.master_df['action'].values.tolist()))
                 # new_best_str = '\033[92m (**New best) \033[0m' if bNewBest else ''
-                print('# Episode[{}], bit-width config: {} \n# Size Ratio: {:.4f} | Top1: {:4.1f}\n'.format(episode, bw_str, info['model_ratio'], info['accuracy']))
+                print('# Episode[{}] ---\nMixed-Precision Candidate: {}\n# Size Ratio: {:.4f} | Top1: {:4.1f}%\n'.format(episode, bw_str, info['model_ratio'], info['accuracy']))
                 logger.info('## Episode[{}] Elapsed: {:.3f}\n'.format(episode, episode_elapsed))
                 bNewBest=False
 
                 episode += 1
         best_bw_str = ','.join(map(str, best_policy.values.tolist()))
-        print('\n# Best explored bit-width config:\n\t {} \n\tSize Ratio: {:.4f} | Top1: {:4.1f}\n'.format(best_bw_str, best_model_ratio, best_accuracy))
+        print('\n# Best explored bit-width config:\n\t{} \n\tSize Ratio: {:.4f} | Top1: {:4.1f}%\n'.format(best_bw_str, best_model_ratio, best_accuracy))
 
         return best_policy, best_reward
 
