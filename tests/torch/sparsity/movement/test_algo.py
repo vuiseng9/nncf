@@ -11,6 +11,7 @@ import onnx
 import pytest
 import torch
 import torch.nn as nn
+from nncf.common.sparsity.schedulers import PolynomialThresholdScheduler
 from nncf.common.sparsity.statistics import MovementSparsityStatistics
 from nncf.common.utils.helpers import matches_any, should_consider_scope
 from nncf.torch import create_compressed_model
@@ -67,6 +68,7 @@ def test_can_create_movement_sparsity_layers(tmp_path, nncf_config_builder):
     nncf_config = nncf_config_builder.build(log_dir=tmp_path)
     compression_ctrl, compressed_model = create_compressed_model(bert_tiny_torch_model(), nncf_config)
     assert isinstance(compression_ctrl, MovementSparsityController)
+    assert isinstance(compression_ctrl.scheduler, PolynomialThresholdScheduler)
 
     for scope, module in compressed_model.get_nncf_modules().items():
         if not should_consider_scope(str(scope), nncf_config_builder.get('ignored_scopes')):
