@@ -161,15 +161,14 @@ def test_compression_loss(tmp_path, nncf_config_builder):
             for layer in self.compression_ctrl.loss._sparse_layers:
                 assert isinstance(layer, MovementSparsifier)
 
+            # check gradient
             loss_compress = self.compression_ctrl.loss()
+            assert loss_compress.requires_grad is (state.epoch <= self.compression_ctrl.scheduler.warmup_end_epoch)
+            # check value
             if state.epoch <= self.compression_ctrl.scheduler.warmup_start_epoch:
                 assert not torch.is_nonzero(loss_compress)
-                assert loss_compress.requires_grad is True
-            else:
-                if self.compression_ctrl.scheduler.current_importance_lambda > 0.:  # TODO: not the right way to check condition
-                    assert loss_compress > 0.
-                if state.epoch > self.compression_ctrl.scheduler.warmup_end_epoch:
-                    assert loss_compress.requires_grad is False
+            elif self.compression_ctrl.scheduler.current_importance_lambda > 0.:  # TODO: not the right way to check condition
+                assert loss_compress > 0.
 
     run_movement_pipeline(tmp_path, compression_ctrl, compressed_model, [CheckCompressionLossCallback(compression_ctrl)])
 
