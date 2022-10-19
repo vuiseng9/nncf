@@ -11,7 +11,8 @@
  limitations under the License.
 """
 from copy import deepcopy
-from typing import DefaultDict, List, OrderedDict
+from typing import DefaultDict, List, OrderedDict, Optional
+from dataclasses import dataclass
 
 import torch
 import torch.distributed as dist
@@ -143,6 +144,12 @@ class StructuredMask:
             raise ValueError("Shape change about dependent structured mask")
         with torch.no_grad():
             self._dependent_structured_mask = tensor.clone()
+
+
+@dataclass
+class PrunableOp:
+    op_addr: OperationAddress
+    op_mod: Optional[torch.nn.Module]
 
 @ADAPTIVE_COMPRESSION_CONTROLLERS.register('pt_movement_sparsity')
 class MovementSparsityController(BaseSparsityAlgoController):
@@ -525,8 +532,6 @@ class MovementSparsityController(BaseSparsityAlgoController):
             print('\n'.join(list(map(lambda x: '{:12} | {}'.format(str(list(x.op_mod.weight.shape)), str(x.op_addr)), op_list))))
   
     def _get_group_of_prunable_ops(self):
-        PrunableOp = namedtuple("PrunableOp", "op_addr op_mod")
-
         building_blocks, _ = get_building_blocks(self.model,
                                 target_block_types=[BuildingBlockType.MSHA, BuildingBlockType.FF],
                                 block_filter_strategy=BlockFilteringStrategy.KEEP_SMALL,
