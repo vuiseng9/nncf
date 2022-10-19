@@ -236,7 +236,7 @@ LIST_TEST_DESCS = [
         metatype_cls=PTLinearMetatype
     ),
     LayerAttributesTestDesc(
-        LinearLayerAttributes        module=nn.Linear(1, 1, bias=False),
+        module=nn.Linear(1, 1, bias=False),
         model_input_info_list=[ModelInputInfo([1, 1, 1, 1])],
         layer_attributes=LinearLayerAttributes(
             weight_requires_grad=True,
