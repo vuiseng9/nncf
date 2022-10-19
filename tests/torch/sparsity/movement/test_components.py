@@ -5,6 +5,7 @@ import torch
 from nncf.common.sparsity.statistics import (MovementSparsityStatistics,
                                              SparsifiedLayerSummary,
                                              SparsifiedModelStatistics)
+from nncf.common.statistics import NNCFStatistics
 from nncf.common.utils.helpers import create_table
 from nncf.torch import create_compressed_model
 from nncf.torch.sparsity.movement.algo import StructuredMask
@@ -81,11 +82,22 @@ def test_importance_loss(sparse_layers_retvals, penalty_scheduler_retval, ref_ou
 
 def test_movement_sparsity_statistics():
     summary = SparsifiedLayerSummary('layer', [1, 1], 0.5, 0.5)
-    model_statstics = SparsifiedModelStatistics(0.25, 0.5, [summary])
-    movement_statistics = MovementSparsityStatistics(model_statstics, 1.0, 2.0)
-    output_str = movement_statistics.to_str()
-    assert model_statstics.to_str() in output_str
+    model_stats = SparsifiedModelStatistics(0.25, 0.5, [summary])
+    movement_stats = MovementSparsityStatistics(model_stats, 1.0, 2.0)
+    output_str = movement_stats.to_str()
+    assert movement_stats.to_str() in output_str
     assert create_table(
         header=['Statistic\'s name', 'Value'],
         rows=[['Mask Importance Threshold', 1.0], ['Importance Regularization Factor', 2.0]]
     ) in output_str
+
+
+def test_nncf_stats_can_register_movement_sparsity_stats():
+    summary = SparsifiedLayerSummary('layer', [1, 1], 0.5, 0.5)
+    model_stats = SparsifiedModelStatistics(0.25, 0.5, [summary])
+    movement_stats = MovementSparsityStatistics(model_stats, 1.0, 2.0)
+    nncf_stats = NNCFStatistics()
+    nncf_stats.register('movement_sparsity', movement_stats)
+    assert hasattr(nncf_stats, 'movement_sparsity')
+    assert nncf_stats.movement_sparsity == movement_stats
+
