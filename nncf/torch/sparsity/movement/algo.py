@@ -112,7 +112,7 @@ class StructuredMask:
                  grid_size,
                  dependent_group_id,
                  sparse_module_info):
-        # TODO: remove unusefull attributes
+        # TODO: remove useless attributes
         self.target_module_node = target_module_node
         self.sparsifying_node_name = sparsifying_node_name
         self.grid_size = grid_size

@@ -114,7 +114,7 @@ def test_scheduler_load_state(params):
     assert np.allclose(factor, ref_factor)
 
 
-def test_can_infer_steps_per_epoch():
+def test_scheduler_can_infer_steps_per_epoch():
     params = SchedulerParams(2, 1, 3, -1, 0, 0.1, steps_per_epoch=None)
     threshold_after_6_step_calls = approx(-0.7656, abs=1e-4)
     factor_after_6_step_calls = approx(0.0234, abs=1e-4)
