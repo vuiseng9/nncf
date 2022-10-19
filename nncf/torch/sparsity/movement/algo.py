@@ -12,7 +12,6 @@
 """
 from copy import deepcopy
 from typing import DefaultDict, List, OrderedDict, Optional
-from dataclasses import dataclass
 
 import torch
 import torch.distributed as dist
@@ -146,10 +145,11 @@ class StructuredMask:
             self._dependent_structured_mask = tensor.clone()
 
 
-@dataclass
 class PrunableOp:
-    op_addr: OperationAddress
-    op_mod: Optional[torch.nn.Module]
+    def __init__(self, op_addr: OperationAddress, op_mod: Optional[torch.nn.Module]):
+        self.op_addr = op_addr
+        self.op_mod = op_mod
+
 
 @ADAPTIVE_COMPRESSION_CONTROLLERS.register('pt_movement_sparsity')
 class MovementSparsityController(BaseSparsityAlgoController):

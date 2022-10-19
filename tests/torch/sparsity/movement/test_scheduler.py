@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from typing import List, Optional, Union
 from unittest.mock import MagicMock
 
@@ -9,16 +8,23 @@ from nncf.common.sparsity.schedulers import PolynomialThresholdScheduler
 from pytest import approx
 
 
-@dataclass
 class SchedulerParams:
-    power: int = 3
-    warmup_start_epoch: int = 1
-    warmup_end_epoch: int = 3
-    init_importance_threshold: float = -1.0
-    final_importance_threshold: float = 0.0
-    importance_regularization_factor: float = 0.1
-    steps_per_epoch: Optional[int] = 4
-    update_per_optimizer_step: bool = True
+    def __init__(self, power: int = 3,
+                 warmup_start_epoch: int = 1,
+                 warmup_end_epoch: int = 3,
+                 init_importance_threshold: float = -1.0,
+                 final_importance_threshold: float = 0.0,
+                 importance_regularization_factor: float = 0.1,
+                 steps_per_epoch: Optional[int] = 4,
+                 update_per_optimizer_step: bool = True):
+        self.power = power
+        self.warmup_start_epoch = warmup_start_epoch
+        self.warmup_end_epoch = warmup_end_epoch
+        self.init_importance_threshold = init_importance_threshold
+        self.final_importance_threshold = final_importance_threshold
+        self.importance_regularization_factor = importance_regularization_factor
+        self.steps_per_epoch = steps_per_epoch
+        self.update_per_optimizer_step = update_per_optimizer_step
 
 
 @pytest.mark.parametrize('params,ref_threshold,ref_factor', [
