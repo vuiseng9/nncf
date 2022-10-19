@@ -3,6 +3,7 @@ from collections import defaultdict
 from functools import partial
 from pathlib import Path
 from typing import DefaultDict, List
+from unittest.mock import patch
 
 import numpy as np
 import onnx
@@ -307,11 +308,8 @@ def check_onnx_has_sparsified_param(compressed_model, compression_ctrl, onnx_pat
         ref_params[name + '.bias'] = bias
 
     # temporary solution to preserve param names in onnx model
-    _original_export_fn = torch.onnx.export
-    _tmp_export_fn = partial(_original_export_fn, do_constant_folding=False)
-    torch.onnx.export = _tmp_export_fn
-    compression_ctrl.export_model(onnx_path)
-    torch.onnx.export = _original_export_fn
+    with patch("torch.onnx.export", wraps=partial(torch.onnx.export, do_constant_folding=False)):
+        compression_ctrl.export_model(onnx_path)
     onnx_model = onnx.load(onnx_path)
 
     for t in onnx_model.graph.initializer:
