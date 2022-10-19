@@ -1,9 +1,12 @@
+from unittest.mock import Mock, call
 
 import pytest
 import torch
 from nncf.torch import create_compressed_model
 from nncf.torch.sparsity.movement.algo import StructuredMask
 from nncf.torch.sparsity.movement.functions import binary_mask_by_threshold
+from nncf.torch.sparsity.movement.loss import ImportanceLoss
+from pytest import approx
 from tests.torch.sparsity.movement.helpers import (ConfigBuilder,
                                                    bert_tiny_unpretrained)
 
@@ -42,3 +45,31 @@ def test_binary_mask_by_threshold(input_tensor, threshold, max_percentile, ref_o
         output_tensor = binary_mask_by_threshold(input_tensor, threshold, max_percentile)
         assert torch.allclose(output_tensor, ref_output_tensor)
         assert output_tensor.requires_grad is requires_grad
+
+
+@pytest.mark.parametrize(('sparse_layers_retvals', "penalty_scheduler_retval", "ref_output"), [
+    ((1., 2., 3.), 1.5, 3.),
+    ((1., 2., 3.), None, 2.),
+    ((1.,), 2., 2.),
+    ((), 2., 0.),
+    ((), None, 0.),
+])
+def test_importance_loss(sparse_layers_retvals, penalty_scheduler_retval, ref_output):
+    for requires_grad in [True, False]:
+        sparse_layers = [Mock(loss=Mock(return_value=torch.tensor(val, requires_grad=requires_grad)))
+                         for val in sparse_layers_retvals]
+        penalty_scheduler = None
+        if penalty_scheduler_retval is not None:
+            penalty_scheduler = Mock(current_importance_lambda=penalty_scheduler_retval)
+        loss = ImportanceLoss(sparse_layers, penalty_scheduler)
+        output = loss()
+        if not sparse_layers_retvals:
+            assert output == approx(0.)
+        else:
+            assert isinstance(output, torch.Tensor)
+            assert output.requires_grad is requires_grad
+            assert torch.allclose(output, torch.tensor(ref_output))
+        loss.disable()
+        assert loss() == approx(0.)
+        for sparse_layer in sparse_layers:
+            sparse_layer.method_calls == [call.loss(), call.loss(), call.freeze_importance()]
