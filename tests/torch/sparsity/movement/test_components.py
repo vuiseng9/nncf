@@ -2,6 +2,10 @@ from unittest.mock import Mock, call
 
 import pytest
 import torch
+from nncf.common.sparsity.statistics import (MovementSparsityStatistics,
+                                             SparsifiedLayerSummary,
+                                             SparsifiedModelStatistics)
+from nncf.common.utils.helpers import create_table
 from nncf.torch import create_compressed_model
 from nncf.torch.sparsity.movement.algo import StructuredMask
 from nncf.torch.sparsity.movement.functions import binary_mask_by_threshold
@@ -73,3 +77,15 @@ def test_importance_loss(sparse_layers_retvals, penalty_scheduler_retval, ref_ou
         assert loss() == approx(0.)
         for sparse_layer in sparse_layers:
             sparse_layer.method_calls == [call.loss(), call.loss(), call.freeze_importance()]
+
+
+def test_movement_sparsity_statistics():
+    summary = SparsifiedLayerSummary('layer', [1, 1], 0.5, 0.5)
+    model_statstics = SparsifiedModelStatistics(0.25, 0.5, [summary])
+    movement_statistics = MovementSparsityStatistics(model_statstics, 1.0, 2.0)
+    output_str = movement_statistics.to_str()
+    assert model_statstics.to_str() in output_str
+    assert create_table(
+        header=['Statistic\'s name', 'Value'],
+        rows=[['Mask Importance Threshold', 1.0], ['Importance Regularization Factor', 2.0]]
+    ) in output_str
