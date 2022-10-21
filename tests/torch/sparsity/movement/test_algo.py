@@ -186,7 +186,7 @@ def test_importance_score_update(tmp_path, nncf_config_builder):
     compression_ctrl, compressed_model = create_compressed_model(bert_tiny_torch_model(), nncf_config)
 
     class CheckImportanceCallback(BaseCallback):
-        def on_epoch_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+        def on_step_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
             super().on_step_end(args, state, control, **kwargs)
             for sparse_module in self.compression_ctrl.sparsified_module_info:
                 sparsifier = sparse_module.operand
