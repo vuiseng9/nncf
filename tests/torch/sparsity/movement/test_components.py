@@ -44,9 +44,11 @@ def test_sparsifier_forward(tmp_path, sparse_structure_by_scopes, init_weight_im
 def test_structured_mask_setter(tmp_path):
     nncf_config = ConfigBuilder(sparse_structure_by_scopes=[]).build(log_dir=tmp_path)
     compression_ctrl, compressed_model = create_compressed_model(bert_tiny_unpretrained(), nncf_config)
-    ctx: StructuredMask = compression_ctrl.structured_ctx_by_group[0][0]  # pick one structured mask
+    ctx: StructuredMask = sorted(compression_ctrl.structured_ctx_by_group[0],
+                                 key=lambda ctx: ctx.target_module_node)[0]  # we pick the self attention linear for key
+    grid_size = (2, 4)
     # check independent mask
-    ref_mask = ctx.sparse_module_info.operand.get_structured_mask((2, 4))
+    ref_mask = ctx.sparse_module_info.operand.get_structured_mask(grid_size)
     assert torch.allclose(ctx.independent_structured_mask, ref_mask)
     ref_mask = ref_mask * 2. + 1.
     ctx.independent_structured_mask = ref_mask
