@@ -126,8 +126,6 @@ def test_can_modify_layer_actual_behavior(tmp_path, sparse_structure_by_scopes):
     operand = module_info.operand
     torch.nn.init.normal_(operand._weight_importance)
     torch.nn.init.normal_(operand._bias_importance)
-    operand._weight_importance.data.copy_(torch.tensor(init_weight_importance).float())
-    operand._bias_importance.data.copy_(torch.tensor(init_bias_importance).float())
     ori_weight, ori_bias = module_info.module.weight, module_info.module.bias
     masked_weight, masked_bias = operand(ori_weight, ori_bias)  # sparsifier forward function
     equiv_weight, equiv_bias = get_linear_layer_equiv_weight_bias(module_info.module)
