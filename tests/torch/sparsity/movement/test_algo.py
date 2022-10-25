@@ -25,6 +25,7 @@ from pytest import approx
 from tests.torch.sparsity.movement.helpers import (BaseCallback, ConfigBuilder,
                                                    bert_tiny_torch_model,
                                                    bert_tiny_unpretrained,
+                                                   initialize_sparsifer_parameters,
                                                    run_movement_pipeline)
 from tests.torch.test_algo_common import BasicLinearTestModel
 from transformers import TrainingArguments
@@ -124,8 +125,7 @@ def test_layer_actual_behavior_matches_sparsifer_mask(tmp_path, sparse_structure
     compression_ctrl, compressed_model = create_compressed_model(model, nncf_config)
     module_info = compression_ctrl.sparsified_module_info[0]
     operand = module_info.operand
-    torch.nn.init.normal_(operand._weight_importance)
-    torch.nn.init.normal_(operand._bias_importance)
+    initialize_sparsifer_parameters(operand)
     operand.masking_threshold = 0.
     ori_weight, ori_bias = module_info.module.weight, module_info.module.bias
     masked_weight, masked_bias = operand(ori_weight, ori_bias)  # sparsifier forward function
@@ -351,8 +351,7 @@ def test_export_onnx_has_sparsified_param(tmp_path, nncf_config_builder):
     nncf_config = nncf_config_builder.build(log_dir=tmp_path)
     compression_ctrl, compressed_model = create_compressed_model(bert_tiny_torch_model(), nncf_config)
     for m in compression_ctrl.sparsified_module_info:
-        torch.nn.init.uniform_(m.operand._weight_importance, a=-1., b=1.)
-        torch.nn.init.uniform_(m.operand._bias_importance, a=-1., b=1.)
+        initialize_sparsifer_parameters(m.operand)
     for threshold in [-0.5, 0.0, 0.5]:
         compressed_model.train()
         for m in compression_ctrl.sparsified_module_info:
@@ -368,8 +367,7 @@ def test_structured_mask_obeys_unstructured(tmp_path, nncf_config_builder):
     nncf_config = nncf_config_builder.build(log_dir=tmp_path)
     compression_ctrl, compressed_model = create_compressed_model(bert_tiny_torch_model(), nncf_config)
     for m in compression_ctrl.sparsified_module_info:
-        torch.nn.init.normal_(m.operand._weight_importance)
-        torch.nn.init.normal_(m.operand._bias_importance)
+        initialize_sparsifer_parameters(m.operand)
 
     def get_sparsified_module_mask(compression_ctrl):
         mask_dict = {}
@@ -402,8 +400,7 @@ def test_fill_stage_has_fixed_sparsity(tmp_path, nncf_config_builder):
     nncf_config = nncf_config_builder.build(log_dir=tmp_path)
     compression_ctrl, compressed_model = create_compressed_model(bert_tiny_torch_model(), nncf_config)
     for m in compression_ctrl.sparsified_module_info:
-        torch.nn.init.normal_(m.operand._weight_importance)
-        torch.nn.init.normal_(m.operand._bias_importance)
+        initialize_sparsifer_parameters(m.operand)
 
     callback = BaseCallback(compression_ctrl)
     run_movement_pipeline(tmp_path, compression_ctrl, compressed_model, [callback], num_train_epochs=2)
