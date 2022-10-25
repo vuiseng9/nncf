@@ -203,7 +203,7 @@ def test_importance_score_update(tmp_path, nncf_config_builder):
 @pytest.mark.parametrize('nncf_config_builder', [
     ConfigBuilder(),
 ])
-def test_compression_loss(tmp_path, nncf_config_builder):
+def test_compression_loss_update(tmp_path, nncf_config_builder):
     nncf_config = nncf_config_builder.build(log_dir=tmp_path)
     compression_ctrl, compressed_model = create_compressed_model(bert_tiny_torch_model(), nncf_config)
 
@@ -286,23 +286,13 @@ def test_sparsity_statistics_are_increasing(tmp_path, nncf_config_builder):
     assert is_non_decreasing(log_dict['sparsity_level_for_layers'])
 
 
-def get_linear_weight_bias_data(module: NNCFLinear):
-    # TODO: how can we get this via UpdateWeightAndBias?
-    in_features = module.in_features
-    zero_input = torch.zeros((1, in_features))
-    eye_input = torch.eye(in_features)
-    with torch.no_grad():
-        bias = module(zero_input)
-        weight = module(eye_input) - bias
-    return weight.T, bias
-
-
 def check_onnx_has_sparsified_param(compressed_model, compression_ctrl, onnx_path):
     compressed_model.eval()
     ref_params = {}
     module_name_dict = {module: name for name, module in compressed_model.named_modules()}
     for m in compression_ctrl.sparsified_module_info:
-        weight, bias = get_linear_weight_bias_data(m.module)
+        with torch.no_grad():
+            weight, bias = m.operand(m.module.weight, m.module.bias)
         name = module_name_dict[m.module]
         ref_params[name + '.weight'] = weight
         ref_params[name + '.bias'] = bias
@@ -316,9 +306,7 @@ def check_onnx_has_sparsified_param(compressed_model, compression_ctrl, onnx_pat
         if t.name in ref_params:
             ref_param = ref_params.pop(t.name).numpy()
             onnx_param = numpy_helper.to_array(t)
-            assert np.allclose(ref_param, onnx_param, atol=1e-6)
-            # atol cannot be the default value, i.e., 1e-8, probably due to
-            # the current way of accessing pruned reference weight and bias.
+            assert np.allclose(ref_param, onnx_param)
     assert len(ref_params) == 0
 
 
@@ -335,7 +323,6 @@ def test_export_onnx_has_sparsified_param(tmp_path, nncf_config_builder):
         compressed_model.train()
         for m in compression_ctrl.sparsified_module_info:
             m.operand.masking_threshold = threshold
-            m.operand._calc_training_binary_mask()
         onnx_path = tmp_path / f'model_thres{threshold}.onnx'
         check_onnx_has_sparsified_param(compressed_model, compression_ctrl, onnx_path)
 
