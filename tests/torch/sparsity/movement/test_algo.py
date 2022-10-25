@@ -117,7 +117,7 @@ def get_linear_layer_equiv_weight_bias(module: NNCFLinear):
     ["per_dim", [1], "{re}fc"],
     ["fine", [1, 1], "{re}fc"],
 ])
-def test_can_modify_layer_actual_behavior(tmp_path, sparse_structure_by_scopes):
+def test_layer_actual_behavior_matches_sparsifer_mask(tmp_path, sparse_structure_by_scopes):
     nncf_config = ConfigBuilder(sparse_structure_by_scopes=[sparse_structure_by_scopes]).build(
         log_dir=tmp_path, input_info=[{"sample_size": [1, 4]}])
     model = BasicLinearTestModel(size=4)
@@ -126,11 +126,12 @@ def test_can_modify_layer_actual_behavior(tmp_path, sparse_structure_by_scopes):
     operand = module_info.operand
     torch.nn.init.normal_(operand._weight_importance)
     torch.nn.init.normal_(operand._bias_importance)
+    operand.masking_threshold = 0.
     ori_weight, ori_bias = module_info.module.weight, module_info.module.bias
     masked_weight, masked_bias = operand(ori_weight, ori_bias)  # sparsifier forward function
     equiv_weight, equiv_bias = get_linear_layer_equiv_weight_bias(module_info.module)
-    assert torch.allclose(masked_weight, equiv_weight)
-    assert torch.allclose(masked_bias, equiv_bias)
+    assert torch.allclose(equiv_weight, masked_weight)
+    assert torch.allclose(equiv_bias, masked_bias)
 
 
 @pytest.mark.parametrize('description', [
