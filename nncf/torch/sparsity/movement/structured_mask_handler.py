@@ -1,0 +1,216 @@
+import itertools
+from copy import deepcopy
+from functools import reduce
+from typing import Iterable, List, Tuple, Union
+
+import numpy as np
+import torch
+from nncf.experimental.torch.search_building_blocks.search_blocks import \
+    BuildingBlockType
+from nncf.torch.sparsity.base_algo import SparseModuleInfo
+from nncf.torch.sparsity.movement.layers import MovementSparsifier
+
+
+class SparsifiedModuleInfoGroup:
+    def __init__(self, group_id: int,
+                 group_type: BuildingBlockType,
+                 sparse_module_info: List[SparseModuleInfo]) -> None:
+        self.group_id = group_id
+        self.group_type = group_type.value
+        self.sparse_module_info = sparse_module_info
+
+
+class BaseStructuredMaskStrategy:
+    @property
+    def strategy_by_group_type(self):
+        pass
+
+
+class HuggingFaceBertStructuredMaskStrategy(BaseStructuredMaskStrategy):
+    mhsa_q: str = 'query'
+    mhsa_k: str = 'key'
+    mhsa_v : str = 'value'
+    mhsa_o : str = 'BertSelfOutput'
+    ffn_i : str = 'BertIntermediate'
+    ffn_o: str = 'BertOutput'
+
+    def __init__(self, hidden_dim: int, num_heads: int) -> None:
+        super().__init__()
+        self.hidden_dim = hidden_dim
+        self.num_heads = num_heads
+
+    @property
+    def strategy_by_group_type(self):
+        config = {
+            BuildingBlockType.MSHA.value: [
+                {
+                    "keywords": [self.mhsa_q, self.mhsa_k, self.mhsa_v],
+                    "prune_by_row": True,
+                    "prune_grid": (self.hidden_dim // self.num_heads, -1),
+                },
+                {
+                    "keywords": [self.mhsa_o],
+                    "prune_by_row": False,
+                    "prune_grid": (-1, self.hidden_dim // self.num_heads),
+                }
+            ],
+            BuildingBlockType.FF.value: [
+                {
+                    "keywords": [self.ffn_i],
+                    "prune_by_row": True,
+                    "prune_grid": (1, -1),
+                },
+                {
+                    "keywords": [self.ffn_o],
+                    "prune_by_row": False,
+                    "prune_grid": (-1, 1),
+                }
+            ]
+        }
+        return deepcopy(config)
+
+
+def contains_any(tested_str: str,
+                 templates: Union[Iterable[str], str]) -> bool:
+    templates = [templates] if isinstance(templates, str) else templates
+    return any(str(item) in tested_str for item in templates)
+
+
+class StructuredMaskContext:
+    def __init__(self,
+                 sparsifier_operand: MovementSparsifier,
+                 module_node_name: str,
+                 grid_size: Tuple[int, int],
+                 ):
+        self.sparsifier_operand = sparsifier_operand
+        self.module_node_name = module_node_name
+        operand_mask: torch.Tensor = sparsifier_operand.weight_ctx.binary_mask   # type: ignore
+        device = sparsifier_operand.weight_ctx.binary_mask.device
+        self.operand_mask_shape = operand_mask.shape
+        self.grid_size = self._resolve_grid_size(grid_size)
+        self.structured_mask_shape = torch.Size(dim // grid for dim, grid in zip(self.operand_mask_shape, self.grid_size))
+        self._independent_structured_mask = torch.empty(self.structured_mask_shape, device=device)
+        self.update_independent_structured_mask()
+        self._dependent_structured_mask = torch.empty_like(self.independent_structured_mask).fill_(float("nan"))
+
+    def __repr__(self) -> str:
+        return f"<StructuredMaskContext object for \"{self.module_node_name}\">"
+
+    @property
+    def independent_structured_mask(self) -> torch.Tensor:
+        return self._independent_structured_mask
+
+    @independent_structured_mask.setter
+    @torch.no_grad()
+    def independent_structured_mask(self, tensor):
+        if self._independent_structured_mask.shape != tensor.shape:
+            raise ValueError("Wrong shape about independent structured mask")
+        self._independent_structured_mask.copy_(tensor)
+
+    @property
+    def dependent_structured_mask(self) -> torch.Tensor:
+        return self._dependent_structured_mask
+
+    @dependent_structured_mask.setter
+    @torch.no_grad()
+    def dependent_structured_mask(self, tensor):
+        if self._dependent_structured_mask.shape != tensor.shape:
+            raise ValueError("Wrong shape about dependent structured mask")
+        self._dependent_structured_mask.copy_(tensor)
+
+    def _resolve_grid_size(self, grid_size) -> Tuple[int, int]:
+        a, b = grid_size
+        return (a if a > 0 else self.operand_mask_shape[0],
+                b if b > 0 else self.operand_mask_shape[1])
+
+    @torch.no_grad()
+    def update_independent_structured_mask(self):
+        # TODO: Logic here will change later.
+        grain_size = self.grid_size
+        structured_mask_shape = [dim // grain_size[axes] for axes, dim in enumerate(list(self.sparsifier_operand.weight_ctx.binary_mask.shape))]
+        temp_shape = list(itertools.chain(*zip(list(structured_mask_shape), list(grain_size))))
+        structured_mask = self.sparsifier_operand.weight_ctx.binary_mask.detach().clone()
+        structured_mask = structured_mask.reshape(temp_shape)
+        structured_mask = structured_mask.amax(dim=(tuple((np.arange(len(self.sparsifier_operand.weight_ctx.binary_mask.shape)) * 2 + 1))))
+        if self.sparsifier_operand.prune_bias is True:
+            structured_bias_mask_shape = structured_mask_shape[0]
+            structured_bias_mask = self.sparsifier_operand.bias_ctx.binary_mask.detach().clone()
+            structured_bias_mask = structured_bias_mask.reshape((structured_bias_mask_shape, -1))
+            structured_bias_mask = structured_bias_mask.amax(dim=1)
+            dim_aligned = structured_bias_mask.repeat(structured_mask.shape[1]).reshape(-1, structured_mask.shape[1])
+            structured_mask = structured_mask.logical_or(dim_aligned).to(torch.float32)
+        self.independent_structured_mask = structured_mask
+        return structured_mask
+
+    def _inflate_structured_mask(self, structured_mask: torch.Tensor, grid_size: Tuple[int, int]) -> torch.Tensor:
+        assert len(structured_mask.shape) == len(grid_size), "Unmatching dimension"
+        inflated_mask = structured_mask.clone()
+        for axis, repeat_times in enumerate(grid_size):
+            inflated_mask = inflated_mask.repeat_interleave(repeat_times, dim=axis)
+        return inflated_mask
+
+    def populate_dependent_structured_mask_to_operand(self):
+        structured_mask_inflated = self._inflate_structured_mask(self.dependent_structured_mask, self.grid_size)
+        self.sparsifier_operand.weight_ctx.binary_mask = structured_mask_inflated
+        if self.sparsifier_operand.prune_bias is True:
+            self.sparsifier_operand.bias_ctx.binary_mask = structured_mask_inflated.amax(dim=1)
+
+
+class StructuredMaskHandler:
+
+    def __init__(self,
+                 sparsified_module_info_groups: List[SparsifiedModuleInfoGroup],
+                 strategy: HuggingFaceBertStructuredMaskStrategy):
+        self.sparsified_module_info_groups = sparsified_module_info_groups
+        self.strategy = strategy
+        self.strategy_by_group_type = strategy.strategy_by_group_type
+        self._structured_mask_ctx_by_group_type = self._create_structured_mask_ctx_by_group_type()
+
+    def _create_structured_mask_ctx_by_group_type(self) -> List[Tuple[BuildingBlockType, List[StructuredMaskContext]]]:
+        structured_mask_ctx_by_group_type = []
+        for group in self.sparsified_module_info_groups:
+            group_type = group.group_type
+            print(group_type)
+            ctxes = []
+            for module_info in group.sparse_module_info:
+                for desc in self.strategy_by_group_type[group_type]:
+                    if contains_any(module_info.module_node_name, desc['keywords']):
+                        ctx = StructuredMaskContext(module_info.operand,
+                                                    module_info.module_node_name,
+                                                    desc['prune_grid'])
+                        ctxes.append(ctx)
+                        break
+                else:
+                    raise ValueError("Invalid entry, pls debug")
+            structured_mask_ctx_by_group_type.append((group.group_type, ctxes))
+        return structured_mask_ctx_by_group_type
+
+    def update_independent_structured_mask(self):
+        for _, ctxes in self._structured_mask_ctx_by_group_type:
+            for ctx in ctxes:
+                ctx.update_independent_structured_mask()
+
+    def resolve_dependent_structured_mask(self):
+        for group_type, ctxes in self._structured_mask_ctx_by_group_type:
+            if group_type not in self.strategy_by_group_type:
+                raise ValueError(f"No strucrtured mask strategy for group_type=\"{group_type}\"")
+            desc_list = self.strategy_by_group_type[group_type]
+            row_prune_keywords = list(itertools.chain.from_iterable(
+                desc['keywords'] for desc in desc_list if desc['prune_by_row'] is True))
+            col_prune_keywords = list(itertools.chain.from_iterable(
+                desc['keywords'] for desc in desc_list if desc['prune_by_row'] is False))
+            row_prune_ctxes = list(filter(lambda ctx: contains_any(ctx.module_node_name, row_prune_keywords), ctxes))
+            col_prune_ctxes = list(filter(lambda ctx: contains_any(ctx.module_node_name, col_prune_keywords), ctxes))
+            independent_masks = [ctx.independent_structured_mask for ctx in row_prune_ctxes] + \
+                [ctx.independent_structured_mask.t() for ctx in col_prune_ctxes]
+            coarse_mask = reduce(torch.logical_or, independent_masks).float()
+            with torch.no_grad():
+                for ctx in row_prune_ctxes:
+                    ctx.dependent_structured_mask = coarse_mask
+                for ctx in col_prune_ctxes:
+                    ctx.dependent_structured_mask = coarse_mask.t()
+
+    def populate_dependent_structured_mask_to_operand(self):
+        for _, ctxes in self._structured_mask_ctx_by_group_type:
+            for ctx in ctxes:
+                ctx.populate_dependent_structured_mask_to_operand()

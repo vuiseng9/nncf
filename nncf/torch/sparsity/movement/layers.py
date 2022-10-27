@@ -277,29 +277,6 @@ class MovementSparsifier(nn.Module):
             torch.norm(torch.sigmoid(self._expand_importance(self._bias_importance, isbias=True)), p=1) / self._bias_importance.numel()
         )
 
-    def get_structured_mask(self, grain_size=None):
-        if grain_size is None:
-            grain_size = self.sparse_factors
-        structured_mask_shape = [dim//grain_size[axes] for axes, dim in enumerate(list(self.weight_ctx.binary_mask.shape))]
-        temp_shape = list(it.chain(*zip(list(structured_mask_shape), list(grain_size))))
-        structured_mask = self.weight_ctx.binary_mask.detach().clone()
-        structured_mask = structured_mask.reshape(temp_shape)
-        structured_mask = structured_mask.amax(dim=(tuple((np.arange(len(self.weight_ctx.binary_mask.shape)) * 2 + 1))))
-        # print("Mask Shape from {} to {}".format(structured_mask.shape, self.weight_ctx.binary_mask.shape))
-        if self.prune_bias is True:
-            structured_bias_mask_shape = structured_mask_shape[0]
-            structured_bias_mask = self.bias_ctx.binary_mask.detach().clone()
-            structured_bias_mask = structured_bias_mask.reshape((structured_bias_mask_shape, -1))
-            structured_bias_mask = structured_bias_mask.amax(dim=1)
-            dim_aligned = structured_bias_mask.repeat(structured_mask.shape[1]).reshape(-1, structured_mask.shape[1])
-            structured_mask = structured_mask.logical_or(dim_aligned).to(torch.float32)
-        return structured_mask
-
-    def set_structured_mask(self, structured_mask):
-        self.weight_ctx.binary_mask=structured_mask
-        if self.prune_bias is True:
-            self.bias_ctx.binary_mask=structured_mask.amax(dim=1)
-
 class MaskCalculationHook():
     def __init__(self, module):
         # pylint: disable=protected-access
