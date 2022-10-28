@@ -1,4 +1,5 @@
 import itertools
+import logging
 from copy import deepcopy
 from functools import reduce
 from typing import Iterable, List, Tuple, Union
@@ -9,6 +10,8 @@ from nncf.experimental.torch.search_building_blocks.search_blocks import \
     BuildingBlockType
 from nncf.torch.sparsity.base_algo import SparseModuleInfo
 from nncf.torch.sparsity.movement.layers import MovementSparsifier
+
+logger = logging.getLogger('nncf')
 
 
 class SparsifiedModuleInfoGroup:
@@ -55,6 +58,9 @@ class StructuredMaskContext:
     def independent_structured_mask(self, tensor):
         if self._independent_structured_mask.shape != tensor.shape:
             raise ValueError("Wrong shape about independent structured mask")
+        if self._independent_structured_mask.device != tensor.device:
+            logger.info('Changing independent_structured_mask device to %s', tensor.device)
+            self._independent_structured_mask = self._independent_structured_mask.to(tensor.device)
         self._independent_structured_mask.copy_(tensor)
 
     @property
@@ -66,6 +72,9 @@ class StructuredMaskContext:
     def dependent_structured_mask(self, tensor):
         if self._dependent_structured_mask.shape != tensor.shape:
             raise ValueError("Wrong shape about dependent structured mask")
+        if self._dependent_structured_mask.device != tensor.device:
+            logger.info('Changing dependent_structured_mask device to %s', tensor.device)
+            self._dependent_structured_mask = self._dependent_structured_mask.to(tensor.device)
         self._dependent_structured_mask.copy_(tensor)
 
     def _resolve_grid_size(self, grid_size) -> Tuple[int, int]:
