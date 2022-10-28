@@ -7,7 +7,7 @@ from nncf.experimental.torch.search_building_blocks.search_blocks import (
 
 from nncf.torch.nncf_network import NNCFNetwork
 
-STRUCTURED_MASK_STRATEGY = RegistryRegistry("structured_mask_strategy")
+STRUCTURED_MASK_STRATEGY = Registry("structured_mask_strategy")
 
 
 class StructuredMaskRule:

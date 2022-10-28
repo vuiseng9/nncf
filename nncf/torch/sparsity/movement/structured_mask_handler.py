@@ -87,8 +87,11 @@ class StructuredMaskContext:
             structured_bias_mask = self.sparsifier_operand.bias_ctx.binary_mask.detach().clone()
             structured_bias_mask = structured_bias_mask.reshape((structured_bias_mask_shape, -1))
             structured_bias_mask = structured_bias_mask.amax(dim=1)
-            dim_aligned = structured_bias_mask.repeat(structured_mask.shape[1]).reshape(-1, structured_mask.shape[1])
-            structured_mask = structured_mask.logical_or(dim_aligned).to(torch.float32)
+            # dim_aligned = structured_bias_mask.repeat(structured_mask.shape[1]).reshape(-1, structured_mask.shape[1])
+            # structured_mask = structured_mask.logical_or(dim_aligned).to(torch.float32)
+            prunable_rows = structured_bias_mask.logical_or(structured_mask.amax(dim=1))  # preserve a row when either bias mask is 1 or weight mask row amax is 1
+            prunable_cols = structured_mask.amax(dim=0)
+            structured_mask = prunable_rows.unsqueeze(1) * prunable_cols.unsqueeze(0)
         self.independent_structured_mask = structured_mask
         return structured_mask
 
