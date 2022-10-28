@@ -32,8 +32,7 @@ from nncf.torch.graph.transformations.commands import TransformationPriority
 from nncf.torch.sparsity.movement.layers import MovementSparsifier, SparseConfig, SparseStructure
 from nncf.torch.sparsity.movement.layers import SparseConfigByScope
 from nncf.torch.sparsity.movement.loss import ImportanceLoss, SparseLossForPerLayerSparsity
-from nncf.torch.sparsity.movement.structured_mask_handler import StructuredMaskHandler, HuggingFaceBertStructuredMaskStrategy, SparsifiedModuleInfoGroup
-from nncf.torch.sparsity.movement.structured_mask_handler import StructuredMaskContext as StructuredMask
+from nncf.torch.sparsity.movement.structured_mask_handler import StructuredMaskHandler, SparsifiedModuleInfoGroup
 from nncf.torch.module_operations import UpdateWeightAndBias
 from nncf.torch.utils import get_world_size, get_model_device
 from nncf.common.utils.helpers import matches_any
@@ -51,7 +50,7 @@ from nncf.torch.layers import NNCF_MODULES_OP_NAMES
 import os
 import numpy as np
 import pandas as pd
-
+from nncf.torch.sparsity.movement.structured_mask_strategy import STRUCTURED_MASK_STRATEGY
 
 @PT_COMPRESSION_ALGORITHMS.register('movement_sparsity')
 class MovementSparsityBuilder(BaseSparsityAlgoBuilder):
@@ -141,8 +140,12 @@ class MovementSparsityController(BaseSparsityAlgoController):
         # self.visualize_groups_of_prunables()
         # self.create_structured_sparsity_context()
         self.prunable_sparsified_module_info_groups = self._get_group_of_prunable_sparsified_module_info()
-        strcutured_mask_strategy = HuggingFaceBertStructuredMaskStrategy(self.model.nncf_module.bert.config.hidden_size,
-                                                                         self.model.nncf_module.bert.config.num_attention_heads)
+
+        model_family = params.get('model_family', 'huggingface_bert')
+        if model_family is None:
+            raise NotImplementedError("Please specify the model family")
+        strategy_cls = STRUCTURED_MASK_STRATEGY.get(model_family)
+        strcutured_mask_strategy = strategy_cls(**strategy_cls.detect_model_info_for_init(self.model)) # may simplify it later
         self._structured_mask_handler = StructuredMaskHandler(self.prunable_sparsified_module_info_groups, strcutured_mask_strategy)
         # self.structured_ctx_by_group = self.structured_mask_handler.structured_ctx_by_group
 

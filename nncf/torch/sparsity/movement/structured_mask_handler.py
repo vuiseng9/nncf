@@ -20,56 +20,6 @@ class SparsifiedModuleInfoGroup:
         self.sparse_module_info = sparse_module_info
 
 
-class BaseStructuredMaskStrategy:
-    @property
-    def strategy_by_group_type(self):
-        pass
-
-
-class HuggingFaceBertStructuredMaskStrategy(BaseStructuredMaskStrategy):
-    mhsa_q: str = 'query'
-    mhsa_k: str = 'key'
-    mhsa_v : str = 'value'
-    mhsa_o : str = 'BertSelfOutput'
-    ffn_i : str = 'BertIntermediate'
-    ffn_o: str = 'BertOutput'
-
-    def __init__(self, hidden_dim: int, num_heads: int) -> None:
-        super().__init__()
-        self.hidden_dim = hidden_dim
-        self.num_heads = num_heads
-
-    @property
-    def strategy_by_group_type(self):
-        config = {
-            BuildingBlockType.MSHA.value: [
-                {
-                    "keywords": [self.mhsa_q, self.mhsa_k, self.mhsa_v],
-                    "prune_by_row": True,
-                    "prune_grid": (self.hidden_dim // self.num_heads, -1),
-                },
-                {
-                    "keywords": [self.mhsa_o],
-                    "prune_by_row": False,
-                    "prune_grid": (-1, self.hidden_dim // self.num_heads),
-                }
-            ],
-            BuildingBlockType.FF.value: [
-                {
-                    "keywords": [self.ffn_i],
-                    "prune_by_row": True,
-                    "prune_grid": (1, -1),
-                },
-                {
-                    "keywords": [self.ffn_o],
-                    "prune_by_row": False,
-                    "prune_grid": (-1, 1),
-                }
-            ]
-        }
-        return deepcopy(config)
-
-
 def contains_any(tested_str: str,
                  templates: Union[Iterable[str], str]) -> bool:
     templates = [templates] if isinstance(templates, str) else templates
@@ -160,7 +110,7 @@ class StructuredMaskHandler:
 
     def __init__(self,
                  sparsified_module_info_groups: List[SparsifiedModuleInfoGroup],
-                 strategy: HuggingFaceBertStructuredMaskStrategy):
+                 strategy):
         self.sparsified_module_info_groups = sparsified_module_info_groups
         self.strategy = strategy
         self.strategy_by_group_type = strategy.strategy_by_group_type
@@ -170,19 +120,23 @@ class StructuredMaskHandler:
         structured_mask_ctx_by_group_type = []
         for group in self.sparsified_module_info_groups:
             group_type = group.group_type
-            print(group_type)
             ctxes = []
             for module_info in group.sparse_module_info:
-                for desc in self.strategy_by_group_type[group_type]:
-                    if contains_any(module_info.module_node_name, desc['keywords']):
+                for rule in self.strategy_by_group_type[group_type]:
+                    if contains_any(module_info.module_node_name, rule.keywords):
                         ctx = StructuredMaskContext(module_info.operand,
                                                     module_info.module_node_name,
-                                                    desc['prune_grid'])
+                                                    rule.prune_grid)
                         ctxes.append(ctx)
                         break
                 else:
                     raise ValueError("Invalid entry, pls debug")
             structured_mask_ctx_by_group_type.append((group.group_type, ctxes))
+        print('*' * 30)
+        for group_type, ctxes in structured_mask_ctx_by_group_type:
+            print(group_type)
+            for ctx in ctxes:
+                print(ctx)
         return structured_mask_ctx_by_group_type
 
     def update_independent_structured_mask(self):
@@ -194,11 +148,11 @@ class StructuredMaskHandler:
         for group_type, ctxes in self._structured_mask_ctx_by_group_type:
             if group_type not in self.strategy_by_group_type:
                 raise ValueError(f"No strucrtured mask strategy for group_type=\"{group_type}\"")
-            desc_list = self.strategy_by_group_type[group_type]
+            rule_list = self.strategy_by_group_type[group_type]
             row_prune_keywords = list(itertools.chain.from_iterable(
-                desc['keywords'] for desc in desc_list if desc['prune_by_row'] is True))
+                rule.keywords for rule in rule_list if rule.prune_by_row is True))
             col_prune_keywords = list(itertools.chain.from_iterable(
-                desc['keywords'] for desc in desc_list if desc['prune_by_row'] is False))
+                rule.keywords for rule in rule_list if rule.prune_by_row is False))
             row_prune_ctxes = list(filter(lambda ctx: contains_any(ctx.module_node_name, row_prune_keywords), ctxes))
             col_prune_ctxes = list(filter(lambda ctx: contains_any(ctx.module_node_name, col_prune_keywords), ctxes))
             independent_masks = [ctx.independent_structured_mask for ctx in row_prune_ctxes] + \
