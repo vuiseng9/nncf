@@ -545,7 +545,8 @@ class MovementSparsityController(BaseSparsityAlgoController):
 
             for str_op_addr in nodes_per_block:
                 op_address = OperationAddress.from_str(str_op_addr)
-                if op_address.operator_name in NNCF_MODULES_OP_NAMES:
+                if op_address.operator_name == 'linear': # layer norm is part of NNCF_MODULES_OP_NAMES, so filter linear by forxw
+                # if op_address.operator_name in NNCF_MODULES_OP_NAMES:
 
                     prunableops_per_group[group_id].append(
                         PrunableOp(
