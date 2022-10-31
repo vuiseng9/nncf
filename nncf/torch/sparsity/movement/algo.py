@@ -100,7 +100,7 @@ class MovementSparsityBuilder(BaseSparsityAlgoBuilder):
                 break
 
         return MovementSparsifier(target_module_node, sparse_cfg=sparse_cfg, frozen=False,
-                                  compression_lr_multiplier=compression_lr_multiplier, eps=1e-6)
+                                  compression_lr_multiplier=compression_lr_multiplier)
 
     def _build_controller(self, model: NNCFNetwork) -> PTCompressionAlgorithmController:
         return MovementSparsityController(model, self._sparsified_module_info, self.config)
