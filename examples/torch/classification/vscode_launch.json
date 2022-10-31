@@ -1,0 +1,57 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "[NNCF] PTQ",
+            "type": "python",
+            "request": "launch",
+            // "env": {
+            // },
+            "cwd": "${workspaceFolder}/nncf/examples/torch/classification",
+            "program": "main.py",
+            "args": [
+                "-m", "test",
+                // "export",
+                "--gpu-id", "3",
+                "-j", "16",
+                "-b", "64",
+                "--log-dir", 
+                    "/tmp/vscode-dev/nncf-ptq/",                   
+                "--config", 
+                    "configs/quantization/resnet18_imagenet_int8.json", // ballpark outcomes * Acc@1 69.700 Acc@5 89.026
+                "--data", 
+                    "/data/dataset/imagenet/ilsvrc2012/torchvision/"
+                    // "/data1/dataset/imagenet/ilsvrc2012/imgnet-train1k-val1k-dev",
+            ],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "[NNCF] eval ImageNet FP32",
+            "type": "python",
+            "request": "launch",
+
+            "cwd": "${workspaceFolder}/nncf/examples/torch/classification",
+            "program": "main.py",
+            "args": [
+                "-m", 
+                "test", 
+                // "export",
+                "--gpu-id", "3",
+                "-j", "16",
+                "-b", "256",
+                "--log-dir", 
+                    "/tmp/vscode-dev/nncf-objreg/",
+                "--config", 
+                    "configs/quantization/resnet50_imagenet.json",
+                "--data", 
+                    "/data/dataset/imagenet/ilsvrc2012/torchvision"
+                // "/data/dataset/imagenet/ilsvrc2012/imgnet-train1k-val1k-dev",
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+    ]
+}

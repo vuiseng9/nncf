@@ -78,6 +78,8 @@ from nncf.torch.initialization import register_default_init_args
 from nncf.torch.structures import ExecutionParameters
 from nncf.torch.utils import is_main_process
 from nncf.torch.utils import safe_thread_call
+from collections import OrderedDict
+DUMP_QUANTIZE_IO = True
 
 model_names = sorted(name for name, val in models.__dict__.items()
                      if name.islower() and not name.startswith("__")
@@ -211,6 +213,25 @@ def main_worker(current_gpu, config: SampleConfig):
         resuming_checkpoint = load_resuming_checkpoint(resuming_checkpoint_path)
     model_state_dict, compression_state = extract_model_and_compression_states(resuming_checkpoint)
     compression_ctrl, model = create_compressed_model(model, nncf_config, compression_state)
+
+    if DUMP_QUANTIZE_IO is True:
+        # The intent of the following is to capture the input and output of quantizer
+        # as test vectors for new quantization kernel development
+        #
+        # currently, only a single batch of model input will be serialized for
+        # one weight quantizer and one activation quantizer
+
+        quant_io_memo = OrderedDict()
+
+        wuid, wq = list(compression_ctrl.weight_quantizers.items())[0]
+        auid, aq = list(compression_ctrl.non_weight_quantizers.items())[-1]
+
+        quant_io_memo[str(wuid)]=OrderedDict()
+        wq.quantizer_module_ref.dump_dict = quant_io_memo[str(wuid)]
+
+        quant_io_memo[str(auid)]=OrderedDict()
+        aq.quantizer_module_ref.dump_dict = quant_io_memo[str(auid)]
+
     if model_state_dict is not None:
         load_state(model, model_state_dict, is_resume=True)
 
@@ -282,6 +303,12 @@ def main_worker(current_gpu, config: SampleConfig):
 
     if 'test' in config.mode:
         validate(val_loader, model, criterion, config)
+
+
+    if DUMP_QUANTIZE_IO is True:
+        quant_io_dump_pth = "./quant_io.pth"
+        torch.save(quant_io_memo, quant_io_dump_pth)
+        # how to load this dump? quant_io_memo = torch.load(quant_io_dump_pth)
 
     config.mlflow.end_run()
 

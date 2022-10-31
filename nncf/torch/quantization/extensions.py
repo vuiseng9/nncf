@@ -34,6 +34,11 @@ CUDA_EXT_SRC_LIST = [
     os.path.join(BASE_EXT_DIR, "cuda/functions_cuda_impl.cu")
 ]
 
+#TODO: revise path
+HPU_EXT_SRC_LIST = [
+    os.path.join(BASE_EXT_DIR, "hpu/*"),
+    os.path.join(BASE_EXT_DIR, "hpu/*")
+]
 
 @EXTENSIONS.register()
 class QuantizedFunctionsCPULoader(ExtensionLoader):
@@ -72,6 +77,35 @@ class QuantizedFunctionsCUDALoader(ExtensionLoader):
     def name(cls) -> str:
         return 'quantized_functions_cuda'
 
+IS_HPU=False
+
+@EXTENSIONS.register()
+class QuantizedFunctionsHPULoader(ExtensionLoader):
+    @classmethod
+    def extension_type(cls):
+        return ExtensionsType.HPU
+
+    @classmethod
+    def load(cls):
+        # TODO: for CPU can CUDA versions, the load function is the torch c++ extension build process
+        # For Habana, we need a different process
+        # * TPC kernel
+        # * TPC Glue code
+        # * Torch Custom Op registration 
+        #   https://github.com/HabanaAI/Model-References/blob/master/PyTorch/examples/custom_op/custom_relu/hpu_custom_relu.cpp
+        # * Torch function and module wrapping 
+        #   reuse nncf/torch/quantization/quantize_functions.py
+        #   otherwise: https://github.com/HabanaAI/Model-References/blob/master/PyTorch/examples/custom_op/custom_relu/custom_relu.py
+        return load(cls.name(),
+                    CUDA_EXT_SRC_LIST,
+                    extra_include_paths=EXT_INCLUDE_DIRS,
+                    build_directory=cls.get_build_dir(),
+                    verbose=False)
+
+    @classmethod
+    def name(cls) -> str:
+        return 'quantized_functions_cpu'
+
 
 QuantizedFunctionsCPU = QuantizedFunctionsCPULoader.load()
 
@@ -79,3 +113,9 @@ if torch.cuda.is_available():
     QuantizedFunctionsCUDA = QuantizedFunctionsCUDALoader.load()
 else:
     QuantizedFunctionsCUDA = CudaNotAvailableStub
+
+if IS_HPU:
+    QuantizedFunctionsHPU = QuantizedFunctionsHPULoader.load()
+else:
+    # Just to avoid error for existing build
+    QuantizedFunctionsHPU = None

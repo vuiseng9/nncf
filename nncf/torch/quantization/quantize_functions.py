@@ -10,19 +10,22 @@
  See the License for the specific language governing permissions and
  limitations under the License.
 """
+from collections import OrderedDict
 import torch
 
 from nncf.torch.utils import add_domain
 from nncf.common.utils.logger import logger as nncf_logger
 
-from nncf.torch.quantization.extensions import QuantizedFunctionsCPU, QuantizedFunctionsCUDA
+from nncf.torch.quantization.extensions import QuantizedFunctionsCPU, QuantizedFunctionsCUDA, QuantizedFunctionsHPU
 from nncf.torch.dynamic_graph.patch_pytorch import register_operator
 from nncf.torch.functions import STRound, clamp
 
+IS_HPU = False
 
 class QuantizeSymmetric(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, input_, scale, level_low, level_high, levels):
+    def forward(ctx, input_, scale, level_low, level_high, levels, dump_kernel_io_dict=None):
+        
         input_low = scale * (level_low / level_high)
         input_range = scale - input_low
 
@@ -36,9 +39,47 @@ class QuantizeSymmetric(torch.autograd.Function):
             if input_.dtype == torch.float16:
                 input_low = input_low.type(torch.float16)
                 input_range = input_range.type(torch.float16)
+            
+            if dump_kernel_io_dict is not None:
+                if len(dump_kernel_io_dict) == 0:
+                    # we only dump for a single batch, the first batch to save memory
+                    dump_kernel_io_dict['bSym'] = True
+                    dump_kernel_io_dict['Forward'] = OrderedDict()
+                    dump_kernel_io_dict['Forward']['i'] = OrderedDict()
+                    dump_kernel_io_dict['Forward']['i']['input_']= input_.detach().clone().cpu().numpy()
+                    dump_kernel_io_dict['Forward']['i']['input_low']= input_low.detach().clone().cpu().numpy()
+                    dump_kernel_io_dict['Forward']['i']['input_range']= input_range.detach().clone().cpu().numpy()
+                    dump_kernel_io_dict['Forward']['i']['levels']= levels
+
             output = QuantizedFunctionsCUDA.Quantize_forward(input_, input_low, input_range, levels)
+        elif IS_HPU:
+            if dump_kernel_io_dict is not None:
+                if len(dump_kernel_io_dict) == 0:
+                    # we only dump for a single batch, the first batch to save memory
+                    dump_kernel_io_dict['bSym'] = True
+                    dump_kernel_io_dict['Forward'] = OrderedDict()
+                    dump_kernel_io_dict['Forward']['i'] = OrderedDict()
+                    dump_kernel_io_dict['Forward']['i']['input_']= input_.detach().clone().cpu().numpy()
+                    dump_kernel_io_dict['Forward']['i']['input_low']= input_low.detach().clone().cpu().numpy()
+                    dump_kernel_io_dict['Forward']['i']['input_range']= input_range.detach().clone().cpu().numpy()
+                    dump_kernel_io_dict['Forward']['i']['levels']= levels
+            output = QuantizedFunctionsHPU.Quantize_forward(input_, input_low, input_range, levels)
         else:
+            if dump_kernel_io_dict is not None:
+                if len(dump_kernel_io_dict) == 0:
+                    # we only dump for a single batch, the first batch to save memory
+                    dump_kernel_io_dict['bSym'] = True
+                    dump_kernel_io_dict['Forward'] = OrderedDict()
+                    dump_kernel_io_dict['Forward']['i'] = OrderedDict()
+                    dump_kernel_io_dict['Forward']['i']['input_']= input_.detach().clone().cpu().numpy()
+                    dump_kernel_io_dict['Forward']['i']['input_low']= input_low.detach().clone().cpu().numpy()
+                    dump_kernel_io_dict['Forward']['i']['input_range']= input_range.detach().clone().cpu().numpy()
+                    dump_kernel_io_dict['Forward']['i']['levels']= levels
             output = QuantizedFunctionsCPU.Quantize_forward(input_, input_low, input_range, levels)
+
+        if dump_kernel_io_dict is not None:
+            if len(dump_kernel_io_dict) > 0 and 'o' not in dump_kernel_io_dict['Forward']:
+                dump_kernel_io_dict['Forward']['o']=output.detach().clone().cpu().numpy()
 
         ctx.save_for_backward(input_, input_low, input_range)
         ctx.levels = levels
@@ -62,6 +103,11 @@ class QuantizeSymmetric(torch.autograd.Function):
             grad_input, _, grad_scale = QuantizedFunctionsCUDA.Quantize_backward(
                 grad_output, input_, input_low, input_range, levels, level_low, level_high
             )
+        elif IS_HPU:
+            # TODO: to be complete
+            grad_input, _, grad_scale = QuantizedFunctionsHPU.Quantize_backward(
+                grad_output, input_, input_low, input_range, levels, level_low, level_high, False
+            )
         else:
             grad_input, _, grad_scale = QuantizedFunctionsCPU.Quantize_backward(
                 grad_output, input_, input_low, input_range, levels, level_low, level_high, False
@@ -72,7 +118,7 @@ class QuantizeSymmetric(torch.autograd.Function):
 
 class QuantizeAsymmetric(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, input_, input_low, input_range, level_low, level_high, levels):
+    def forward(ctx, input_, input_low, input_range, level_low, level_high, levels, dump_kernel_io_dict=None):
         if input_.is_cuda:
             if not input_.is_contiguous():
                 nncf_logger.warning("input_ is not contiguous!")
@@ -83,9 +129,47 @@ class QuantizeAsymmetric(torch.autograd.Function):
             if input_.dtype == torch.float16:
                 input_low = input_low.type(torch.float16)
                 input_range = input_range.type(torch.float16)
+
+            if dump_kernel_io_dict is not None:
+                if len(dump_kernel_io_dict) == 0:
+                    # we only dump for a single batch, the first batch to save memory
+                    dump_kernel_io_dict['bSym'] = True
+                    dump_kernel_io_dict['Forward'] = OrderedDict()
+                    dump_kernel_io_dict['Forward']['i'] = OrderedDict()
+                    dump_kernel_io_dict['Forward']['i']['input_']= input_.detach().clone().cpu().numpy()
+                    dump_kernel_io_dict['Forward']['i']['input_low']= input_low.detach().clone().cpu().numpy()
+                    dump_kernel_io_dict['Forward']['i']['input_range']= input_range.detach().clone().cpu().numpy()
+                    dump_kernel_io_dict['Forward']['i']['levels']= levels
+
             output = QuantizedFunctionsCUDA.Quantize_forward(input_, input_low, input_range, levels)
+        elif IS_HPU:
+            if dump_kernel_io_dict is not None:
+                if len(dump_kernel_io_dict) == 0:
+                    # we only dump for a single batch, the first batch to save memory
+                    dump_kernel_io_dict['bSym'] = True
+                    dump_kernel_io_dict['Forward'] = OrderedDict()
+                    dump_kernel_io_dict['Forward']['i'] = OrderedDict()
+                    dump_kernel_io_dict['Forward']['i']['input_']= input_.detach().clone().cpu().numpy()
+                    dump_kernel_io_dict['Forward']['i']['input_low']= input_low.detach().clone().cpu().numpy()
+                    dump_kernel_io_dict['Forward']['i']['input_range']= input_range.detach().clone().cpu().numpy()
+                    dump_kernel_io_dict['Forward']['i']['levels']= levels
+            output = QuantizedFunctionsHPU.Quantize_forward(input_, input_low, input_range, levels)
         else:
+            if dump_kernel_io_dict is not None:
+                if len(dump_kernel_io_dict) == 0:
+                    # we only dump for a single batch, the first batch to save memory
+                    dump_kernel_io_dict['bSym'] = True
+                    dump_kernel_io_dict['Forward'] = OrderedDict()
+                    dump_kernel_io_dict['Forward']['i'] = OrderedDict()
+                    dump_kernel_io_dict['Forward']['i']['input_']= input_.detach().clone().cpu().numpy()
+                    dump_kernel_io_dict['Forward']['i']['input_low']= input_low.detach().clone().cpu().numpy()
+                    dump_kernel_io_dict['Forward']['i']['input_range']= input_range.detach().clone().cpu().numpy()
+                    dump_kernel_io_dict['Forward']['i']['levels']= levels
             output = QuantizedFunctionsCPU.Quantize_forward(input_, input_low, input_range, levels)
+
+        if dump_kernel_io_dict is not None:
+            if len(dump_kernel_io_dict) > 0 and 'o' not in dump_kernel_io_dict['Forward']:
+                dump_kernel_io_dict['Forward']['o']=output.detach().clone().cpu().numpy()
 
         ctx.save_for_backward(input_, input_low, input_range)
         ctx.levels = levels
@@ -108,6 +192,11 @@ class QuantizeAsymmetric(torch.autograd.Function):
 
             grad_input, grad_input_low, grad_input_range = QuantizedFunctionsCUDA.Quantize_backward(
                 grad_output, input_, input_low, input_range, levels, level_low, level_high
+            )
+        elif IS_HPU:
+            # TODO: to be complete
+            grad_input, grad_input_low, grad_input_range = QuantizedFunctionsHPU.Quantize_backward(
+                grad_output, input_, input_low, input_range, levels, level_low, level_high, True
             )
         else:
             grad_input, grad_input_low, grad_input_range = QuantizedFunctionsCPU.Quantize_backward(
@@ -180,21 +269,21 @@ def get_scale_zp_from_input_low_input_high(level_low, level_high, input_low, inp
 
 
 @register_operator()
-def symmetric_quantize(input_, levels, level_low, level_high, scale, eps, skip: bool = False):
+def symmetric_quantize(input_, levels, level_low, level_high, scale, eps, skip: bool = False, dump_dict=None):
     if skip:
         return input_
     scale = scale.to(dtype=input_.dtype)
     scale_safe = abs(scale) + eps
-    return QuantizeSymmetric.apply(input_, scale_safe, level_low, level_high, levels)
+    return QuantizeSymmetric.apply(input_, scale_safe, level_low, level_high, levels, dump_dict)
 
 
 @register_operator()
-def asymmetric_quantize(input_, levels, level_low, level_high, input_low, input_range, eps, skip: bool = False):
+def asymmetric_quantize(input_, levels, level_low, level_high, input_low, input_range, eps, skip: bool = False, dump_dict=None):
     if skip:
         return input_
     input_range_safe = abs(input_range) + eps
     input_low_tuned, input_range_tuned = TuneRange.apply(input_low, input_range_safe, levels)
-    return QuantizeAsymmetric.apply(input_, input_low_tuned, input_range_tuned, level_low, level_high, levels)
+    return QuantizeAsymmetric.apply(input_, input_low_tuned, input_range_tuned, level_low, level_high, levels, dump_dict)
 
 
 class TuneRange(torch.autograd.Function):

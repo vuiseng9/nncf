@@ -16,6 +16,7 @@ EXTENSIONS = Registry('extensions')
 class ExtensionsType(enum.Enum):
     CPU = 0
     CUDA = 1
+    HPU = 2
 
 def get_build_directory_for_extension(name: str) -> Path:
     build_dir = Path(_get_build_directory('nncf/' + name, verbose=False)) / torch.__version__

@@ -614,7 +614,7 @@ class SymmetricQuantizer(BaseQuantizer):
 
     def quantize(self, x, execute_traced_op_as_identity: bool = False):
         return symmetric_quantize(x, self.levels, self.level_low, self.level_high, self.scale, self.eps,
-                                  skip=execute_traced_op_as_identity)
+                                  skip=execute_traced_op_as_identity, dump_dict=getattr(self, 'dump_dict') if hasattr(self, 'dump_dict') else None)
 
     def get_trainable_params(self) -> Dict[str, torch.Tensor]:
         return {self.SCALE_PARAM_NAME: self.scale.detach()}
@@ -755,7 +755,7 @@ class AsymmetricQuantizer(BaseQuantizer):
 
     def quantize(self, x, execute_traced_op_as_identity: bool = False):
         return asymmetric_quantize(x, self.levels, self.level_low, self.level_high, self.input_low, self.input_range,
-                                   self.eps, skip=execute_traced_op_as_identity)
+                                   self.eps, skip=execute_traced_op_as_identity, dump_dict=getattr(self, 'dump_dict') if hasattr(self, 'dump_dict') else None)
 
     def get_trainable_params(self) -> Dict[str, torch.Tensor]:
         return {self.INPUT_LOW_PARAM_NAME: self.input_low.detach(),
