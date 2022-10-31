@@ -12,7 +12,7 @@
 """
 from copy import deepcopy
 from typing import DefaultDict, List, OrderedDict, Optional
-
+from collections import OrderedDict
 import torch
 import torch.distributed as dist
 
@@ -118,21 +118,12 @@ class MovementSparsityController(BaseSparsityAlgoController):
                  config: NNCFConfig):
         super().__init__(target_model, sparsified_module_info)
         algo_config = extract_algo_specific_config(config, 'movement_sparsity')
-        params = deepcopy(algo_config.get('params', {}))
-
         self._distributed = False
-        self._mode = params.get('sparsity_level_setting_mode', 'global')
-        self._check_sparsity_masks = params.get('check_sparsity_masks', False)
-
         sparsify_operations = [m.operand for m in self.sparsified_module_info]
-        if self._mode == 'local':
-            # TODO: make sure we test this loop out
-            self._loss = SparseLossForPerLayerSparsity(sparsify_operations)
-            self._scheduler = StubCompressionScheduler()
-        else:
-            scheduler_cls = SPARSITY_SCHEDULERS.get(params.get('schedule', 'exponential')) #TODO: can we actually map to other scheduler in current implementation
-            self._scheduler = scheduler_cls(self, params)
-            self._loss = ImportanceLoss(sparsify_operations, self.scheduler)
+        params = deepcopy(algo_config.get('params', {}))
+        scheduler_cls = SPARSITY_SCHEDULERS.get('threshold_polynomial_decay') # TODO: hard coded this scheduler name
+        self._scheduler = scheduler_cls(self, params)
+        self._loss = ImportanceLoss(sparsify_operations, self.scheduler)
 
         #TODO: review - perhaps not the right place
         self.config = config
@@ -147,15 +138,13 @@ class MovementSparsityController(BaseSparsityAlgoController):
         strategy_cls = STRUCTURED_MASK_STRATEGY.get(model_family)
         strcutured_mask_strategy = strategy_cls(**strategy_cls.detect_model_info_for_init(self.model)) # may simplify it later
         self._structured_mask_handler = StructuredMaskHandler(self.prunable_sparsified_module_info_groups, strcutured_mask_strategy)
-        # self.structured_ctx_by_group = self.structured_mask_handler.structured_ctx_by_group
 
     def compression_stage(self) -> CompressionStage:
-        if self._mode == 'local':
-            return CompressionStage.FULLY_COMPRESSED
-
-        if self.scheduler.current_sparsity_level == 0:
+        # if self._mode == 'local':
+        #     return CompressionStage.FULLY_COMPRESSED
+        if self.scheduler.current_epoch < self.scheduler.warmup_start_epoch:
             return CompressionStage.UNCOMPRESSED
-        if self.scheduler.current_sparsity_level >= self.scheduler.target_level:
+        if self.scheduler.current_sparsity_level >= self.scheduler.warmup_end_epoch:
             return CompressionStage.FULLY_COMPRESSED
         return CompressionStage.PARTIALLY_COMPRESSED
 
@@ -283,6 +272,22 @@ class MovementSparsityController(BaseSparsityAlgoController):
         self._propagate_masks()
 
     def _propagate_masks(self):
+        sparse_sd = OrderedDict()
+        with torch.no_grad():
+            for sparse_info in self.sparsified_module_info:
+                for n, m in self.model.named_modules():
+                    if m == sparse_info.module:
+                        sparse_sd[n + '.weight'] = sparse_info.operand.apply_binary_mask(m.weight)
+                        if hasattr(m, 'bias'):
+                            sparse_sd[n + '.bias'] = sparse_info.operand.apply_binary_mask(m.bias, isbias=True)
+
+        model_sd = self.model.state_dict()
+        for k, v in sparse_sd.items():
+            assert k in model_sd, "key not exists!"
+            model_sd[k] = sparse_sd[k]
+        self.model.load_state_dict(model_sd)
+
+    def __delete_propagate_masks(self):
         def calc_sparsity(tensor):
             return 1-tensor.count_nonzero()/tensor.numel()
         # nncf_logger.debug("MVMT - Propagating pruning masks")
