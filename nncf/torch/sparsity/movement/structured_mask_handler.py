@@ -10,6 +10,7 @@ from nncf.experimental.torch.search_building_blocks.search_blocks import \
     BuildingBlockType
 from nncf.torch.sparsity.base_algo import SparseModuleInfo
 from nncf.torch.sparsity.movement.layers import MovementSparsifier
+from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlock, get_building_blocks, BuildingBlockType, BlockFilteringStrategy
 
 logger = logging.getLogger('nncf')
 
@@ -43,13 +44,14 @@ class StructuredMaskContext:
         self.structured_mask_shape = torch.Size(dim // grid for dim, grid in zip(self.operand_mask_shape, self.grid_size))
         self._independent_structured_mask = None
         self._dependent_structured_mask = None
-        self.update_independent_structured_mask()
 
     def __repr__(self) -> str:
         return f"<StructuredMaskContext object for \"{self.module_node_name}\">"
 
     @property
     def independent_structured_mask(self) -> Optional[torch.Tensor]:
+        if self._independent_structured_mask is None:
+            logger.warning("Independent structured mask has not been calculated. Return None.")
         return self._independent_structured_mask
 
     @independent_structured_mask.setter
@@ -67,6 +69,8 @@ class StructuredMaskContext:
 
     @property
     def dependent_structured_mask(self) -> torch.Tensor:
+        if self._dependent_structured_mask is None:
+            logger.warning("Dependent structured mask has not been calculated. Return None.")
         return self._dependent_structured_mask
 
     @dependent_structured_mask.setter
@@ -132,6 +136,26 @@ class StructuredMaskHandler:
         self.strategy = strategy
         self.strategy_by_group_type = strategy.strategy_by_group_type
         self._structured_mask_ctx_by_group_type = self._create_structured_mask_ctx_by_group_type()
+
+    def _get_group_of_prunable_sparsified_module_info(self) -> List[SparsifiedModuleInfoGroup]:
+        module_2_sparse_module_info_map = {sparse_info.module: sparse_info for sparse_info in self.sparsified_module_info}
+        building_blocks, _ = get_building_blocks(self.model,
+                                                 target_block_types=[BuildingBlockType.MSHA, BuildingBlockType.FF],
+                                                 block_filter_strategy=BlockFilteringStrategy.KEEP_SMALL,
+                                                 hw_fused_ops=True)
+        prunable_sparsified_module_info_groups = []
+        for group_id, building_block in enumerate(building_blocks):
+            sparsified_module_info = []
+            for op_addr in building_block.op_addresses:
+                if op_addr.operator_name in NNCF_MODULES_OP_NAMES:
+                    module = self.model.get_module_by_scope(op_addr.scope_in_model)
+                    module_info = module_2_sparse_module_info_map[module]
+                    sparsified_module_info.append(module_info)
+            prunable_sparsified_module_info_groups.append(
+                SparsifiedModuleInfoGroup(group_id,
+                                          building_block.block_type,
+                                          sparsified_module_info))
+        return prunable_sparsified_module_info_groups
 
     def _create_structured_mask_ctx_by_group_type(self) -> List[Tuple[BuildingBlockType, List[StructuredMaskContext]]]:
         structured_mask_ctx_by_group_type = []

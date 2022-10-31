@@ -1,10 +1,8 @@
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 from nncf.common.utils.registry import Registry
-from nncf.experimental.torch.search_building_blocks.search_blocks import (
-    BuildingBlockType,
-)
-
+from nncf.experimental.torch.search_building_blocks.search_blocks import \
+    BuildingBlockType
 from nncf.torch.nncf_network import NNCFNetwork
 
 STRUCTURED_MASK_STRATEGY = Registry("structured_mask_strategy")
@@ -29,7 +27,7 @@ class StructuredMaskRule:
         self.binary_mask_slice = binary_mask_slice
 
     def __repr__(self) -> str:
-        return "<%s-%s-%r>" % (
+        return "<%s \"%s\" with config=\"%r\">" % (
             self.__class__.__name__,
             self.rule_name,
             self.__dict__,
@@ -41,8 +39,9 @@ class BaseStructuredMaskStrategy:
     def strategy_by_group_type(self):
         pass
 
-    def detect_model_info_for_init(self, compressed_model: NNCFNetwork):
-        pass
+    @classmethod
+    def from_compressed_model(cls, compressed_model: NNCFNetwork):
+        raise NotImplementedError()
 
 
 @STRUCTURED_MASK_STRATEGY.register("huggingface_bert")
@@ -54,17 +53,17 @@ class HuggingFaceBertStructuredMaskStrategy(BaseStructuredMaskStrategy):
     FFN_I: str = "BertIntermediate"
     FFN_O: str = "BertOutput"
 
-    @classmethod
-    def detect_model_info_for_init(cls, model: NNCFNetwork):
-        return dict(
-            hidden_dim=model.nncf_module.bert.config.hidden_size,
-            num_heads=model.nncf_module.bert.config.num_attention_heads,
-        )
-
     def __init__(self, hidden_dim: int, num_heads: int) -> None:
         super().__init__()
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
+
+    @classmethod
+    def from_compressed_model(cls, compressed_model: NNCFNetwork):
+        return cls(
+            hidden_dim=compressed_model.nncf_module.bert.config.hidden_size,
+            num_heads=compressed_model.nncf_module.bert.config.num_attention_heads,
+        )
 
     @property
     def strategy_by_group_type(self) -> Dict[str, List[StructuredMaskRule]]:

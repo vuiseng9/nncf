@@ -133,10 +133,10 @@ class MovementSparsityController(BaseSparsityAlgoController):
         self.prunable_sparsified_module_info_groups = self._get_group_of_prunable_sparsified_module_info()
 
         model_family = params.get('model_family', 'huggingface_bert')
-        if model_family is None:
+        if model_family == 'auto':
             raise NotImplementedError("Please specify the model family")
         strategy_cls = STRUCTURED_MASK_STRATEGY.get(model_family)
-        strcutured_mask_strategy = strategy_cls(**strategy_cls.detect_model_info_for_init(self.model)) # may simplify it later
+        strcutured_mask_strategy = strategy_cls.from_compressed_model(self.model) # may simplify it later
         self._structured_mask_handler = StructuredMaskHandler(self.prunable_sparsified_module_info_groups, strcutured_mask_strategy)
 
     def compression_stage(self) -> CompressionStage:
