@@ -2,7 +2,7 @@ import itertools
 import logging
 from copy import deepcopy
 from functools import reduce
-from typing import Iterable, List, Tuple, Union
+from typing import Iterable, List, Tuple, Union, Optional
 
 import numpy as np
 import torch
@@ -38,30 +38,32 @@ class StructuredMaskContext:
         self.sparsifier_operand = sparsifier_operand
         self.module_node_name = module_node_name
         operand_mask: torch.Tensor = sparsifier_operand.weight_ctx.binary_mask   # type: ignore
-        device = sparsifier_operand.weight_ctx.binary_mask.device
         self.operand_mask_shape = operand_mask.shape
         self.grid_size = self._resolve_grid_size(grid_size)
         self.structured_mask_shape = torch.Size(dim // grid for dim, grid in zip(self.operand_mask_shape, self.grid_size))
-        self._independent_structured_mask = torch.empty(self.structured_mask_shape, device=device)
+        self._independent_structured_mask = None
+        self._dependent_structured_mask = None
         self.update_independent_structured_mask()
-        self._dependent_structured_mask = torch.empty_like(self.independent_structured_mask).fill_(float("nan"))
 
     def __repr__(self) -> str:
         return f"<StructuredMaskContext object for \"{self.module_node_name}\">"
 
     @property
-    def independent_structured_mask(self) -> torch.Tensor:
+    def independent_structured_mask(self) -> Optional[torch.Tensor]:
         return self._independent_structured_mask
 
     @independent_structured_mask.setter
     @torch.no_grad()
-    def independent_structured_mask(self, tensor):
-        if self._independent_structured_mask.shape != tensor.shape:
-            raise ValueError("Wrong shape about independent structured mask")
-        if self._independent_structured_mask.device != tensor.device:
-            logger.info('Changing independent_structured_mask device to %s', tensor.device)
-            self._independent_structured_mask = self._independent_structured_mask.to(tensor.device)
-        self._independent_structured_mask.copy_(tensor)
+    def independent_structured_mask(self, tensor: torch.Tensor):
+        if self._independent_structured_mask is None:
+            self._independent_structured_mask = tensor.clone()
+        else: 
+            if self._independent_structured_mask.shape != tensor.shape:
+                raise ValueError("Wrong shape about independent structured mask")
+            if self._independent_structured_mask.device != tensor.device:
+                logger.info('Changing independent_structured_mask device to %s', tensor.device)
+                self._independent_structured_mask = self._independent_structured_mask.to(tensor.device)
+            self._independent_structured_mask.copy_(tensor)
 
     @property
     def dependent_structured_mask(self) -> torch.Tensor:
@@ -69,13 +71,16 @@ class StructuredMaskContext:
 
     @dependent_structured_mask.setter
     @torch.no_grad()
-    def dependent_structured_mask(self, tensor):
-        if self._dependent_structured_mask.shape != tensor.shape:
-            raise ValueError("Wrong shape about dependent structured mask")
-        if self._dependent_structured_mask.device != tensor.device:
-            logger.info('Changing dependent_structured_mask device to %s', tensor.device)
-            self._dependent_structured_mask = self._dependent_structured_mask.to(tensor.device)
-        self._dependent_structured_mask.copy_(tensor)
+    def dependent_structured_mask(self, tensor: torch.Tensor):
+        if self._dependent_structured_mask is None:
+            self._dependent_structured_mask = tensor.clone()
+        else:
+            if self._dependent_structured_mask.shape != tensor.shape:
+                raise ValueError("Wrong shape about dependent structured mask")
+            if self._dependent_structured_mask.device != tensor.device:
+                logger.info('Changing dependent_structured_mask device to %s', tensor.device)
+                self._dependent_structured_mask = self._dependent_structured_mask.to(tensor.device)
+            self._dependent_structured_mask.copy_(tensor)
 
     def _resolve_grid_size(self, grid_size) -> Tuple[int, int]:
         a, b = grid_size
