@@ -356,10 +356,10 @@ class PolynomialThresholdScheduler(BaseCompressionScheduler):
         self.warmup_start_epoch: int = params.get('warmup_start_epoch', 0)
         self.warmup_end_epoch: int = params.get('warmup_end_epoch', 0)
         self.importance_target_lambda: float = params.get('importance_regularization_factor', 1.0)
-        self.do_structured_masking: bool = params.get('do_structurization', True)
+        self.enable_structured_masking: bool = params.get('enable_structured_masking', True)
         self.current_importance_threshold = self.init_importance_threshold
         self._cached_importance_threshold = None
-        self._has_frozen_importance = False
+        self._is_importance_frozen = False
 
         self.schedule = PolynomialDecaySchedule(
             self.init_importance_threshold,
@@ -394,7 +394,7 @@ class PolynomialThresholdScheduler(BaseCompressionScheduler):
         if self._should_skip:
             return
         super().epoch_step(next_epoch)
-        self.schedule_threshold()
+        self.schedule_threshold(self.current_step + 1) # call `schedule_threshold()` when update_per_optimizer_step=False
 
     def step(self, next_step: Optional[int] = None) -> None:
         super().step(next_step)
@@ -405,26 +405,27 @@ class PolynomialThresholdScheduler(BaseCompressionScheduler):
         if self._update_per_optimizer_step:
             self.schedule_threshold()
 
-    def schedule_threshold(self):
-        if self.current_step < self.warmup_start_epoch * self._steps_per_epoch:
+    def schedule_threshold(self, global_step: Optional[int] = None):
+        if global_step is None:
+            global_step = self.current_step
+        if global_step < self.warmup_start_epoch * self._steps_per_epoch:
             self.current_importance_threshold = self.init_importance_threshold
-        elif self.current_step < self.warmup_end_epoch * self._steps_per_epoch:
-            self.current_importance_threshold = self._calculate_scheduled_threshold()
+        elif global_step < self.warmup_end_epoch * self._steps_per_epoch:
+            self.current_importance_threshold = self._calculate_scheduled_threshold(global_step)
         else:
             self.current_importance_threshold = self.final_importance_threshold
-            if not self._has_frozen_importance:
+            if not self._is_importance_frozen:
                 self._freeze_importance()
-                if self.do_structured_masking:
+                if self.enable_structured_masking:
                     self._controller.reset_independent_structured_mask()
                     self._controller.resolve_structured_mask()
                     self._controller.populate_structured_mask()
-                self._has_frozen_importance = True
+                self._is_importance_frozen = True
 
         self._update_operand_importance_threshold()
 
-    def _calculate_scheduled_threshold(self) -> float:
-        warmup_start_global_step = self.warmup_start_epoch * self._steps_per_epoch
-        schedule_current_step = self.current_step - warmup_start_global_step
+    def _calculate_scheduled_threshold(self, global_step: int) -> float:
+        schedule_current_step = global_step - self.warmup_start_epoch * self._steps_per_epoch
         schedule_epoch = schedule_current_step // self._steps_per_epoch
         schedule_step = schedule_current_step % self._steps_per_epoch
         return self.schedule(schedule_epoch, schedule_step, self._steps_per_epoch)
