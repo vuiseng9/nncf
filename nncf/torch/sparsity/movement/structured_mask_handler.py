@@ -20,7 +20,7 @@ class SparsifiedModuleInfoGroup:
                  group_type: BuildingBlockType,
                  sparse_module_info: List[SparseModuleInfo]) -> None:
         self.group_id = group_id
-        self.group_type = group_type.value
+        self.group_type = group_type
         self.sparse_module_info = sparse_module_info
 
 

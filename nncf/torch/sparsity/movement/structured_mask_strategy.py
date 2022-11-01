@@ -68,7 +68,7 @@ class HuggingFaceBertStructuredMaskStrategy(BaseStructuredMaskStrategy):
     @property
     def strategy_by_group_type(self) -> Dict[str, List[StructuredMaskRule]]:
         config = {
-            BuildingBlockType.MSHA.value: [
+            BuildingBlockType.MSHA: [
                 StructuredMaskRule(
                     keywords=[self.MHSA_Q, self.MHSA_K, self.MHSA_V],
                     prune_by_row=True,
@@ -80,7 +80,7 @@ class HuggingFaceBertStructuredMaskStrategy(BaseStructuredMaskStrategy):
                     prune_grid=(-1, self.hidden_dim // self.num_heads),
                 ),
             ],
-            BuildingBlockType.FF.value: [
+            BuildingBlockType.FF: [
                 StructuredMaskRule(
                     keywords=[self.FFN_I],
                     prune_by_row=True,
@@ -113,7 +113,7 @@ class MSFTSwinStructuredMaskStrategy(BaseStructuredMaskStrategy):
     def strategy_by_group_type(self) -> Dict[str, List[StructuredMaskRule]]:
         head_dim = self.hidden_dim // self.num_heads
         config = {
-            BuildingBlockType.MSHA.value: [
+            BuildingBlockType.MSHA: [
                 StructuredMaskRule(
                     keywords=[self.MHSA_QKV],
                     prune_by_row=True,
@@ -129,7 +129,7 @@ class MSFTSwinStructuredMaskStrategy(BaseStructuredMaskStrategy):
                     prune_grid=(-1, head_dim),
                 )
             ],
-            BuildingBlockType.FF.value: [
+            BuildingBlockType.FF: [
                 StructuredMaskRule(
                     keywords=[self.FFN_I],
                     prune_by_row=True,
