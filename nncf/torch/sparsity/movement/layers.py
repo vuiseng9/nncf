@@ -1,5 +1,5 @@
 """
- Copyright (c) 2019 Intel Corporation
+ Copyright (c) 2022 Intel Corporation
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
  You may obtain a copy of the License at
@@ -10,21 +10,22 @@
  See the License for the specific language governing permissions and
  limitations under the License.
 """
+import math
 from copy import deepcopy
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+import numpy as np
 import torch
+from nncf.common.graph import NNCFNode
+from nncf.common.utils.debug import is_debug
 from nncf.torch.layer_utils import COMPRESSION_MODULES, CompressionParameter
 from nncf.torch.sparsity.functions import \
     apply_binary_mask as apply_binary_mask_impl
 from nncf.torch.sparsity.layers import BinaryMask
 from nncf.torch.sparsity.movement.functions import binary_mask_by_threshold
 from nncf.torch.utils import is_tracing_state, no_jit_trace
-from nncf.common.utils.debug import is_debug
 from torch import nn
-import numpy as np
-import math
 
 
 class SparseStructure(str, Enum):
@@ -106,59 +107,56 @@ class SparseConfigByScope:
 
 @COMPRESSION_MODULES.register()
 class MovementSparsifier(nn.Module):
-    def __init__(self,
-                 target_module_node,
-                 sparse_cfg: SparseConfig,
-                 frozen=True,
-                 compression_lr_multiplier=None):
+    def __init__(
+        self,
+        target_module_node: NNCFNode,
+        sparse_cfg: SparseConfig,
+        frozen: bool = True,
+        compression_lr_multiplier: Optional[float] = None,
+        layer_loss_lambda: float = 0.5,
+    ):
         super().__init__()
         self.target_module_node = target_module_node
-        self.prune_bias = target_module_node.layer_attributes.bias
+        self.prune_bias = (target_module_node.layer_attributes.bias not in (False, None))
         self.frozen = frozen
-        self.layer_loss_lambda = 0.5
-        self.importance_threshold = -999  # This must be sufficiently small # TODO: there might be dependency
+        self.layer_loss_lambda = layer_loss_lambda
+        self.importance_threshold = -math.inf
 
         weight_shape = target_module_node.layer_attributes.get_weight_shape()
         self.weight_ctx = BinaryMask(weight_shape)
         self.sparse_factors = self._get_sparse_factors(weight_shape, sparse_cfg)
         self.sparse_structure = sparse_cfg.mode
-        self._weight_importance_shape, self._bool_expand_importance = self._get_importance_shape(
-            weight_shape, self.sparse_factors, self.sparse_structure)
+
+        weight_importance_shape = self._get_weight_importance_shape(weight_shape, self.sparse_factors, self.sparse_structure)
+        self._bool_expand_importance = (tuple(weight_importance_shape) != tuple(weight_shape))
         self.weight_importance = CompressionParameter(
-            torch.zeros(self._weight_importance_shape),
+            torch.zeros(weight_importance_shape),
             requires_grad=not self.frozen,
-            compression_lr_multiplier=compression_lr_multiplier)
+            compression_lr_multiplier=compression_lr_multiplier,
+        )
         self.weight_ctx.binary_mask = self._calc_training_binary_mask()
 
-        if self.prune_bias is True:
+        if self.prune_bias:
             bias_shape = target_module_node.layer_attributes.get_bias_shape()
             self.bias_ctx = BinaryMask(bias_shape)
-            self._bias_importance_shape = self._weight_importance_shape[0]
+            bias_importance_shape = weight_importance_shape[0]
             self.bias_importance = CompressionParameter(
-                torch.zeros(self._bias_importance_shape),
+                torch.zeros(bias_importance_shape),
                 requires_grad=not self.frozen,
-                compression_lr_multiplier=compression_lr_multiplier)
+                compression_lr_multiplier=compression_lr_multiplier,
+            )
             self.bias_ctx.binary_mask = self._calc_training_binary_mask(isbias=True)
 
         self.mask_calculation_hook = MaskCalculationHook(self)
 
-    def freeze_importance(self):
-        self.frozen = True
-        self.weight_importance.requires_grad = False
-        if self.prune_bias:
-            self.bias_importance.requires_grad = False
-
-    def unfreeze_importance(self):
-        self.frozen = False
-        self.weight_importance.requires_grad = True
-        if self.prune_bias:
-            self.bias_importance.requires_grad = True
+    def requires_grad_(self, requires_grad: bool = True):
+        super().requires_grad_(requires_grad)
+        self.frozen = not requires_grad
 
     def extra_repr(self):
         return 'sparse_structure: {} {}'.format(self.sparse_structure.value, self.sparse_factors)
 
-    def forward(self, weight: torch.Tensor, bias: Optional[torch.Tensor]=None) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
-        # TODO: non-bias linear check?
+    def forward(self, weight: torch.Tensor, bias: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         if is_tracing_state():
             with no_jit_trace():
                 masked_weight = weight.mul_(self.weight_ctx.binary_mask)
@@ -172,22 +170,19 @@ class MovementSparsifier(nn.Module):
                 masked_bias = apply_binary_mask_impl(bias_mask, bias)
         return masked_weight, masked_bias
 
-    def _calc_training_binary_mask(self, isbias: bool = False):  # TODO: unnecessary arguments
+    def _calc_training_binary_mask(self, isbias: bool = False):
         ctx = self.bias_ctx if isbias else self.weight_ctx
         if not self.training or self.frozen:
             return ctx.binary_mask
         importance = self.bias_importance if isbias else self.weight_importance
-        mask = binary_mask_by_threshold(
-            self._expand_importance(importance, isbias),
-            self.importance_threshold
-        )
+        mask = binary_mask_by_threshold(self._expand_importance(importance, isbias),
+                                        self.importance_threshold)
         ctx.binary_mask = mask
         return mask
 
     def apply_binary_mask(self, param_tensor, isbias=False):
-        if isbias is True:
-            return self.bias_ctx.apply_binary_mask(param_tensor)
-        return self.weight_ctx.apply_binary_mask(param_tensor)
+        ctx = self.bias_ctx if isbias else self.weight_ctx
+        return ctx.apply_binary_mask(param_tensor)
 
     @staticmethod
     def _get_sparse_factors(weight_shape, sparse_config: SparseConfig) -> Tuple[int, int]:
@@ -208,21 +203,20 @@ class MovementSparsifier(nn.Module):
         return sparse_factors
 
     @staticmethod
-    def _get_importance_shape(weight_shape, sparse_factors: Tuple[int, int], sparse_structure: SparseStructure):
-        # TODO:remove  weight_shape, r=32, c=32):
+    def _get_weight_importance_shape(weight_shape, sparse_factors: Tuple[int, int], sparse_structure: SparseStructure) -> Tuple[int, int]:
         if sparse_structure == SparseStructure.FINE:
-            return weight_shape, False
+            return weight_shape
 
         if sparse_structure == SparseStructure.BLOCK:
             r, c = sparse_factors
-            return (weight_shape[0] // r, weight_shape[1] // c), True
+            return (weight_shape[0] // r, weight_shape[1] // c)
 
         if sparse_structure == SparseStructure.PER_DIM:
             score_shape = []
             for axes, (dim, factor) in enumerate(zip(weight_shape, sparse_factors)):
-                assert dim % factor == 0, "{} is not a factor of axes {} with dim size {}".format(factor, axes, dim)
+                assert dim % factor == 0, '{} is not a factor of axes {} with dim size {}'.format(factor, axes, dim)
                 score_shape.append(dim // factor)
-            return score_shape, True
+            return tuple(score_shape)
 
     def _expand_importance(self, importance: torch.Tensor, isbias=False) -> torch.Tensor:
         if not self._bool_expand_importance:
@@ -233,32 +227,24 @@ class MovementSparsifier(nn.Module):
                          .repeat_interleave(self.sparse_factors[1], dim=1)
 
     def loss(self):
-        layer_loss = torch.mean(torch.abs(torch.sigmoid(self.weight_importance))) * \
-                self.layer_loss_lambda * math.prod(self.sparse_factors)
+        layer_loss = torch.mean(torch.sigmoid(self.weight_importance)) * \
+            self.layer_loss_lambda * math.prod(self.sparse_factors)
         if self.prune_bias:
-            layer_loss += torch.mean(torch.abs(torch.sigmoid(self.bias_importance))) * \
+            layer_loss += torch.mean(torch.sigmoid(self.bias_importance)) * \
                 self.layer_loss_lambda * float(self.sparse_factors[0])
         return layer_loss
 
+
 class MaskCalculationHook():
-    def __init__(self, module):
+    def __init__(self, module: nn.Module):
         # pylint: disable=protected-access
         self.hook = module._register_state_dict_hook(self.hook_fn)
 
-    def hook_fn(self, module, destination, prefix, local_metadata):
-        # module.weight_ctx.binary_mask = binary_mask_by_threshold(
-        #                         module._expand_importance(module._weight_importance),
-        #                         module.importance_threshold
-        #                      )
-        destination[prefix + 'weight_ctx._binary_mask'] = module.weight_ctx.binary_mask
-
-        if module.prune_bias is True:
-            # module.bias_ctx.binary_mask = binary_mask_by_threshold(
-            #                     module._expand_importance(module.bias_importance, isbias=True),
-            #                     module.importance_threshold
-            #                 )
-            destination[prefix + 'bias_ctx._binary_mask'] = module.bias_ctx.binary_mask
-        return destination
+    def hook_fn(self, module, state_dict: Dict, prefix: str, local_metadata):
+        state_dict[prefix + 'weight_ctx._binary_mask'] = module.weight_ctx.binary_mask
+        if module.prune_bias:
+            state_dict[prefix + 'bias_ctx._binary_mask'] = module.bias_ctx.binary_mask
+        return state_dict
 
     def close(self):
         self.hook.remove()

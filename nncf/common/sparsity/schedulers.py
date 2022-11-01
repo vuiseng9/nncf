@@ -380,7 +380,7 @@ class PolynomialThresholdScheduler(BaseCompressionScheduler):
 
     def _freeze_importance(self):
         for minfo in self._controller.sparsified_module_info:
-            minfo.operand.freeze_importance()
+            minfo.operand.requires_grad_(False)
 
     def _update_operand_importance_threshold(self):
         if self.current_importance_threshold != self._cached_importance_threshold:
@@ -394,7 +394,7 @@ class PolynomialThresholdScheduler(BaseCompressionScheduler):
         if self._should_skip:
             return
         super().epoch_step(next_epoch)
-        self.schedule_threshold(self.current_step + 1) # call `schedule_threshold()` when update_per_optimizer_step=False
+        self.schedule_threshold(self.current_step + 1) # useful when update_per_optimizer_step=False
 
     def step(self, next_step: Optional[int] = None) -> None:
         super().step(next_step)
