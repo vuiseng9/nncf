@@ -7,7 +7,13 @@ from nncf.torch.nncf_network import NNCFNetwork
 
 STRUCTURED_MASK_STRATEGY = Registry("structured_mask_strategy")
 
-
+def detect_supported_model_family(model):
+    # TODO: need discussion on how to implement this
+    for name, _ in model.named_modules():
+        if 'bert' in name.lower():
+            return 'huggingface_bert'
+    return None
+    
 class StructuredMaskRule:
     def __init__(
         self,

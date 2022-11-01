@@ -50,7 +50,7 @@ from nncf.torch.layers import NNCF_MODULES_OP_NAMES
 import os
 import numpy as np
 import pandas as pd
-from nncf.torch.sparsity.movement.structured_mask_strategy import STRUCTURED_MASK_STRATEGY
+from nncf.torch.sparsity.movement.structured_mask_strategy import STRUCTURED_MASK_STRATEGY, detect_supported_model_family
 
 @PT_COMPRESSION_ALGORITHMS.register('movement_sparsity')
 class MovementSparsityBuilder(BaseSparsityAlgoBuilder):
@@ -132,12 +132,16 @@ class MovementSparsityController(BaseSparsityAlgoController):
         # self.create_structured_sparsity_context()
         self.prunable_sparsified_module_info_groups = self._get_group_of_prunable_sparsified_module_info()
 
-        model_family = params.get('model_family', 'huggingface_bert')
-        if model_family == 'auto':
-            raise NotImplementedError("Please specify the model family")
-        strategy_cls = STRUCTURED_MASK_STRATEGY.get(model_family)
-        strcutured_mask_strategy = strategy_cls.from_compressed_model(self.model) # may simplify it later
-        self._structured_mask_handler = StructuredMaskHandler(self.prunable_sparsified_module_info_groups, strcutured_mask_strategy)
+        if self._scheduler.enable_structured_masking:
+            model_family = params.get('model_family', 'auto')
+            if model_family == 'auto':
+                model_family = detect_supported_model_family(self.model)
+            if model_family not in STRUCTURED_MASK_STRATEGY.registry_dict:
+                nncf_logger.warning('No supported model for structured masking. Disabled.')
+            else:
+                strategy_cls = STRUCTURED_MASK_STRATEGY.get(model_family)
+                strcutured_mask_strategy = strategy_cls.from_compressed_model(self.model)
+                self._structured_mask_handler = StructuredMaskHandler(self.prunable_sparsified_module_info_groups, strcutured_mask_strategy)
 
     def compression_stage(self) -> CompressionStage:
         # if self._mode == 'local':
@@ -212,6 +216,7 @@ class MovementSparsityController(BaseSparsityAlgoController):
         self._structured_mask_handler.populate_dependent_structured_mask_to_operand()
 
     def report_structured_sparsity(self, dirname):
+        # TODO: will change to a debug mode feature
         listofentry=[]
         for group_id, ctxes in self.structured_ctx_by_group.items():
             for ctx in ctxes:

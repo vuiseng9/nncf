@@ -172,7 +172,7 @@ class MovementSparsifier(nn.Module):
 
     def _calc_training_binary_mask(self, isbias: bool = False):
         ctx = self.bias_ctx if isbias else self.weight_ctx
-        if not self.training or self.frozen:
+        if (not self.training) or self.frozen:
             return ctx.binary_mask
         importance = self.bias_importance if isbias else self.weight_importance
         mask = binary_mask_by_threshold(self._expand_importance(importance, isbias),
