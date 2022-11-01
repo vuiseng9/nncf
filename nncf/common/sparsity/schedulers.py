@@ -403,7 +403,7 @@ class PolynomialThresholdScheduler(BaseCompressionScheduler):
             return
 
         if self._update_per_optimizer_step:
-            self.schedule_threshold()
+            self.schedule_threshold(self.current_step)
 
     def schedule_threshold(self, global_step: Optional[int] = None):
         if global_step is None:

@@ -21,7 +21,10 @@ from nncf.torch.sparsity.functions import \
 from nncf.torch.sparsity.layers import BinaryMask
 from nncf.torch.sparsity.movement.functions import binary_mask_by_threshold
 from nncf.torch.utils import is_tracing_state, no_jit_trace
+from nncf.common.utils.debug import is_debug
 from torch import nn
+import numpy as np
+import math
 
 
 class SparseStructure(str, Enum):
@@ -112,6 +115,7 @@ class MovementSparsifier(nn.Module):
         self.target_module_node = target_module_node
         self.prune_bias = target_module_node.layer_attributes.bias
         self.frozen = frozen
+        self.layer_loss_lambda = 0.5
         self.importance_threshold = -999  # This must be sufficiently small # TODO: there might be dependency
 
         weight_shape = target_module_node.layer_attributes.get_weight_shape()
@@ -153,15 +157,19 @@ class MovementSparsifier(nn.Module):
     def extra_repr(self):
         return 'sparse_structure: {} {}'.format(self.sparse_structure.value, self.sparse_factors)
 
-    def forward(self, weight, bias=None):
+    def forward(self, weight: torch.Tensor, bias: Optional[torch.Tensor]=None) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         # TODO: non-bias linear check?
         if is_tracing_state():
             with no_jit_trace():
-                return weight.mul_(self.weight_ctx.binary_mask), bias.mul_(self.bias_ctx.binary_mask)
-        weight_mask = self._calc_training_binary_mask(isbias=False)
-        masked_weight = apply_binary_mask_impl(weight_mask, weight)
-        bias_mask = self._calc_training_binary_mask(isbias=True)
-        masked_bias = apply_binary_mask_impl(bias_mask, bias)
+                masked_weight = weight.mul_(self.weight_ctx.binary_mask)
+                masked_bias = None if bias is None else bias.mul_(self.bias_ctx.binary_mask)
+        else:
+            weight_mask = self._calc_training_binary_mask(isbias=False)
+            masked_weight = apply_binary_mask_impl(weight_mask, weight)
+            masked_bias = None
+            if bias is not None:
+                bias_mask = self._calc_training_binary_mask(isbias=True)
+                masked_bias = apply_binary_mask_impl(bias_mask, bias)
         return masked_weight, masked_bias
 
     def _calc_training_binary_mask(self, isbias: bool = False):  # TODO: unnecessary arguments
@@ -225,11 +233,12 @@ class MovementSparsifier(nn.Module):
                          .repeat_interleave(self.sparse_factors[1], dim=1)
 
     def loss(self):
-        return 0.5 * (
-            torch.norm(torch.sigmoid(self._expand_importance(self.weight_importance)), p=1) / self.weight_importance.numel()
-            + torch.norm(torch.sigmoid(self._expand_importance(self.bias_importance, isbias=True)), p=1) / self.bias_importance.numel()
-        )
-
+        layer_loss = torch.mean(torch.abs(torch.sigmoid(self.weight_importance))) * \
+                self.layer_loss_lambda * math.prod(self.sparse_factors)
+        if self.prune_bias:
+            layer_loss += torch.mean(torch.abs(torch.sigmoid(self.bias_importance))) * \
+                self.layer_loss_lambda * float(self.sparse_factors[0])
+        return layer_loss
 
 class MaskCalculationHook():
     def __init__(self, module):
