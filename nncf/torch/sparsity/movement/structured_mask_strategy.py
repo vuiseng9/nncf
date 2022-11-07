@@ -116,7 +116,7 @@ class HuggingFaceWav2Vec2StructuredMaskStrategy(HuggingFaceBertStructuredMaskStr
 
 
 @STRUCTURED_MASK_STRATEGY.register("huggingface_swin")
-class HuggingFaceBertStructuredMaskStrategy(BaseStructuredMaskStrategy):
+class HuggingFaceSwinStructuredMaskStrategy(BaseStructuredMaskStrategy):
     MHSA_Q: str = "query"
     MHSA_K: str = "key"
     MHSA_V: str = "value"
