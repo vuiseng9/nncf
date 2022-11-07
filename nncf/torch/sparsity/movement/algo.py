@@ -207,12 +207,15 @@ class MovementSparsityController(BaseSparsityAlgoController):
         return nncf_stats
 
     def reset_independent_structured_mask(self):
+        assert self._scheduler.enable_structured_masking is True
         self._structured_mask_handler.update_independent_structured_mask()
 
     def resolve_structured_mask(self):
+        assert self._scheduler.enable_structured_masking is True
         self._structured_mask_handler.resolve_dependent_structured_mask()
 
     def populate_structured_mask(self):
+        assert self._scheduler.enable_structured_masking is True
         self._structured_mask_handler.populate_dependent_structured_mask_to_operand()
 
     def report_structured_sparsity(self, dirname):
