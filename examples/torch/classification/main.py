@@ -79,7 +79,6 @@ from nncf.torch.structures import ExecutionParameters
 from nncf.torch.utils import is_main_process
 from nncf.torch.utils import safe_thread_call
 from collections import OrderedDict
-DUMP_QUANTIZE_IO = True
 
 model_names = sorted(name for name, val in models.__dict__.items()
                      if name.islower() and not name.startswith("__")
@@ -93,6 +92,12 @@ def get_argument_parser():
         help="Dataset to use.",
         choices=["imagenet", "cifar100", "cifar10"],
         default=None
+    )
+    parser.add_argument(
+        "--dump_quantize_io",
+        dest="dump_quantize_io",
+        help="dump input output of quantize kernel",
+        action="store_true",
     )
     parser.add_argument('--test-every-n-epochs', default=1, type=int,
                         help='Enables running validation every given number of epochs')
@@ -214,7 +219,7 @@ def main_worker(current_gpu, config: SampleConfig):
     model_state_dict, compression_state = extract_model_and_compression_states(resuming_checkpoint)
     compression_ctrl, model = create_compressed_model(model, nncf_config, compression_state)
 
-    if DUMP_QUANTIZE_IO is True:
+    if config.dump_quantize_io is True:
         # The intent of the following is to capture the input and output of quantizer
         # as test vectors for new quantization kernel development
         #
@@ -305,8 +310,9 @@ def main_worker(current_gpu, config: SampleConfig):
         validate(val_loader, model, criterion, config)
 
 
-    if DUMP_QUANTIZE_IO is True:
-        quant_io_dump_pth = "./quant_io.pth"
+    if config.dump_quantize_io is True:
+        quant_io_dump_pth = "qio_" + osp.splitext(osp.basename(config.config))[0] +".pth"
+        logger.info(f"[TPC-DEV] Dumping quantize kernel io to {quant_io_dump_pth}")
         torch.save(quant_io_memo, quant_io_dump_pth)
         # how to load this dump? quant_io_memo = torch.load(quant_io_dump_pth)
 
@@ -621,6 +627,10 @@ def validate(val_loader, model, criterion, config, epoch=0, log_validation_info=
     with torch.no_grad():
         end = time.time()
         for i, (input_, target) in enumerate(val_loader):
+            if config.dump_quantize_io is True and (i > 1):
+                logger.info("[TPC-DEV] dump_quantize_io is enabled. exit evaluation.")
+                break
+
             input_ = input_.to(config.device)
             target = target.to(config.device)
 
