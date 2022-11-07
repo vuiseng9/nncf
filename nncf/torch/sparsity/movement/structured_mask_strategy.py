@@ -11,10 +11,10 @@ STRUCTURED_MASK_STRATEGY = Registry("structured_mask_strategy")
 
 def detect_supported_model_family(model):
     # TODO: review and discuss
-    model_pymodule = inspect.getmodule(model.get_nncf_wrapped_model()).__name__.split(".")
-    if model_pymodule[0] == 'transformers':
+    model_pymodules = inspect.getmodule(model.get_nncf_wrapped_model()).__name__.split(".")
+    if len(model_pymodules) >= 3 and model_pymodules[:2] == ['transformers', 'models']:
         # the case of input model defined by HuggingFace's transformers
-        model_family = f'huggingface_{model_pymodule[2]}'
+        model_family = f'huggingface_{model_pymodules[2]}'
         if model_family in STRUCTURED_MASK_STRATEGY.registry_dict:
             return model_family
     return None
