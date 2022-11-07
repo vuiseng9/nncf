@@ -357,9 +357,12 @@ class PolynomialThresholdScheduler(BaseCompressionScheduler):
         self.warmup_end_epoch: int = params.get('warmup_end_epoch', 0)
         self.importance_target_lambda: float = params.get('importance_regularization_factor', 0.1)
         self.enable_structured_masking: bool = params.get('enable_structured_masking', True)
-        self.current_importance_threshold = self.init_importance_threshold
-        self._cached_importance_threshold = None
-        self._is_importance_frozen = False
+        self._steps_per_epoch = params.get('steps_per_epoch', None)
+
+        if self._steps_per_epoch is None and self.warmup_start_epoch < 1:
+            raise ValueError('`warmup_start_epoch` must be >= 1 in order to enable the auto calculation of `steps_per_epoch`. '
+                             'Please either change `warmup_start_epoch` to a larger number or specify `steps_per_epoch` in the config.'
+            )
 
         self.schedule = PolynomialDecaySchedule(
             self.init_importance_threshold,
@@ -368,9 +371,10 @@ class PolynomialThresholdScheduler(BaseCompressionScheduler):
             params.get('power', 3),
             params.get('concave', True)
         )
-
+        self.current_importance_threshold = self.init_importance_threshold
+        self._cached_importance_threshold = None
+        self._is_importance_frozen = False
         self._steps_in_current_epoch = 0
-        self._steps_per_epoch = params.get('steps_per_epoch', None)
         self._should_skip = False
 
     @property
@@ -388,11 +392,11 @@ class PolynomialThresholdScheduler(BaseCompressionScheduler):
         self.cached_importance_threshold = self.current_importance_threshold
 
     def epoch_step(self, next_epoch: Optional[int] = None) -> None:
+        super().epoch_step(next_epoch)
         self._maybe_should_skip()
         self._steps_in_current_epoch = 0
         if self._should_skip:
             return
-        super().epoch_step(next_epoch)
         self.schedule_threshold(self.current_step + 1) # useful when update_per_optimizer_step=False
 
     def step(self, next_step: Optional[int] = None) -> None:

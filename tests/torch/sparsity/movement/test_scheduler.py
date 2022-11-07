@@ -136,3 +136,9 @@ def test_scheduler_can_infer_steps_per_epoch():
     scheduler.step()
     assert scheduler.current_importance_threshold == threshold_after_6_step_calls
     assert scheduler.current_importance_lambda == factor_after_6_step_calls
+
+
+def test_scheduler_raises_error_of_improper_steps_per_epoch_setting():
+    params = SchedulerParams(warmup_start_epoch=0, steps_per_epoch=None)
+    with pytest.raises(ValueError):    
+        _ = PolynomialThresholdScheduler(controller=MagicMock(), params=params.__dict__)
