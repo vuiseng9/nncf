@@ -52,7 +52,7 @@ import numpy as np
 import pandas as pd
 from nncf.torch.sparsity.movement.structured_mask_strategy import STRUCTURED_MASK_STRATEGY, detect_supported_model_family
 
-SUPPORTED_NNCF_MODULE_OP_NAMES = [NNCFLinear.op_func_name]
+SUPPORTED_NNCF_MODULES = [NNCFLinear]
 
 @PT_COMPRESSION_ALGORITHMS.register('movement_sparsity')
 class MovementSparsityBuilder(BaseSparsityAlgoBuilder):
@@ -64,7 +64,7 @@ class MovementSparsityBuilder(BaseSparsityAlgoBuilder):
     def _sparsify_weights(self, target_model: NNCFNetwork) -> List[PTInsertionCommand]:
         device = get_model_device(target_model)
         sparsified_module_nodes = target_model.get_weighted_original_graph_nodes(
-            nncf_module_names=SUPPORTED_NNCF_MODULE_OP_NAMES)
+            nncf_module_names=[m.__name__ for m in SUPPORTED_NNCF_MODULES])
         insertion_commands = []
         for module_node in sparsified_module_nodes:
             node_name = module_node.node_name
@@ -363,7 +363,7 @@ class MovementSparsityController(BaseSparsityAlgoController):
         for group_id, building_block in enumerate(building_blocks):
             sparsified_module_info = []
             for op_addr in building_block.op_addresses:
-                if op_addr.operator_name in SUPPORTED_NNCF_MODULE_OP_NAMES:
+                if op_addr.operator_name in [m.op_func_name for m in SUPPORTED_NNCF_MODULES]:
                     module = self.model.get_module_by_scope(op_addr.scope_in_model)
                     module_info = module_2_sparse_module_info_map[module]
                     sparsified_module_info.append(module_info)

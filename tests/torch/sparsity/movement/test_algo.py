@@ -27,6 +27,7 @@ from nncf.torch.sparsity.movement.algo import ImportanceLoss
 from nncf.torch.sparsity.movement.algo import MovementSparsifier
 from nncf.torch.sparsity.movement.algo import MovementSparsityController
 from nncf.torch.sparsity.movement.algo import SparseStructure
+from nncf.torch.sparsity.movement.algo import SUPPORTED_NNCF_MODULES
 from nncf.torch.sparsity.movement.structured_mask_strategy import HuggingFaceBertStructuredMaskStrategy
 from nncf.torch.sparsity.movement.structured_mask_handler import StructuredMaskContext
 from nncf.torch.sparsity.movement.layers import SparseConfig
@@ -96,12 +97,8 @@ def test_can_create_movement_sparsity_layers(tmp_path, nncf_config_builder):
     assert isinstance(compression_ctrl.scheduler, PolynomialThresholdScheduler)
 
     for scope, module in compressed_model.get_nncf_modules().items():
-        if not should_consider_scope(str(scope), nncf_config_builder.get('ignored_scopes')):
-            if hasattr(module, 'pre_ops'):
-                for op in module.pre_ops.values():
-                    assert (not isinstance(op, UpdateWeightAndBias)) or (not isinstance(op.operand, MovementSparsifier))
-        else:
-            count_movement_op = 0
+        count_movement_op = 0
+        if hasattr(module, 'pre_ops'):
             for op in module.pre_ops.values():
                 if isinstance(op, UpdateWeightAndBias) and isinstance(op.operand, MovementSparsifier):
                     count_movement_op += 1
@@ -114,7 +111,10 @@ def test_can_create_movement_sparsity_layers(tmp_path, nncf_config_builder):
                             break  # only test the first matched expression. Need tests to confirm only one matched expression matched for each layer.
                     else:
                         check_sparsified_layer_mode(sparsifier, module, SparseConfig(SparseStructure.FINE, (1, 1)))
+        if should_consider_scope(str(scope), nncf_config_builder.get('ignored_scopes')) and isinstance(module, tuple(SUPPORTED_NNCF_MODULES)):
             assert count_movement_op == 1
+        else:
+            assert count_movement_op == 0
 
 
 def test_can_create_structured_masks(tmp_path):
