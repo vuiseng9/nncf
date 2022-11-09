@@ -9,7 +9,7 @@ import torch
 from nncf.experimental.torch.search_building_blocks.search_blocks import \
     BuildingBlockType
 from nncf.torch.sparsity.base_algo import SparseModuleInfo
-from nncf.torch.sparsity.movement.layers import MovementSparsifier
+from nncf.experimental.torch.sparsity.movement.layers import MovementSparsifier
 from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlock, get_building_blocks, BuildingBlockType, BlockFilteringStrategy
 
 logger = logging.getLogger('nncf')

@@ -8,7 +8,7 @@ import torch.nn as nn
 from datasets import load_dataset
 from nncf import NNCFConfig
 from nncf.api.compression import CompressionAlgorithmController
-from nncf.torch.sparsity.movement.algo import MovementSparsifier
+from nncf.experimental.torch.sparsity.movement.algo import MovementSparsifier
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from transformers import Trainer as BaseTrainer
 from transformers import TrainingArguments, BertConfig

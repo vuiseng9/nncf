@@ -8,8 +8,8 @@ from nncf.common.sparsity.statistics import (MovementSparsityStatistics,
 from nncf.common.statistics import NNCFStatistics
 from nncf.common.utils.helpers import create_table
 from nncf.torch import create_compressed_model
-from nncf.torch.sparsity.movement.functions import binary_mask_by_threshold
-from nncf.torch.sparsity.movement.loss import ImportanceLoss
+from nncf.experimental.torch.sparsity.movement.functions import binary_mask_by_threshold
+from nncf.experimental.torch.sparsity.movement.loss import ImportanceLoss
 from pytest import approx
 from tests.torch.sparsity.movement.helpers import (ConfigBuilder,
                                                    bert_tiny_unpretrained)
