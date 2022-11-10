@@ -1,6 +1,6 @@
 import argparse
 import logging
-from typing import Optional
+from typing import Optional, List
 from pathlib import Path
 from collections import OrderedDict
 from itertools import chain
@@ -29,19 +29,21 @@ from transformers import enable_full_determinism
 from transformers.trainer import Trainer
 from transformers.trainer import TrainingArguments
 from transformers.trainer import TrainerCallback
+from transformers.trainer import TrainerState
+from transformers.trainer import TrainerControl
 
 task_to_sample_keys = {
     "mrpc": ("sentence1", "sentence2"),
     "sst2": ("sentence",),
 }
-
 dataset_columns = ['labels', 'input_ids', 'token_type_ids', 'attention_mask', 'position_ids']
+nncf_logger = logging.getLogger('nncf')
 
 
 def parse_args():
     parser = argparse.ArgumentParser('GLUE')
-    parser.add_argument('--task_name', type=str, help=f'Task name for GLUE. Supported tasks: {list(task_to_sample_keys)}.')
-    parser.add_argument('--model_name_or_path', type=str, help="Path to pretrained model or model identifier from huggingface.co/models.")
+    parser.add_argument('--task_name', type=str, default='mrpc', help=f'Task name for GLUE. Supported tasks: {list(task_to_sample_keys)}.')
+    parser.add_argument('--model_name_or_path', type=str, default='bert-base-uncased', help="Path to pretrained model or model identifier from huggingface.co/models.")
     parser.add_argument('--max_seq_length', type=int, default=128, help='Maximum length for model input sequences.')
     parser.add_argument('--nncf_config', type=str, default=None, help='Path to NNCF configuration json file.')
     parser.add_argument('--no_cuda', action='store_true', help='Whether to disable cuda devices.')
@@ -63,29 +65,45 @@ def parse_args():
 class CompressionCallback(TrainerCallback):
     def __init__(self, compression_ctrl: CompressionAlgorithmController):
         self.compression_ctrl = compression_ctrl
-        self.compression_stats_list = []
-        self._global_step = 0
+        self._last_log_step = None
 
     def on_epoch_begin(self, *args, **kwargs):
         self.compression_ctrl.scheduler.epoch_step()
 
     def on_step_begin(self, *args, **kwargs):
-        self._global_step += 1
         self.compression_ctrl.scheduler.step()
 
-    def on_step_end(self, *args, **kwargs):
+    def on_log(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+        step = state.global_step
+        if step == self._last_log_step:
+            return
+        status = {"step": step}
+        if state.epoch is not None:
+            status["epoch"] = round(state.epoch, 2)
         stats = prepare_for_tensorboard(self.compression_ctrl.statistics())
-        stats_dict = OrderedDict(step=self._global_step, **stats)
-        self.compression_stats_list.append(stats_dict)
-    
-    # def on_log(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
-    #     return super().on_log(args, state, control, **kwargs)
+        result = {**status, **stats}
+        state.log_history.append(result)
+        self._last_log_step = step
 
 
 class CompressionTrainer(Trainer):
-    def __init__(self, compression_ctrl: Optional[CompressionAlgorithmController], *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self,
+                 compression_ctrl: Optional[CompressionAlgorithmController],
+                 callbacks: Optional[List[TrainerCallback]] = None,
+                 *args, **kwargs):
         self.compression_ctrl = compression_ctrl
+        if compression_ctrl is not None:
+            if callbacks:
+                nncf_logger.warning('You passed a customized callback list to `CompressionTrainer`. '
+                                    'Please ensure `.epoch_step()` and `.step()` are called for '
+                                    '`compression_ctrl.scheduler`, otherwise compression may be incorrect.')
+            else:
+                compression_callback = CompressionCallback(compression_ctrl)
+                callbacks = [compression_callback]
+        self.compression_callbacks = callbacks
+        super().__init__(callbacks=callbacks, *args, **kwargs)
+        if not (self.args.local_rank == -1 or self.args.no_cuda or compression_ctrl is None):
+            compression_ctrl.distributed()
 
     def compute_loss(self, model, inputs, return_outputs=False):
         # print(inputs)
@@ -97,12 +115,7 @@ class CompressionTrainer(Trainer):
         return (loss, outputs) if return_outputs else loss
 
 
-def main():
-    args, training_args = parse_args()
-    if training_args.seed is not None:
-        enable_full_determinism(training_args.seed)
-
-    # datasets
+def prepare_dataset(args, training_args):
     raw_datasets = load_dataset("glue", args.task_name)
     num_labels = len(raw_datasets["train"].features["label"].names)
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
@@ -125,18 +138,31 @@ def main():
 
     train_dataset = raw_datasets["train"] if training_args.do_train else None
     eval_dataset = raw_datasets["validation"] if training_args.do_eval else None
+    return train_dataset, eval_dataset, num_labels
 
-    # model
+
+def prepare_model(args, training_args, num_labels):
     config = AutoConfig.from_pretrained(
         args.model_name_or_path,
         num_labels=num_labels,
         finetuning_task=args.task_name,
     )
     model = AutoModelForSequenceClassification.from_pretrained(args.model_name_or_path, config=config)
+    return model
+
+
+def main():
+    args, training_args = parse_args()
+    if training_args.seed is not None:
+        enable_full_determinism(training_args.seed)
+
+    train_dataset, eval_dataset, num_labels = prepare_dataset(args, training_args)
+    model = prepare_model(args, training_args, num_labels)
+
+    # wrap with nncf if specified
     compression_ctrl = None
     if args.nncf_config is not None:
         nncf_config = NNCFConfig.from_json(args.nncf_config)
-        # nncf_config['compression'] = []
         if nncf_config.get('log_dir', None) is None:
             nncf_config['log_dir'] = training_args.output_dir
         compression_ctrl, model = create_compressed_model(model, nncf_config)
@@ -150,7 +176,6 @@ def main():
         result = metric.compute(predictions=preds, references=p.label_ids)
         return result
 
-    callback = None if compression_ctrl is None else CompressionCallback(compression_ctrl)
     trainer = CompressionTrainer(
         compression_ctrl=compression_ctrl,
         model=model,
@@ -158,7 +183,6 @@ def main():
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         compute_metrics=compute_metrics,
-        callbacks=None if callback is None else [callback]
     )
 
     # do training & evaluation
@@ -168,16 +192,11 @@ def main():
         trainer.save_model()
         trainer.log_metrics("train", metrics)
         trainer.save_metrics("train", metrics)
-        trainer.save_state()
     if training_args.do_eval:
         metrics = trainer.evaluate()
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
-
-    # log compression stats
-    if callback is not None and is_main_process():
-        with open(Path(training_args.output_dir, 'compression_stats.json'), 'w') as f:
-            json.dump(callback.compression_stats_list, f, indent=2)
+    trainer.save_state()
 
 
 if __name__ == "__main__":

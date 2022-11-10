@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from pytest import approx
 import jstyleson as json
+from copy import deepcopy
 
 import torch.cuda
 from tests.common.helpers import PROJECT_ROOT
@@ -24,7 +25,7 @@ class MovementGlueHandler:
         return Path(checkpoint_save_dir)
 
     def get_main_location(self) -> str:
-        return ".".join(["examples", "torch", "sparsity", "movement", "examples", self._get_main_filename()])
+        return ".".join(["tests", "torch", "sparsity", "movement", "examples", self._get_main_filename()])
 
     def _get_main_filename(self):
         return "run_glue"
@@ -50,68 +51,18 @@ class MovementGlueHandler:
         return result
 
 
-class MovementTrainingValidator(CompressionTrainingValidator):
-    def __init__(self, desc: "MovementTrainingTestDescriptor"):
-        self._desc = desc
-        self._sample_handler = desc.sample_handler
-
-    def validate_sample(self, args, mocker):
-        cli_args = get_cli_dict_args(args)
-        cmd = self._create_command_line(cli_args)
-        runner = Command(cmd)
-        env_with_cuda_reproducibility = os.environ.copy()
-        env_with_cuda_reproducibility["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
-        if not self._desc.cpu_only_:
-            dev_ids = os.environ["CUDA_VISIBLE_DEVICES"].split(",")
-            n_process = self._desc.n_process
-            env_with_cuda_reproducibility["CUDA_VISIBLE_DEVICES"] = ",".join(dev_ids[:n_process])
-            print('cuda:', env_with_cuda_reproducibility["CUDA_VISIBLE_DEVICES"])
-        runner.kwargs.update(env=env_with_cuda_reproducibility)
-        runner.run(timeout=self._desc.timeout_)
-
-    def get_default_args(self):
-        args = {
-            "model_name_or_path": self._desc.model_name_,
-            "task_name": self._desc.dataset_name,
-            "nncf_config": self._desc.config_path,
-            "do_train": None,
-            "do_eval": None,
-            "num_train_epochs": self._desc.num_train_epochs_,
-            "evaluation_strategy": "epoch",
-            "output_dir": self._desc.output_dir,
-            "seed": self._desc.seed_,
-            "learning_rate": self._desc.learning_rate_,
-            "per_device_train_batch_size": self._desc.batch_size_,
-        }
-        if self._desc.enable_autocast_fp16_:
-            args["fp16"] = None
-        if self._desc.cpu_only_:
-            args["no_cuda"] = None
-        return args
-
-    def _create_command_line(self, args):
-        project_root = PROJECT_ROOT.as_posix()
-        main_py = self._sample_handler.get_executable()
-        cli_args = " ".join(key if (val is None or val is True) else "{} {}".format(key, val) for key, val in args.items())
-        extra_for_ddp = ""
-        if self._desc.distributed_data_parallel_:
-            extra_for_ddp = "-m torch.distributed.run --nproc_per_node={nproc_per_node}".format(
-                nproc_per_node=self._desc.n_process
-            )
-        return f"PYTHONPATH={project_root} {sys.executable} {extra_for_ddp} {main_py} {cli_args}"
-
-
 class MovementTrainingTestDescriptor(BaseSampleTestCaseDescriptor):
     def __init__(self):
         super().__init__()
-        self.sample_type_ = "TextClassification"  # TODO(yujie): actually we do not need this
+        # TODO(yujie): actually we do not need this
+        self.sample_type_ = "TextClassification"
         self.sample_handler = MovementGlueHandler()
         self.model_name_ = "google/bert_uncased_L-2_H-128_A-2"
         self.enable_autocast_fp16_ = False
         self.distributed_data_parallel_ = False
         self.n_process = 1
         self.cpu_only_ = False
-        self.execution_arg = "data_parallel"
+        self.execution_arg = "single_card"
         self.timeout_ = 10 * 60  # 10 mins
         self.expected_eval_acc_ = None
         self.expected_eval_f1_ = None
@@ -181,11 +132,11 @@ class MovementTrainingTestDescriptor(BaseSampleTestCaseDescriptor):
         self.cpu_only_ = cpu_only_
         return self
 
-    # def data_parallel(self, data_parallel_=True, n_process=2):
-    #     if data_parallel_:
-    #         self.execution_arg = "data-parallel"
-    #     self.n_process = n_process
-    #     return self
+    def data_parallel(self, data_parallel_=True, n_process=2):
+        if data_parallel_:
+            self.execution_arg = "data-parallel"
+        self.n_process = n_process
+        return self
 
     def enable_autocast_fp16(self, enable_autocast_fp16_: bool = True):
         self.enable_autocast_fp16_ = enable_autocast_fp16_
@@ -201,66 +152,118 @@ class MovementTrainingTestDescriptor(BaseSampleTestCaseDescriptor):
         return "_".join([self.config_name_, self.dataset_name, self.execution_arg])
 
 
+class MovementTrainingValidator(CompressionTrainingValidator):
+    def __init__(self, desc: MovementTrainingTestDescriptor):
+        self._desc = desc
+        self._sample_handler = desc.sample_handler
+
+    def validate_sample(self, args, mocker):
+        cli_args = get_cli_dict_args(args)
+        cmd = self._create_command_line(cli_args)
+        runner = Command(cmd)
+        env_with_cuda_reproducibility = os.environ.copy()
+        env_with_cuda_reproducibility["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+        if not self._desc.cpu_only_:
+            dev_ids = os.environ["CUDA_VISIBLE_DEVICES"].split(",")
+            n_process = self._desc.n_process
+            env_with_cuda_reproducibility["CUDA_VISIBLE_DEVICES"] = ",".join(
+                dev_ids[:n_process])
+            print(
+                'cuda:', env_with_cuda_reproducibility["CUDA_VISIBLE_DEVICES"])
+        runner.kwargs.update(env=env_with_cuda_reproducibility)
+        runner.run(timeout=self._desc.timeout_)
+
+    def get_default_args(self):
+        args = {
+            "model_name_or_path": self._desc.model_name_,
+            "task_name": self._desc.dataset_name,
+            "nncf_config": self._desc.config_path,
+            "do_train": True,
+            "do_eval": True,
+            "num_train_epochs": self._desc.num_train_epochs_,
+            "evaluation_strategy": "epoch",
+            "output_dir": self._desc.output_dir,
+            "seed": self._desc.seed_,
+            "learning_rate": self._desc.learning_rate_,
+            "per_device_train_batch_size": self._desc.batch_size_,
+        }
+        if self._desc.enable_autocast_fp16_:
+            args["fp16"] = True
+        if self._desc.cpu_only_:
+            args["no_cuda"] = True
+        return args
+
+    def _create_command_line(self, args):
+        project_root = PROJECT_ROOT.as_posix()
+        main_py = self._sample_handler.get_executable()
+        cli_args_l = []
+        for key, val in args.items():
+            if val is None or val is True:
+                cli_args_l.append(key)
+            elif val is not False:
+                cli_args_l.extend([key, val])
+        cli_args = ' '.join(map(str, cli_args_l))
+        extra_for_ddp = ""
+        if self._desc.distributed_data_parallel_:
+            extra_for_ddp = f"-m torch.distributed.run --nproc_per_node={self._desc.n_process}"
+        return f"PYTHONPATH={project_root} {sys.executable} {extra_for_ddp} {main_py} {cli_args}"
+
+
+mrpc_movement_desc_template = \
+    MovementTrainingTestDescriptor()\
+    .model_name("google/bert_uncased_L-2_H-128_A-2")\
+    .real_dataset("mrpc")\
+    .config_name("bert_tiny_uncased_mrpc_movement.json")\
+    .learning_rate(1e-4)\
+    .batch_size(128)\
+    .num_train_epochs(5)\
+    .seed(42)\
+
 MOVEMENT_DESCRIPTORS = {
-    "cuda_1proc": MovementTrainingTestDescriptor()
-                    .model_name("google/bert_uncased_L-2_H-128_A-2")
-                    .real_dataset("mrpc")
-                    .config_name("bert_tiny_uncased_mrpc_movement.json")
-                    .learning_rate(1e-4)
-                    .batch_size(128)
-                    .num_train_epochs(5)
-                    .seed(42)
-                    .expected_eval_acc(approx(0.5, abs=0.5))  # TODO(yujie): add actual metrics
-                    .expected_rela_sparsity(approx(0.5, abs=0.5)),
-    "cuda_1proc_fp16": MovementTrainingTestDescriptor()
-                        .model_name("google/bert_uncased_L-2_H-128_A-2")
-                        .real_dataset("mrpc")
-                        .config_name("bert_tiny_uncased_mrpc_movement.json")
-                        .learning_rate(1e-4)
-                        .batch_size(128)
-                        .num_train_epochs(5)
-                        .seed(42)
-                        .expected_eval_acc(approx(0.5, abs=0.5))
-                        .expected_rela_sparsity(approx(0.5, abs=0.5))
-                        .enable_autocast_fp16(),
-    "cuda_ddp": MovementTrainingTestDescriptor()
-                    .model_name("google/bert_uncased_L-2_H-128_A-2")
-                    .real_dataset("mrpc")
-                    .config_name("bert_tiny_uncased_mrpc_movement.json")
-                    .learning_rate(1e-4)
-                    .batch_size(128)
-                    .num_train_epochs(5)
-                    .seed(42)
-                    .expected_eval_acc(approx(0.5, abs=0.5))
-                    .expected_rela_sparsity(approx(0.5, abs=0.5))
-                    .distributed_data_parallel(n_process=2),
-    "cuda_ddp_fp16": MovementTrainingTestDescriptor()
-                        .model_name("google/bert_uncased_L-2_H-128_A-2")
-                        .real_dataset("mrpc")
-                        .config_name("bert_tiny_uncased_mrpc_movement.json")
-                        .learning_rate(1e-4)
-                        .batch_size(128)
-                        .num_train_epochs(5)
-                        .seed(42)
-                        .expected_eval_acc(approx(0.5, abs=0.5))
-                        .expected_rela_sparsity(approx(0.5, abs=0.5))
-                        .distributed_data_parallel(n_process=2),
-    "cpu_1proc": MovementTrainingTestDescriptor()
-                    .model_name("google/bert_uncased_L-2_H-128_A-2")
-                    .real_dataset("mrpc")
-                    .config_name("bert_tiny_uncased_mrpc_movement.json")
-                    .learning_rate(1e-4)
-                    .batch_size(128)
-                    .num_train_epochs(5)
-                    .seed(42)
-                    .expected_eval_acc(approx(0.5, abs=0.5))
-                    .expected_rela_sparsity(approx(0.5, abs=0.5))
-                    .cpu_only(),
+    "mrpc_cuda_1proc": deepcopy(mrpc_movement_desc_template)
+    .expected_eval_acc(approx(0.5, abs=0.5))
+    .expected_rela_sparsity(approx(0.5, abs=0.5)),
+
+    "mrpc_cuda_1proc_fp16": deepcopy(mrpc_movement_desc_template)
+    .enable_autocast_fp16()
+    .expected_eval_acc(approx(0.5, abs=0.5))
+    .expected_rela_sparsity(approx(0.5, abs=0.5)),
+
+    "mrpc_cuda_dp": deepcopy(mrpc_movement_desc_template)
+    .batch_size(64)
+    .data_parallel(n_process=2)
+    .expected_eval_acc(approx(0.5, abs=0.5))
+    .expected_rela_sparsity(approx(0.5, abs=0.5)),
+
+    "mrpc_cuda_dp_fp16": deepcopy(mrpc_movement_desc_template)
+    .batch_size(64)
+    .data_parallel(n_process=2)
+    .enable_autocast_fp16()
+    .expected_eval_acc(approx(0.5, abs=0.5))
+    .expected_rela_sparsity(approx(0.5, abs=0.5)),
+
+    "mrpc_cuda_ddp": deepcopy(mrpc_movement_desc_template)
+    .batch_size(64)
+    .distributed_data_parallel(n_process=2)
+    .expected_eval_acc(approx(0.5, abs=0.5))
+    .expected_rela_sparsity(approx(0.5, abs=0.5)),
+
+    "mrpc_cuda_ddp_fp16": deepcopy(mrpc_movement_desc_template)
+    .batch_size(64)
+    .distributed_data_parallel(n_process=2)
+    .enable_autocast_fp16()
+    .expected_eval_acc(approx(0.5, abs=0.5))
+    .expected_rela_sparsity(approx(0.5, abs=0.5)),
+
+    "mrpc_cpu_1proc": deepcopy(mrpc_movement_desc_template)
+    .cpu_only()
+    .expected_eval_acc(approx(0.5, abs=0.5))
+    .expected_rela_sparsity(approx(0.5, abs=0.5)),
 }
 
 
 @pytest.fixture(
-    name="movement_desc", scope="module", params=MOVEMENT_DESCRIPTORS.values(), ids=map(str, MOVEMENT_DESCRIPTORS.keys())
+    name="movement_desc", scope="module", params=MOVEMENT_DESCRIPTORS.values(), ids=list(MOVEMENT_DESCRIPTORS.keys())
 )
 def fixture_movement_desc(request, dataset_dir, tmp_path_factory, weekly_models_path, enable_imagenet):
     desc: MovementTrainingTestDescriptor = request.param
@@ -269,7 +272,7 @@ def fixture_movement_desc(request, dataset_dir, tmp_path_factory, weekly_models_
 
 class TestMovementTraining:
     @pytest.mark.dependency(name="movement_train")
-    def test_compression_movement_train(self, movement_desc: MovementTrainingTestDescriptor, tmp_path: Path, mocker):
+    def test_compression_movement_full_train(self, movement_desc: MovementTrainingTestDescriptor, tmp_path: Path, mocker):
         if (not movement_desc.cpu_only_) and torch.cuda.device_count() < movement_desc.n_process:
             pytest.skip(f"No enough cuda devices to run {movement_desc}")
         validator = movement_desc.get_validator()
@@ -279,7 +282,7 @@ class TestMovementTraining:
 
     @pytest.mark.dependency(depends="movement_train")
     def test_compression_movement_eval(self, movement_desc: MovementTrainingTestDescriptor, tmp_path: Path, mocker):
-        pass # TODO:(yujie)
+        pass  # TODO:(yujie)
 
     @staticmethod
     def _validate_train_metric(desc: MovementTrainingTestDescriptor):
@@ -289,4 +292,5 @@ class TestMovementTraining:
         if desc.expected_eval_f1_ is not None:
             assert metrics["eval_f1"] == approx(desc.expected_eval_f1_)
         if desc.expected_rela_sparsity_ is not None:
-            assert metrics["movement_sparsity/relative_sparsity"] == approx(desc.expected_rela_sparsity_)
+            assert metrics["movement_sparsity/relative_sparsity"] == approx(
+                desc.expected_rela_sparsity_)
