@@ -47,6 +47,7 @@ def parse_args():
     parser.add_argument('--max_seq_length', type=int, default=128, help='Maximum length for model input sequences.')
     parser.add_argument('--nncf_config', type=str, default=None, help='Path to NNCF configuration json file.')
     parser.add_argument('--no_cuda', action='store_true', help='Whether to disable cuda devices.')
+    parser.add_argument('--quick_check', action='store_true', help='If set, we will train the model without pretrained weights on only 10 samples.')
 
     args, other_args = parser.parse_known_args()
     training_args, = HfArgumentParser(TrainingArguments).parse_args_into_dataclasses(other_args)
@@ -130,14 +131,21 @@ def prepare_dataset(args, training_args):
         result['position_ids'] = list(range(max_length))
         return result
 
-    with training_args.main_process_first():
-        raw_datasets = raw_datasets.map(tokenize_fn)
-        raw_datasets = raw_datasets.rename_column('label', 'labels')
-        columns_to_remove = set(chain(*raw_datasets.column_names.values())) - set(dataset_columns)
-        raw_datasets = raw_datasets.remove_columns(list(columns_to_remove))
+    def process_dataset(dataset):
+        if args.quick_check:
+            dataset = dataset.select(range(10))
+        dataset = dataset.map(tokenize_fn)
+        dataset = dataset.rename_column('label', 'labels')
+        columns_to_remove = set(dataset.column_names) - set(dataset_columns)
+        dataset = dataset.remove_columns(list(columns_to_remove))
+        return dataset
 
-    train_dataset = raw_datasets["train"] if training_args.do_train else None
-    eval_dataset = raw_datasets["validation"] if training_args.do_eval else None
+    train_dataset = eval_dataset = None
+    with training_args.main_process_first():
+        if training_args.do_train:
+            train_dataset = process_dataset(raw_datasets['train'])
+        if training_args.do_eval:
+            eval_dataset = process_dataset(raw_datasets['validation'])
     return train_dataset, eval_dataset, num_labels
 
 
@@ -147,14 +155,20 @@ def prepare_model(args, training_args, num_labels):
         num_labels=num_labels,
         finetuning_task=args.task_name,
     )
-    model = AutoModelForSequenceClassification.from_pretrained(args.model_name_or_path, config=config)
+    if args.quick_check:
+        model = AutoModelForSequenceClassification.from_config(config)
+    else:
+        model = AutoModelForSequenceClassification.from_pretrained(args.model_name_or_path, config=config)
     return model
 
 
 def main():
     args, training_args = parse_args()
+    if args.quick_check:
+        print('This run is for quick check. We will train the model without pretrained weights with 10 training samples only.')
     if training_args.seed is not None:
         enable_full_determinism(training_args.seed)
+    Path(training_args.output_dir).mkdir(parents=True, exist_ok=True)
 
     train_dataset, eval_dataset, num_labels = prepare_dataset(args, training_args)
     model = prepare_model(args, training_args, num_labels)
@@ -165,6 +179,7 @@ def main():
         nncf_config = NNCFConfig.from_json(args.nncf_config)
         if nncf_config.get('log_dir', None) is None:
             nncf_config['log_dir'] = training_args.output_dir
+        Path(nncf_config['log_dir']).mkdir(parents=True, exist_ok=True)
         compression_ctrl, model = create_compressed_model(model, nncf_config)
 
     # trainer

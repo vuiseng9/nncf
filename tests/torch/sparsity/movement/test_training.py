@@ -13,7 +13,7 @@ from tests.common.helpers import TEST_ROOT
 from tests.common.helpers import get_cli_dict_args
 from tests.torch.helpers import Command
 from tests.torch.sample_test_validator import BaseSampleTestCaseDescriptor
-from tests.torch.test_compression_training import CompressionTrainingValidator, finalize_desc
+from tests.torch.test_compression_training import CompressionTrainingValidator
 
 
 class MovementGlueHandler:
@@ -35,18 +35,12 @@ class MovementGlueHandler:
         state_path = checkpoint_path / "trainer_state.json"
         with open(state_path, "r") as f:
             state_dict = json.load(f)
-        max_epoch = max(log["epoch"] for log in state_dict["log_history"])
+        max_step = max(log["step"] for log in state_dict["log_history"])
 
-        # gather useful info
-        result = dict(epoch=max_epoch)
+        # gather useful info in one dict
+        result = dict(step=max_step)
         for log in state_dict["log_history"]:
-            if log["epoch"] == max_epoch:
-                result.update(log)
-
-        with open(checkpoint_path / "compression_stats.json", "r") as f:
-            compression_stats = json.load(f)
-        for log in compression_stats:
-            if log["step"] == result["step"]:
+            if log["step"] == max_step:
                 result.update(log)
         return result
 
@@ -71,15 +65,17 @@ class MovementTrainingTestDescriptor(BaseSampleTestCaseDescriptor):
         self.learning_rate_ = 1e-4
         self.seed_ = None
         self.output_dir = None
+        self.quick_check_ = False
 
     def finalize(self, dataset_dir, tmp_path_factory, weekly_models_path):
         config_name = Path(self.config_name_).stem
+        if weekly_models_path is None or self.quick_check_:
+            config_name += '_quick-check'
         is_fp16_str = "autocast-fp16" if self.enable_autocast_fp16_ else "fp32training"
         self.output_dir = tmp_path_factory.mktemp("models") / Path(
             self.execution_arg, config_name, is_fp16_str
-        )  # TODO(yujie): not sure about this path
+        )
         self.output_dir.mkdir(exist_ok=True, parents=True)
-        # print(self.output_dir)
         return self
 
     @property
@@ -142,6 +138,10 @@ class MovementTrainingTestDescriptor(BaseSampleTestCaseDescriptor):
         self.enable_autocast_fp16_ = enable_autocast_fp16_
         return self
 
+    def quick_check(self, quick_check_: bool = True):
+        self.quick_check_ = quick_check_
+        return self
+
     def get_validator(self):
         return MovementTrainingValidator(self)
 
@@ -168,8 +168,6 @@ class MovementTrainingValidator(CompressionTrainingValidator):
             n_process = self._desc.n_process
             env_with_cuda_reproducibility["CUDA_VISIBLE_DEVICES"] = ",".join(
                 dev_ids[:n_process])
-            print(
-                'cuda:', env_with_cuda_reproducibility["CUDA_VISIBLE_DEVICES"])
         runner.kwargs.update(env=env_with_cuda_reproducibility)
         runner.run(timeout=self._desc.timeout_)
 
@@ -191,6 +189,8 @@ class MovementTrainingValidator(CompressionTrainingValidator):
             args["fp16"] = True
         if self._desc.cpu_only_:
             args["no_cuda"] = True
+        if self._desc.quick_check_:
+            args["quick_check"] = True
         return args
 
     def _create_command_line(self, args):
@@ -198,7 +198,7 @@ class MovementTrainingValidator(CompressionTrainingValidator):
         main_py = self._sample_handler.get_executable()
         cli_args_l = []
         for key, val in args.items():
-            if val is None or val is True:
+            if str(val).lower() in ['true', 'none']:
                 cli_args_l.append(key)
             elif val is not False:
                 cli_args_l.extend([key, val])
@@ -262,27 +262,52 @@ MOVEMENT_DESCRIPTORS = {
 }
 
 
+def finalize_desc(desc, is_long_training, dataset_dir, tmp_path_factory, weekly_models_path):
+    if is_long_training and (weekly_models_path is None):
+        pytest.skip('Skip the test for long training since `--weekly-models` option is not specified.')
+    if (not is_long_training) and (weekly_models_path is not None):
+        pytest.skip('Skip the test for short training since a long run will be checked.')
+    return desc.finalize(dataset_dir, tmp_path_factory, weekly_models_path)
+
+
 @pytest.fixture(
-    name="movement_desc", scope="module", params=MOVEMENT_DESCRIPTORS.values(), ids=list(MOVEMENT_DESCRIPTORS.keys())
+    name="movement_desc_long", scope="module", params=MOVEMENT_DESCRIPTORS.values(), ids=list(MOVEMENT_DESCRIPTORS.keys())
 )
-def fixture_movement_desc(request, dataset_dir, tmp_path_factory, weekly_models_path, enable_imagenet):
+def fixture_movement_desc_long(request, dataset_dir, tmp_path_factory, weekly_models_path):
     desc: MovementTrainingTestDescriptor = request.param
-    return finalize_desc(desc, dataset_dir, tmp_path_factory, weekly_models_path, enable_imagenet)
+    return finalize_desc(desc, True, dataset_dir, tmp_path_factory, weekly_models_path)
+
+
+@pytest.fixture(
+    name="movement_desc_short", scope="module", params=MOVEMENT_DESCRIPTORS.values(), ids=list(MOVEMENT_DESCRIPTORS.keys())
+)
+def fixture_movement_desc_short(request, dataset_dir, tmp_path_factory, weekly_models_path):
+    desc: MovementTrainingTestDescriptor = request.param
+    desc = deepcopy(desc).quick_check()
+    return finalize_desc(desc, False, dataset_dir, tmp_path_factory, weekly_models_path)
 
 
 class TestMovementTraining:
-    @pytest.mark.dependency(name="movement_train")
-    def test_compression_movement_full_train(self, movement_desc: MovementTrainingTestDescriptor, tmp_path: Path, mocker):
-        if (not movement_desc.cpu_only_) and torch.cuda.device_count() < movement_desc.n_process:
-            pytest.skip(f"No enough cuda devices to run {movement_desc}")
-        validator = movement_desc.get_validator()
+    def test_compression_movement_long_train(self, movement_desc_long: MovementTrainingTestDescriptor, tmp_path: Path, mocker):
+        if (not movement_desc_long.cpu_only_) and torch.cuda.device_count() < movement_desc_long.n_process:
+            pytest.skip(f"No enough cuda devices to run {movement_desc_long}")
+        validator = movement_desc_long.get_validator()
         args = validator.get_default_args()
         validator.validate_sample(args, mocker)
-        self._validate_train_metric(movement_desc)
+        self._validate_model_is_saved(movement_desc_long)
+        self._validate_train_metric(movement_desc_long)
 
-    @pytest.mark.dependency(depends="movement_train")
-    def test_compression_movement_eval(self, movement_desc: MovementTrainingTestDescriptor, tmp_path: Path, mocker):
-        pass  # TODO:(yujie)
+    def test_compression_movement_short_train(self, movement_desc_short: MovementTrainingTestDescriptor, tmp_path: Path, mocker):
+        if (not movement_desc_short.cpu_only_) and torch.cuda.device_count() < movement_desc_short.n_process:
+            pytest.skip(f"No enough cuda devices to run {movement_desc_short}")
+        validator = movement_desc_short.get_validator()
+        args = validator.get_default_args()
+        validator.validate_sample(args, mocker)
+        self._validate_model_is_saved(movement_desc_short)
+
+    @staticmethod
+    def _validate_model_is_saved(desc: MovementTrainingTestDescriptor):
+        assert Path(desc.output_dir, 'pytorch_model.bin').is_file()
 
     @staticmethod
     def _validate_train_metric(desc: MovementTrainingTestDescriptor):
