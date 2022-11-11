@@ -229,26 +229,26 @@ MOVEMENT_DESCRIPTORS = {
     .expected_eval_acc(approx(0.5, abs=0.5))
     .expected_rela_sparsity(approx(0.5, abs=0.5)),
 
-    "mrpc_cuda_dp": deepcopy(mrpc_movement_desc_template)
+    "mrpc_cuda_2proc_dp": deepcopy(mrpc_movement_desc_template)
     .batch_size(64)
     .data_parallel(n_process=2)
     .expected_eval_acc(approx(0.5, abs=0.5))
     .expected_rela_sparsity(approx(0.5, abs=0.5)),
 
-    "mrpc_cuda_dp_fp16": deepcopy(mrpc_movement_desc_template)
+    "mrpc_cuda_2proc_dp_fp16": deepcopy(mrpc_movement_desc_template)
     .batch_size(64)
     .data_parallel(n_process=2)
     .enable_autocast_fp16()
     .expected_eval_acc(approx(0.5, abs=0.5))
     .expected_rela_sparsity(approx(0.5, abs=0.5)),
 
-    "mrpc_cuda_ddp": deepcopy(mrpc_movement_desc_template)
+    "mrpc_cuda_2proc_ddp": deepcopy(mrpc_movement_desc_template)
     .batch_size(64)
     .distributed_data_parallel(n_process=2)
     .expected_eval_acc(approx(0.5, abs=0.5))
     .expected_rela_sparsity(approx(0.5, abs=0.5)),
 
-    "mrpc_cuda_ddp_fp16": deepcopy(mrpc_movement_desc_template)
+    "mrpc_cuda_2proc_ddp_fp16": deepcopy(mrpc_movement_desc_template)
     .batch_size(64)
     .distributed_data_parallel(n_process=2)
     .enable_autocast_fp16()
