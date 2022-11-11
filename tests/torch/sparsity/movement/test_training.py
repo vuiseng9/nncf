@@ -198,9 +198,10 @@ class MovementTrainingValidator(CompressionTrainingValidator):
         main_py = self._sample_handler.get_executable()
         cli_args_l = []
         for key, val in args.items():
+            # `args` may be all strings
             if str(val).lower() in ['true', 'none']:
                 cli_args_l.append(key)
-            elif val is not False:
+            elif str(val).lower() != 'false':
                 cli_args_l.extend([key, val])
         cli_args = ' '.join(map(str, cli_args_l))
         extra_for_ddp = ""
@@ -288,7 +289,7 @@ def fixture_movement_desc_short(request, dataset_dir, tmp_path_factory, weekly_m
 
 
 class TestMovementTraining:
-    def test_compression_movement_long_train(self, movement_desc_long: MovementTrainingTestDescriptor, tmp_path: Path, mocker):
+    def test_compression_movement_long_train(self, movement_desc_long: MovementTrainingTestDescriptor, mocker):
         if (not movement_desc_long.cpu_only_) and torch.cuda.device_count() < movement_desc_long.n_process:
             pytest.skip(f"No enough cuda devices to run {movement_desc_long}")
         validator = movement_desc_long.get_validator()
@@ -297,7 +298,7 @@ class TestMovementTraining:
         self._validate_model_is_saved(movement_desc_long)
         self._validate_train_metric(movement_desc_long)
 
-    def test_compression_movement_short_train(self, movement_desc_short: MovementTrainingTestDescriptor, tmp_path: Path, mocker):
+    def test_compression_movement_short_train(self, movement_desc_short: MovementTrainingTestDescriptor, mocker):
         if (not movement_desc_short.cpu_only_) and torch.cuda.device_count() < movement_desc_short.n_process:
             pytest.skip(f"No enough cuda devices to run {movement_desc_short}")
         validator = movement_desc_short.get_validator()

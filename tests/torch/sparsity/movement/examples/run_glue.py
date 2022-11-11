@@ -25,13 +25,14 @@ from transformers import AutoModelForSequenceClassification
 from transformers import AutoTokenizer
 from transformers import EvalPrediction
 from transformers import HfArgumentParser
-from transformers import enable_full_determinism
+from transformers import set_seed
 from transformers.trainer import Trainer
 from transformers.trainer import TrainingArguments
 from transformers.trainer import TrainerCallback
 from transformers.trainer import TrainerState
 from transformers.trainer import TrainerControl
 
+quick_check_num = 10
 task_to_sample_keys = {
     "mrpc": ("sentence1", "sentence2"),
     "sst2": ("sentence",),
@@ -43,11 +44,13 @@ nncf_logger = logging.getLogger('nncf')
 def parse_args():
     parser = argparse.ArgumentParser('GLUE')
     parser.add_argument('--task_name', type=str, default='mrpc', help=f'Task name for GLUE. Supported tasks: {list(task_to_sample_keys)}.')
-    parser.add_argument('--model_name_or_path', type=str, default='bert-base-uncased', help="Path to pretrained model or model identifier from huggingface.co/models.")
+    parser.add_argument('--model_name_or_path', type=str, default='bert-base-uncased',
+                        help="Path to pretrained model or model identifier from huggingface.co/models.")
     parser.add_argument('--max_seq_length', type=int, default=128, help='Maximum length for model input sequences.')
     parser.add_argument('--nncf_config', type=str, default=None, help='Path to NNCF configuration json file.')
     parser.add_argument('--no_cuda', action='store_true', help='Whether to disable cuda devices.')
-    parser.add_argument('--quick_check', action='store_true', help='If set, we will train the model without pretrained weights on only 10 samples.')
+    parser.add_argument('--quick_check', action='store_true',
+                        help=f'If set, we will train the model without pretrained weights on only {quick_check_num} samples.')
 
     args, other_args = parser.parse_known_args()
     training_args, = HfArgumentParser(TrainingArguments).parse_args_into_dataclasses(other_args)
@@ -107,8 +110,6 @@ class CompressionTrainer(Trainer):
             compression_ctrl.distributed()
 
     def compute_loss(self, model, inputs, return_outputs=False):
-        # print(inputs)
-        # print(inputs.keys())
         loss, outputs = super().compute_loss(model, inputs, return_outputs=True)
         if self.compression_ctrl is not None:
             loss_compress = self.compression_ctrl.loss()
@@ -133,7 +134,7 @@ def prepare_dataset(args, training_args):
 
     def process_dataset(dataset):
         if args.quick_check:
-            dataset = dataset.select(range(10))
+            dataset = dataset.select(range(quick_check_num))
         dataset = dataset.map(tokenize_fn)
         dataset = dataset.rename_column('label', 'labels')
         columns_to_remove = set(dataset.column_names) - set(dataset_columns)
@@ -165,10 +166,12 @@ def prepare_model(args, training_args, num_labels):
 def main():
     args, training_args = parse_args()
     if args.quick_check:
-        print('This run is for quick check. We will train the model without pretrained weights with 10 training samples only.')
-    if training_args.seed is not None:
-        enable_full_determinism(training_args.seed)
+        print('This run is for quick check. We will train the model without pretrained '
+              f'weights on {quick_check_num} training samples only.')
     Path(training_args.output_dir).mkdir(parents=True, exist_ok=True)
+
+    if training_args.seed is not None:
+        set_seed(training_args.seed)
 
     train_dataset, eval_dataset, num_labels = prepare_dataset(args, training_args)
     model = prepare_model(args, training_args, num_labels)
