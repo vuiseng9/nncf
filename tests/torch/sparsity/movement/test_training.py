@@ -158,8 +158,7 @@ class MovementTrainingValidator(CompressionTrainingValidator):
         self._sample_handler = desc.sample_handler
 
     def validate_sample(self, args, mocker):
-        cli_args = get_cli_dict_args(args)
-        cmd = self._create_command_line(cli_args)
+        cmd = self._create_command_line(args)
         runner = Command(cmd)
         env_with_cuda_reproducibility = os.environ.copy()
         env_with_cuda_reproducibility["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
@@ -198,10 +197,10 @@ class MovementTrainingValidator(CompressionTrainingValidator):
         main_py = self._sample_handler.get_executable()
         cli_args_l = []
         for key, val in args.items():
-            # `args` may be all strings
-            if str(val).lower() in ['true', 'none']:
+            key = f'--{key}'
+            if val in [None, True]:
                 cli_args_l.append(key)
-            elif str(val).lower() != 'false':
+            elif (not isinstance(val, bool)) or val is not False:
                 cli_args_l.extend([key, val])
         cli_args = ' '.join(map(str, cli_args_l))
         extra_for_ddp = ""
