@@ -12,6 +12,10 @@ from nncf.experimental.torch.sparsity.movement.algo import MovementSparsifier
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from transformers import Trainer as BaseTrainer
 from transformers import TrainingArguments, BertConfig
+from transformers import Wav2Vec2Config
+from transformers import AutoModelForAudioClassification
+from transformers import SwinConfig
+from transformers import AutoModelForImageClassification
 from transformers.trainer_callback import (TrainerCallback, TrainerControl,
                                            TrainerState)
 
@@ -52,6 +56,96 @@ def bert_tiny_unpretrained():
         "vocab_size": 30522,
     }
     return AutoModelForSequenceClassification.from_config(BertConfig(**model_cfg, num_labels=5))
+
+
+def wav2vec2_model():
+    config = Wav2Vec2Config(
+        hidden_size=4,
+        num_hidden_layers=1,
+        num_attention_heads=2,
+        intermediate_size=6,
+        conv_dim=(4, 4),
+        conv_stride=(1, 1),
+        conv_kernel=(3, 3),
+        num_conv_pos_embeddings=3,
+        num_conv_pos_embedding_groups=1,
+        proj_codevector_dim=4,
+        classifier_proj_size=3
+    )
+    return AutoModelForAudioClassification.from_config(config)
+
+
+def swin_model():
+    config = SwinConfig()  # TODO(yujie): change config for a smaller model
+    return AutoModelForImageClassification.from_config(config)
+
+
+class BaseMockRunRecipe:
+    model_family: str = None
+
+    def model(self, **override_config):
+        pass
+
+    def nncf_config(self, **override_config):
+        pass
+
+    def dataset(self):
+        pass
+
+    def trainer(self):
+        pass
+
+
+class Wav2Vec2RunRecipe(BaseMockRunRecipe):
+    model_family = 'huggingface_wav2vec2'
+
+    def model(self, **override_config):
+        config = Wav2Vec2Config(
+            hidden_size=4,
+            num_hidden_layers=1,
+            num_attention_heads=2,
+            intermediate_size=6,
+            conv_dim=(4, 4),
+            conv_stride=(1, 1),
+            conv_kernel=(3, 3),
+            num_conv_pos_embeddings=3,
+            num_conv_pos_embedding_groups=1,
+            proj_codevector_dim=4,
+            classifier_proj_size=3
+        )
+        config.update(override_config)
+        return AutoModelForAudioClassification.from_config(config)
+
+    def nncf_config(self):
+        return NNCFConfig.from_dict(
+            {"input_info": [{"sample_size": [1, 32]}],
+             "compression": {"algorithm": "movement_sparsity"}})
+
+
+class BertRunRecipe(BaseMockRunRecipe):
+    model_family = 'huggingface_bert'
+
+    def model(self, **override_config):
+        config = BertConfig(
+            hidden_size=4,
+            intermediate_size=3,
+            max_position_embeddings=512,
+            num_attention_heads=2,
+            num_hidden_layers=1,
+            vocab_size=30522,
+        )
+        config.update(override_config)
+        return AutoModelForSequenceClassification.from_config(config)
+
+    def nncf_config(self):
+        return NNCFConfig.from_dict({
+            "input_info": [
+                {"sample_size": [1, 256], "type": "long", "keyword": "input_ids"},
+                {"sample_size": [1, 256], "type": "long", "keyword": "token_type_ids"},
+                {"sample_size": [1, 256], "type": "long", "keyword": "position_ids"},
+                {"sample_size": [1, 256], "type": "long", "keyword": "attention_mask"},
+            ],
+            "compression": {"algorithm": "movement_sparsity"}})
 
 
 class ConfigBuilder:

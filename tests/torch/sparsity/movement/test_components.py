@@ -10,10 +10,15 @@ from nncf.common.utils.helpers import create_table
 from nncf.torch import create_compressed_model
 from nncf.experimental.torch.sparsity.movement.functions import binary_mask_by_threshold
 from nncf.experimental.torch.sparsity.movement.loss import ImportanceLoss
+from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskHandler, StructuredMaskContextGroup, StructuredMaskContext
+from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import HuggingFaceWav2Vec2StructuredMaskStrategy, STRUCTURED_MASK_STRATEGY
 from pytest import approx
+from nncf import NNCFConfig
 from tests.torch.sparsity.movement.helpers import (ConfigBuilder,
                                                    bert_tiny_unpretrained)
 from tests.torch.test_algo_common import BasicLinearTestModel
+from tests.torch.sparsity.movement.helpers import wav2vec2_model, swin_model, Wav2Vec2RunRecipe, BertRunRecipe, BaseMockRunRecipe
+from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlockType
 
 
 @pytest.mark.parametrize(("sparse_structure_by_scopes", "init_weight_importance", "init_bias_importance", "ref_masked_weight", "ref_masked_bias"), [
@@ -46,12 +51,13 @@ def test_sparsifier_forward(tmp_path, sparse_structure_by_scopes, init_weight_im
     assert torch.allclose(masked_weight, torch.tensor(ref_masked_weight).float())
     assert torch.allclose(masked_bias, torch.tensor(ref_masked_bias).float())
 
+
 @pytest.mark.skip(reason="temporarily skip due to active refactoring to this")
 def test_structured_mask_setter(tmp_path):
     nncf_config = ConfigBuilder(sparse_structure_by_scopes=[]).build(log_dir=tmp_path)
     compression_ctrl, compressed_model = create_compressed_model(bert_tiny_unpretrained(), nncf_config)
     ctx = sorted(compression_ctrl._structured_mask_handler[0][1],
-                                 key=lambda ctx: ctx.target_module_node)[0]  # we pick the self attention linear for key
+                 key=lambda ctx: ctx.target_module_node)[0]  # we pick the self attention linear for key
     ctx.update_independent_structured_mask()
     grid_size = (2, 4)
     # check independent mask
@@ -134,3 +140,55 @@ def test_nncf_stats_can_register_movement_sparsity_stats():
     nncf_stats.register('movement_sparsity', movement_stats)
     assert hasattr(nncf_stats, 'movement_sparsity')
     assert nncf_stats.movement_sparsity == movement_stats
+
+
+@pytest.mark.parametrize('run_recipe', [Wav2Vec2RunRecipe(), BertRunRecipe()])
+class TestStructuredMaskHandler:
+    @pytest.fixture(autouse=True)
+    def setup(self, run_recipe):
+        self.model = run_recipe.model(num_hidden_layers=1)
+        self.nncf_config = run_recipe.nncf_config()
+        self.compression_ctrl, self.compressed_model = create_compressed_model(self.model, self.nncf_config, dump_graphs=False)
+        strategy = STRUCTURED_MASK_STRATEGY.get(run_recipe.model_family).from_compressed_model(self.compressed_model)
+        self.handler = StructuredMaskHandler(self.compression_ctrl.prunable_sparsified_module_info_groups, strategy)
+        self.run_recipe = run_recipe
+
+    def test_create_ctx_groups(self):
+        handler = self.handler
+        run_recipe = self.run_recipe
+        assert len(handler._structured_mask_ctx_groups) == 2
+        handler._structured_mask_ctx_groups.sort(key=lambda group: group.group_type.value)
+
+        group_ff = handler._structured_mask_ctx_groups[0]
+        assert isinstance(group_ff, StructuredMaskContextGroup)
+        assert group_ff.group_type == BuildingBlockType.FF
+        assert len(group_ff.structured_mask_context_list) == 2
+        group_mhsa = handler._structured_mask_ctx_groups[1]
+        assert isinstance(group_mhsa, StructuredMaskContextGroup)
+        assert group_mhsa.group_type == BuildingBlockType.MSHA
+        assert len(group_mhsa.structured_mask_context_list) == 4
+
+    def test_update_independent_structured_mask(self, mocker):
+        handler = self.handler
+        all_ctxes = []
+        for group in handler._structured_mask_ctx_groups:
+            all_ctxes.extend(group.structured_mask_context_list)
+        ctx_spies = [mocker.spy(ctx, 'update_independent_structured_mask') for ctx in all_ctxes]
+        handler.update_independent_structured_mask()
+        for ctx_spy in ctx_spies:
+            assert ctx_spy.call_count == 1
+
+    def test_resolve_dependent_structured_mask(self):
+        pass  # TODO(yujie)
+
+    def test_populate_dependent_structured_mask_to_operand(self, mocker):
+        handler = self.handler
+        all_ctxes = []
+        for group in handler._structured_mask_ctx_groups:
+            all_ctxes.extend(group.structured_mask_context_list)
+        ctx_spies = [mocker.spy(ctx, 'populate_dependent_structured_mask_to_operand') for ctx in all_ctxes]
+        handler.update_independent_structured_mask()
+        handler.resolve_dependent_structured_mask()
+        handler.populate_dependent_structured_mask_to_operand()
+        for ctx_spy in ctx_spies:
+            assert ctx_spy.call_count == 1
