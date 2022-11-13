@@ -10,10 +10,9 @@ from copy import deepcopy
 import torch.cuda
 from tests.common.helpers import PROJECT_ROOT
 from tests.common.helpers import TEST_ROOT
-from tests.common.helpers import get_cli_dict_args
 from tests.torch.helpers import Command
 from tests.torch.sample_test_validator import BaseSampleTestCaseDescriptor
-from tests.torch.test_compression_training import CompressionTrainingValidator
+from tests.torch.sample_test_validator import BaseSampleValidator
 
 
 class MovementGlueHandler:
@@ -48,8 +47,7 @@ class MovementGlueHandler:
 class MovementTrainingTestDescriptor(BaseSampleTestCaseDescriptor):
     def __init__(self):
         super().__init__()
-        # TODO(yujie): actually we do not need this
-        self.sample_type_ = "TextClassification"
+        self.sample_type_ = None
         self.sample_handler = MovementGlueHandler()
         self.model_name_ = "google/bert_uncased_L-2_H-128_A-2"
         self.enable_autocast_fp16_ = False
@@ -152,7 +150,7 @@ class MovementTrainingTestDescriptor(BaseSampleTestCaseDescriptor):
         return "_".join([self.config_name_, self.dataset_name, self.execution_arg])
 
 
-class MovementTrainingValidator(CompressionTrainingValidator):
+class MovementTrainingValidator(BaseSampleValidator):
     def __init__(self, desc: MovementTrainingTestDescriptor):
         self._desc = desc
         self._sample_handler = desc.sample_handler
