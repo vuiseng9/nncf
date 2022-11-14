@@ -223,6 +223,7 @@ mrpc_movement_desc_template = \
     .seed(42)\
 
 MOVEMENT_DESCRIPTORS = {
+    # TODO(yujie): update expected metrics
     "mrpc_cuda_1proc": deepcopy(mrpc_movement_desc_template)
     .expected_eval_acc(approx(0.5, abs=0.5))
     .expected_rela_sparsity(approx(0.5, abs=0.5)),
