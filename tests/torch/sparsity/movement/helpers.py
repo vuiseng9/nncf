@@ -158,7 +158,6 @@ class ConfigBuilder:
             "final_importance_threshold": 0.0,
             "importance_regularization_factor": 0.2,
             "steps_per_epoch": 128 // 32,
-            "update_per_optimizer_step": True,
             "enable_structured_masking": True,
             "sparse_structure_by_scopes": [
                 {"mode": "block", "sparse_factors": [16, 16], "target_scopes": "{re}.*attention*"},
@@ -183,7 +182,7 @@ class ConfigBuilder:
             ],
             "compression": {
                 "algorithm": "movement_sparsity",
-                "params": dict(schedule="threshold_polynomial_decay", **args),
+                "params": dict(**args),
                 "sparse_structure_by_scopes": sparse_structure_by_scopes,
                 "ignored_scopes": ignored_scopes,
             },
@@ -271,7 +270,7 @@ def run_movement_pipeline(tmp_path, compression_ctrl, compressed_model,
         learning_rate=1e-3,
         optim="adamw_torch",
         remove_unused_columns=False,
-        report_to=None,
+        report_to="none",
         disable_tqdm=True,
         no_cuda=True,  # TODO: where to set cuda devices for cuda training?
     )

@@ -206,6 +206,11 @@ class MovementTrainingValidator(BaseSampleValidator):
             extra_for_ddp = f"-m torch.distributed.run --nproc_per_node={self._desc.n_process}"
         return f"PYTHONPATH={project_root} {sys.executable} {extra_for_ddp} {main_py} {cli_args}"
 
+    def setup_spy(self, mocker):
+        pass
+
+    def validate_spy(self):
+        pass
 
 mrpc_movement_desc_template = \
     MovementTrainingTestDescriptor()\
