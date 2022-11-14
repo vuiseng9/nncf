@@ -158,8 +158,28 @@ class LayerParam:
             return torch.tensor(value, dtype=dtype, device=device)
 
 
+class TransformerLayerMaskParam:
+    def __init__(self, MHSA_Q: LayerParam,
+                 MHSA_K: LayerParam,
+                 MHSA_V: LayerParam,
+                 MHSA_O: LayerParam,
+                 FFN_I: LayerParam,
+                 FFN_O: LayerParam):
+        self.MHSA_Q = MHSA_Q
+        self.MHSA_K = MHSA_K
+        self.MHSA_V = MHSA_V
+        self.MHSA_O = MHSA_O
+        self.FFN_I = FFN_I
+        self.FFN_O = FFN_O
+
+    @property
+    def params_in_transformer_block_order(self):
+        return [self.MHSA_Q, self.MHSA_K, self.MHSA_V,
+                self.MHSA_O, self.FFN_I, self.FFN_O]
+
+
 structured_mask_desc_prune_1head_1channel = dict(
-    unstructured=OrderedDict(
+    unstructured=TransformerLayerMaskParam(
         MHSA_Q=LayerParam(weight=[[1, 0, 0, 0], [1, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], bias=[0, 0, 0, 0]),
         MHSA_K=LayerParam(weight=[[0, 1, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], bias=[1, 0, 0, 0]),
         MHSA_V=LayerParam(weight=[[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], bias=[0, 1, 0, 0]),
@@ -167,7 +187,7 @@ structured_mask_desc_prune_1head_1channel = dict(
         FFN_I=LayerParam(weight=[[1, 1, 0, 1], [1, 1, 0, 1], [0, 0, 0, 0]], bias=[1, 0, 0]),
         FFN_O=LayerParam(weight=[[0, 1, 0], [1, 1, 0], [1, 1, 0], [1, 1, 0]], bias=[0, 0, 0, 0])
     ),
-    independent_structured=OrderedDict(
+    independent_structured=TransformerLayerMaskParam(
         MHSA_Q=LayerParam(weight=[[1, 1, 1, 1], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]]),
         MHSA_K=LayerParam(weight=[[1, 1, 1, 1], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]]),
         MHSA_V=LayerParam(weight=[[1, 1, 1, 1], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]]),
@@ -175,7 +195,7 @@ structured_mask_desc_prune_1head_1channel = dict(
         FFN_I=LayerParam(weight=[[1, 1, 0, 1], [1, 1, 0, 1], [0, 0, 0, 0]]),
         FFN_O=LayerParam(weight=[[1, 1, 0], [1, 1, 0], [1, 1, 0], [1, 1, 0]])
     ),
-    dependent_structured=OrderedDict(
+    dependent_structured=TransformerLayerMaskParam(
         MHSA_Q=LayerParam(weight=[[1, 1, 1, 1], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]]),
         MHSA_K=LayerParam(weight=[[1, 1, 1, 1], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]]),
         MHSA_V=LayerParam(weight=[[1, 1, 1, 1], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]]),
@@ -234,11 +254,11 @@ class TestStructuredMaskHandler:
         module_2_node_name = {minfo.module: minfo.module_node_name for minfo in self.compression_ctrl.sparsified_module_info}
         node_name_2_context = {ctx.module_node_name: ctx for ctx in self.all_ctxes}
         ctxes = [node_name_2_context[module_2_node_name[m]] for m in modules]
-        for ctx, param in zip(ctxes, desc['independent_structured'].values()):
+        for ctx, param in zip(ctxes, desc['independent_structured'].params_in_transformer_block_order):
             ctx.independent_structured_mask = param.weight
 
         handler.resolve_dependent_structured_mask()
-        for ctx, ref_param in zip(ctxes, desc['dependent_structured'].values()):
+        for ctx, ref_param in zip(ctxes, desc['dependent_structured'].params_in_transformer_block_order):
             assert torch.allclose(ctx.dependent_structured_mask, ref_param.weight)
 
     def test_populate_dependent_structured_mask_to_operand(self, mocker):
