@@ -10,15 +10,16 @@ from nncf.common.utils.helpers import create_table
 from nncf.torch import create_compressed_model
 from nncf.experimental.torch.sparsity.movement.functions import binary_mask_by_threshold
 from nncf.experimental.torch.sparsity.movement.loss import ImportanceLoss
-from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskHandler, StructuredMaskContextGroup, StructuredMaskContext
-from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import HuggingFaceWav2Vec2StructuredMaskStrategy, STRUCTURED_MASK_STRATEGY
+from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskContextGroup, StructuredMaskHandler
+from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import STRUCTURED_MASK_STRATEGY
 from pytest import approx
-from nncf import NNCFConfig
 from tests.torch.sparsity.movement.helpers import (ConfigBuilder,
                                                    bert_tiny_unpretrained)
 from tests.torch.test_algo_common import BasicLinearTestModel
-from tests.torch.sparsity.movement.helpers import wav2vec2_model, swin_model, Wav2Vec2RunRecipe, BertRunRecipe, BaseMockRunRecipe
+from tests.torch.sparsity.movement.helpers import BertRunRecipe
 from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlockType
+import numpy as np
+from collections import OrderedDict
 
 
 @pytest.mark.parametrize(("sparse_structure_by_scopes", "init_weight_importance", "init_bias_importance", "ref_masked_weight", "ref_masked_bias"), [
@@ -142,23 +143,73 @@ def test_nncf_stats_can_register_movement_sparsity_stats():
     assert nncf_stats.movement_sparsity == movement_stats
 
 
-@pytest.mark.parametrize('run_recipe', [Wav2Vec2RunRecipe(), BertRunRecipe()])
+class LayerParam:
+    def __init__(self, dtype=torch.float, device=torch.device('cpu'), **kwargs):
+        for name, value in kwargs.items():
+            setattr(self, name, self.ensure_tensor(value, dtype, device) if value is not None else None)
+
+    @staticmethod
+    def ensure_tensor(value, dtype, device):
+        if isinstance(value, np.ndarray):
+            return torch.from_numpy(value).to(dtype=dtype, device=device)
+        elif isinstance(value, torch.Tensor):
+            return value.to(dtype=dtype, device=device)
+        else:
+            return torch.tensor(value, dtype=dtype, device=device)
+
+
+structured_mask_desc_prune_1head_1channel = dict(
+    unstructured=OrderedDict(
+        MHSA_Q=LayerParam(weight=[[1, 0, 0, 0], [1, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], bias=[0, 0, 0, 0]),
+        MHSA_K=LayerParam(weight=[[0, 1, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], bias=[1, 0, 0, 0]),
+        MHSA_V=LayerParam(weight=[[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], bias=[0, 1, 0, 0]),
+        MHSA_O=LayerParam(weight=[[0, 1, 0, 0], [1, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], bias=[0, 0, 0, 0]),
+        FFN_I=LayerParam(weight=[[1, 1, 0, 1], [1, 1, 0, 1], [0, 0, 0, 0]], bias=[1, 0, 0]),
+        FFN_O=LayerParam(weight=[[0, 1, 0], [1, 1, 0], [1, 1, 0], [1, 1, 0]], bias=[0, 0, 0, 0])
+    ),
+    independent_structured=OrderedDict(
+        MHSA_Q=LayerParam(weight=[[1, 1, 1, 1], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]]),
+        MHSA_K=LayerParam(weight=[[1, 1, 1, 1], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]]),
+        MHSA_V=LayerParam(weight=[[1, 1, 1, 1], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]]),
+        MHSA_O=LayerParam(weight=[[1, 1, 0, 0], [1, 1, 0, 0], [1, 1, 0, 0], [1, 1, 0, 0]]),
+        FFN_I=LayerParam(weight=[[1, 1, 0, 1], [1, 1, 0, 1], [0, 0, 0, 0]]),
+        FFN_O=LayerParam(weight=[[1, 1, 0], [1, 1, 0], [1, 1, 0], [1, 1, 0]])
+    ),
+    dependent_structured=OrderedDict(
+        MHSA_Q=LayerParam(weight=[[1, 1, 1, 1], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]]),
+        MHSA_K=LayerParam(weight=[[1, 1, 1, 1], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]]),
+        MHSA_V=LayerParam(weight=[[1, 1, 1, 1], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]]),
+        MHSA_O=LayerParam(weight=[[1, 1, 0, 0], [1, 1, 0, 0], [1, 1, 0, 0], [1, 1, 0, 0]]),
+        FFN_I=LayerParam(weight=[[1, 1, 1, 1], [1, 1, 1, 1], [0, 0, 0, 0]]),
+        FFN_O=LayerParam(weight=[[1, 1, 0], [1, 1, 0], [1, 1, 0], [1, 1, 0]])
+    ),
+)
+
+structured_mask_desc = [structured_mask_desc_prune_1head_1channel]
+# run_recipes = [Wav2Vec2RunRecipe(), BertRunRecipe()]
+run_recipes = [BertRunRecipe()]
+
+
+@pytest.mark.parametrize('run_recipe', run_recipes,
+                         ids=[f'{r.model_family}_run_recipe' for r in run_recipes])
 class TestStructuredMaskHandler:
     @pytest.fixture(autouse=True)
     def setup(self, run_recipe):
-        self.model = run_recipe.model(num_hidden_layers=1)
-        self.nncf_config = run_recipe.nncf_config()
+        self.model = run_recipe.model
+        self.nncf_config = run_recipe.nncf_config
         self.compression_ctrl, self.compressed_model = create_compressed_model(self.model, self.nncf_config, dump_graphs=False)
         strategy = STRUCTURED_MASK_STRATEGY.get(run_recipe.model_family).from_compressed_model(self.compressed_model)
         self.handler = StructuredMaskHandler(self.compression_ctrl.prunable_sparsified_module_info_groups, strategy)
         self.run_recipe = run_recipe
+        self.all_ctxes = []
+        for group in self.handler._structured_mask_ctx_groups:
+            self.all_ctxes.extend(group.structured_mask_context_list)
 
     def test_create_ctx_groups(self):
         handler = self.handler
         run_recipe = self.run_recipe
         assert len(handler._structured_mask_ctx_groups) == 2
         handler._structured_mask_ctx_groups.sort(key=lambda group: group.group_type.value)
-
         group_ff = handler._structured_mask_ctx_groups[0]
         assert isinstance(group_ff, StructuredMaskContextGroup)
         assert group_ff.group_type == BuildingBlockType.FF
@@ -170,25 +221,29 @@ class TestStructuredMaskHandler:
 
     def test_update_independent_structured_mask(self, mocker):
         handler = self.handler
-        all_ctxes = []
-        for group in handler._structured_mask_ctx_groups:
-            all_ctxes.extend(group.structured_mask_context_list)
-        ctx_spies = [mocker.spy(ctx, 'update_independent_structured_mask') for ctx in all_ctxes]
+        mock_methods = [mocker.patch.object(ctx, 'update_independent_structured_mask') for ctx in self.all_ctxes]
         handler.update_independent_structured_mask()
-        for ctx_spy in ctx_spies:
-            assert ctx_spy.call_count == 1
+        for mock_method in mock_methods:
+            mock_method.assert_called_once()
 
-    def test_resolve_dependent_structured_mask(self):
-        pass  # TODO(yujie)
+    @pytest.mark.parametrize('desc', structured_mask_desc)
+    def test_resolve_dependent_structured_mask(self, desc):
+        handler = self.handler
+        run_recipe = self.run_recipe
+        modules = run_recipe.get_nncf_modules_in_transformer_block_order(self.compressed_model)[0]
+        module_2_node_name = {minfo.module: minfo.module_node_name for minfo in self.compression_ctrl.sparsified_module_info}
+        node_name_2_context = {ctx.module_node_name: ctx for ctx in self.all_ctxes}
+        ctxes = [node_name_2_context[module_2_node_name[m]] for m in modules]
+        for ctx, param in zip(ctxes, desc['independent_structured'].values()):
+            ctx.independent_structured_mask = param.weight
+
+        handler.resolve_dependent_structured_mask()
+        for ctx, ref_param in zip(ctxes, desc['dependent_structured'].values()):
+            assert torch.allclose(ctx.dependent_structured_mask, ref_param.weight)
 
     def test_populate_dependent_structured_mask_to_operand(self, mocker):
         handler = self.handler
-        all_ctxes = []
-        for group in handler._structured_mask_ctx_groups:
-            all_ctxes.extend(group.structured_mask_context_list)
-        ctx_spies = [mocker.spy(ctx, 'populate_dependent_structured_mask_to_operand') for ctx in all_ctxes]
-        handler.update_independent_structured_mask()
-        handler.resolve_dependent_structured_mask()
+        mock_methods = [mocker.patch.object(ctx, 'populate_dependent_structured_mask_to_operand') for ctx in self.all_ctxes]
         handler.populate_dependent_structured_mask_to_operand()
-        for ctx_spy in ctx_spies:
-            assert ctx_spy.call_count == 1
+        for mock_method in mock_methods:
+            mock_method.assert_called_once()
