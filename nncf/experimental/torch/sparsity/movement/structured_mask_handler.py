@@ -49,13 +49,13 @@ class StructuredMaskContext:
     @independent_structured_mask.setter
     @torch.no_grad()
     def independent_structured_mask(self, tensor: torch.Tensor):
+        if self.structured_mask_shape != tensor.shape:
+            raise ValueError("Wrong shape about independent structured mask")
         if self._independent_structured_mask is None:
             self._independent_structured_mask = tensor.clone()
         else:
-            if self._independent_structured_mask.shape != tensor.shape:
-                raise ValueError("Wrong shape about independent structured mask")
             if self._independent_structured_mask.device != tensor.device:
-                logger.info('Changing independent_structured_mask device to %s', tensor.device)
+                logger.warning('Changing independent_structured_mask device to %s', tensor.device)
                 self._independent_structured_mask = self._independent_structured_mask.to(tensor.device)
             self._independent_structured_mask.copy_(tensor)
 
@@ -68,13 +68,13 @@ class StructuredMaskContext:
     @dependent_structured_mask.setter
     @torch.no_grad()
     def dependent_structured_mask(self, tensor: torch.Tensor):
+        if self.structured_mask_shape != tensor.shape:
+            raise ValueError("Wrong shape about dependent structured mask")
         if self._dependent_structured_mask is None:
             self._dependent_structured_mask = tensor.clone()
         else:
-            if self._dependent_structured_mask.shape != tensor.shape:
-                raise ValueError("Wrong shape about dependent structured mask")
             if self._dependent_structured_mask.device != tensor.device:
-                logger.info('Changing dependent_structured_mask device to %s', tensor.device)
+                logger.warning('Changing dependent_structured_mask device to %s', tensor.device)
                 self._dependent_structured_mask = self._dependent_structured_mask.to(tensor.device)
             self._dependent_structured_mask.copy_(tensor)
 

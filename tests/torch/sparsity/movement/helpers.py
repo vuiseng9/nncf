@@ -18,12 +18,44 @@ from transformers import SwinConfig
 from transformers import AutoModelForImageClassification
 from transformers.trainer_callback import (TrainerCallback, TrainerControl,
                                            TrainerState)
+from nncf.common.graph.graph import NNCFGraph
+from nncf.common.graph.graph import NNCFNode
+from nncf.common.graph.layer_attributes import LinearLayerAttributes
 
 MODEL_NAME = "google/bert_uncased_L-2_H-128_A-2"
 DATASET_NAME = "yelp_review_full"
 
 
+def mock_linear_nncf_node(in_features: int, out_features: int, bias: bool = True):
+    graph = NNCFGraph()
+    linear = graph.add_nncf_node('linear', 'linear', 'linear', LinearLayerAttributes(True, in_features, out_features, bias=bias))
+    return linear
+
+
+def ensure_tensor(value, dtype=torch.float, device=torch.device('cpu')):
+    if isinstance(value, np.ndarray):
+        return torch.from_numpy(value).to(dtype=dtype, device=device)
+    elif isinstance(value, torch.Tensor):
+        return value.to(dtype=dtype, device=device)
+    else:
+        return torch.tensor(value, dtype=dtype, device=device)
+
+
+class ParamDict:
+    def __init__(self, dtype=torch.float, device=torch.device('cpu'), **kwargs):
+        self.keys = kwargs.keys()
+        for name, value in kwargs.items():
+            setattr(self, name, ensure_tensor(value, dtype, device) if
+                    value is not None else None)
+
+    def __getitem__(self, key):
+        assert key in self.keys
+        return getattr(self, key)
+
+
 # @pytest.fixture
+
+
 def yelp_dataset():
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     dataset = load_dataset(DATASET_NAME)
@@ -151,7 +183,7 @@ class Wav2Vec2RunRecipe(BaseMockRunRecipe):
         hidden_size=4,
         num_hidden_layers=1,
         num_attention_heads=2,
-        intermediate_size=6,
+        intermediate_size=3,
         conv_dim=(4, 4),
         conv_stride=(1, 1),
         conv_kernel=(3, 3),
@@ -242,14 +274,15 @@ class BertRunRecipe(BaseMockRunRecipe):
 
     @property
     def nncf_config(self):
-        return NNCFConfig.from_dict({
+        config_dict = {
             "input_info": [
                 {"sample_size": [1, 256], "type": "long", "keyword": "input_ids"},
                 {"sample_size": [1, 256], "type": "long", "keyword": "token_type_ids"},
                 {"sample_size": [1, 256], "type": "long", "keyword": "position_ids"},
                 {"sample_size": [1, 256], "type": "long", "keyword": "attention_mask"},
             ],
-            "compression": self.algo_config.to_dict()})
+            "compression": self.algo_config.to_dict()}
+        return NNCFConfig.from_dict(config_dict)
 
     @staticmethod
     def get_nncf_modules_in_transformer_block_order(compressed_bert_model):
