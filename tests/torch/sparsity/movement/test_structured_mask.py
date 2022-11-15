@@ -2,6 +2,7 @@ from unittest.mock import Mock
 
 import pytest
 import torch
+from tests.torch.sparsity.movement.helpers import BaseMockRunRecipe
 from tests.torch.sparsity.movement.helpers import BertRunRecipe
 from tests.torch.sparsity.movement.helpers import Wav2Vec2RunRecipe
 from tests.torch.sparsity.movement.helpers import mock_linear_nncf_node
@@ -11,8 +12,9 @@ from nncf.torch import create_compressed_model
 from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlockType
 from nncf.experimental.torch.sparsity.movement.layers import MovementSparsifier, SparseConfig, SparseStructure
 from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskContextGroup, StructuredMaskHandler, StructuredMaskContext
+from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import detect_supported_model_family
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import STRUCTURED_MASK_STRATEGY
-
+from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import StructuredMaskRule
 
 desc_test_update_independent_structured_mask = {
     "prune1row": dict(
@@ -244,3 +246,33 @@ class TestStructuredMaskHandler:
         handler.populate_dependent_structured_mask_to_operand()
         for mock_method in mock_methods:
             mock_method.assert_called_once()
+
+
+class TestStructuredMaskStrategy:
+    @pytest.mark.parametrize('run_recipe', run_recipes)
+    def test_detect_supported_model_family(self, run_recipe: BaseMockRunRecipe):
+        model = run_recipe.model
+        nncf_config = run_recipe.nncf_config
+        compression_ctrl, compressed_model = create_compressed_model(model, nncf_config, dump_graphs=False)
+        retval = detect_supported_model_family(compressed_model)
+        if run_recipe.supports_structured_masking:
+            assert retval == run_recipe.model_family
+            assert retval in STRUCTURED_MASK_STRATEGY.registry_dict
+        else:
+            assert retval is None
+
+    @pytest.mark.parametrize('run_recipe', filter(lambda r: r.supports_structured_masking, run_recipes))
+    def test_create_strategy(self, run_recipe: BaseMockRunRecipe):
+        model = run_recipe.model
+        nncf_config = run_recipe.nncf_config
+        compression_ctrl, compressed_model = create_compressed_model(model, nncf_config, dump_graphs=False)
+        strategy_cls = STRUCTURED_MASK_STRATEGY.get(run_recipe.model_family)
+        strategy = strategy_cls.from_compressed_model(compressed_model)
+        ref_dim_per_head = run_recipe.transformer_block_info_in_model['dim_per_head']
+        assert strategy.dim_per_head == ref_dim_per_head
+        rules_by_group_type = strategy.strategy_by_group_type
+        for group_type, rule_list in rules_by_group_type.items():
+            assert group_type in [BuildingBlockType.MSHA, BuildingBlockType.FF]
+            assert isinstance(rule_list, list)
+            for rule in rule_list:
+                assert isinstance(rule, StructuredMaskRule)

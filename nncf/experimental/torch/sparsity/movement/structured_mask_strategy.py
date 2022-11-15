@@ -2,8 +2,7 @@ import inspect
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 from nncf.common.utils.registry import Registry
-from nncf.experimental.torch.search_building_blocks.search_blocks import \
-    BuildingBlockType
+from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlockType
 from nncf.torch.nncf_network import NNCFNetwork
 
 STRUCTURED_MASK_STRATEGY = Registry("structured_mask_strategy")
@@ -30,7 +29,8 @@ class StructuredMaskRule:
         binary_mask_slice: Union[Tuple[slice, slice], Tuple[slice]] = (
             slice(None),
             slice(None),
-        ),
+        ), 
+        # TODO(yujie): delete this slice for now. May added later for torchvision transformers.
     ) -> None:
         self.keywords: List[str] = [keywords] if isinstance(keywords, str) else keywords
         self.prune_by_row = prune_by_row
