@@ -130,10 +130,6 @@ class MovementSparsityController(BaseSparsityAlgoController):
 
         # TODO: review - perhaps not the right place
         self.config = config
-        # self.visualize_groups_of_prunables()
-        # self.create_structured_sparsity_context()
-        # self.prunable_sparsified_module_info_groups = self._get_group_of_prunable_sparsified_module_info()
-
         if self._scheduler.enable_structured_masking:
             model_family = detect_supported_model_family(self.model)
             if model_family not in STRUCTURED_MASK_STRATEGY.registry_dict:
@@ -219,6 +215,7 @@ class MovementSparsityController(BaseSparsityAlgoController):
     def populate_structured_mask(self):
         assert self._scheduler.enable_structured_masking is True
         self._structured_mask_handler.populate_dependent_structured_mask_to_operand()
+        self._structured_mask_handler.report_structured_sparsity(self.config.get('log_dir', '.'))
 
     @property
     def compression_rate(self):
@@ -231,54 +228,23 @@ class MovementSparsityController(BaseSparsityAlgoController):
         self._propagate_masks()
 
     def _propagate_masks(self):
-        sparse_sd = OrderedDict()
+        # TODO(yujie): change the O(mn) complexity
+        sparse_state_dict = OrderedDict()
         with torch.no_grad():
-            for sparse_info in self.sparsified_module_info:
-                for n, m in self.model.named_modules():
-                    if m == sparse_info.module:
-                        sparse_sd[n + '.weight'] = sparse_info.operand.apply_binary_mask(m.weight)
-                        if hasattr(m, 'bias'):
-                            sparse_sd[n + '.bias'] = sparse_info.operand.apply_binary_mask(m.bias, isbias=True)
+            for minfo in self.sparsified_module_info:
+                for name, module in self.model.named_modules():
+                    if module == minfo.module:
+                        sparse_state_dict[name + '.weight'] = \
+                            minfo.operand.apply_binary_mask(module.weight)
+                        if hasattr(module, 'bias') and module.bias is not None:
+                            sparse_state_dict[name + '.bias'] = \
+                                minfo.operand.apply_binary_mask(module.bias, isbias=True)
 
-        model_sd = self.model.state_dict()
-        for k, v in sparse_sd.items():
-            assert k in model_sd, "key not exists!"
-            model_sd[k] = sparse_sd[k]
-        self.model.load_state_dict(model_sd)
-
-    def __delete_propagate_masks(self):
-        def calc_sparsity(tensor):
-            return 1 - tensor.count_nonzero() / tensor.numel()
-        # nncf_logger.debug("MVMT - Propagating pruning masks")
-        # 1. Propagate masks for all modules
-        from collections import OrderedDict
-        sparse_sd = OrderedDict()
-        with torch.no_grad():
-            for sparse_info in self.sparsified_module_info:
-                for n, m in self.model.named_modules():
-                    if m == sparse_info.module:
-                        # print("- SparseModule: {} -".format(n))
-                        # print("\tw_mask sparsity: {:.3f}".format(calc_sparsity(sparse_info.operand.weight_ctx.binary_mask)))
-                        # print("\tw_sd   sparsity: {:.3f}".format(calc_sparsity(m.weight)))
-                        sparse_sd[n + '.weight'] = sparse_info.operand.apply_binary_mask(m.weight)
-                        # print("\t*w_sd  sparsity: {:.3f}".format(calc_sparsity(sparse_sd[n+'.weight'])))
-
-                        if hasattr(m, 'bias'):
-                            # print("\tb_mask sparsity: {:.3f}".format(calc_sparsity(sparse_info.operand.bias_ctx.binary_mask)))
-                            # print("\tb_sd   sparsity: {:.3f}".format(calc_sparsity(m.bias)))
-                            sparse_sd[n + '.bias'] = sparse_info.operand.apply_binary_mask(m.bias, isbias=True)
-                            # print("\t*w_sd  sparsity: {:.3f}".format(calc_sparsity(sparse_sd[n+'.bias'])))
-
-        model_sd = self.model.state_dict()
-        for k, v in sparse_sd.items():
-            assert k in model_sd, "key not exists!"
-            model_sd[k] = sparse_sd[k]
-        self.model.load_state_dict(model_sd)
-
-    def print_prunableops_per_group(self):
-        for group, op_list in self.prunableops_per_group.items():
-            print("= Group {} ======".format(group))
-            print('\n'.join(list(map(lambda x: '{:12} | {}'.format(str(list(x.op_mod.weight.shape)), str(x.op_addr)), op_list))))
+        model_state_dict = self.model.state_dict()
+        for key, value in sparse_state_dict.items():
+            assert key in model_state_dict, f'sparse parameter <{key}> is not found in model state dict.'
+            model_state_dict[key] = value
+        self.model.load_state_dict(model_state_dict)
 
     def _get_all_node_op_addresses_in_block(self, nncf_network, blocks):
         graph = nncf_network.get_original_graph()
@@ -300,91 +266,3 @@ class MovementSparsityController(BaseSparsityAlgoController):
             all_nodes_in_block.remove(start_op_address)
             all_nodes_per_skipped_block_idxs[idx] = list(all_nodes_in_block)
         return all_nodes_per_skipped_block_idxs
-
-    def visualize_groups_of_prunables(self, path=None):
-        import networkx as nx
-        from nncf.torch.graph.graph import PTNNCFGraph
-        from networkx.drawing.nx_agraph import to_agraph
-        import matplotlib._color_data as mcd
-        import matplotlib.pyplot as plt
-        import numpy as np
-        palette = np.array(list(mcd.CSS4_COLORS.keys())).reshape(-1, 4).transpose().reshape(-1).tolist()
-
-        from matplotlib.colors import to_hex
-        palette = np.array([to_hex(c) for c in plt.get_cmap("tab20b").colors]).reshape(-1, 5).transpose().reshape(-1).tolist()
-
-        learnable_node_color_map = dict()
-        opbook = dict()
-
-        for group_id, op_list in self.prunableops_per_group.items():
-            color = palette[group_id % len(palette)]
-            for op in op_list:
-                learnable_node_color_map[str(op.op_addr)] = color
-                opbook[str(op.op_addr)] = op
-
-        building_blocks = get_building_blocks(self.model, allow_nested_blocks=False)
-        node_op_address_per_block = self._get_all_node_op_addresses_in_block(self.model, building_blocks)
-        node_color_map = dict()
-        for group_id, op_list in node_op_address_per_block.items():
-            color = palette[group_id % len(palette)]
-            for op in op_list:
-                node_color_map[op] = color
-
-        g = self.model.get_graph()
-
-        out_graph = nx.DiGraph()
-        for node_name, node in g._nx_graph.nodes.items():
-            # ia_op_exec_context = node[PTNNCFGraph.IA_OP_EXEC_CONTEXT_NODE_ATTR]
-
-            attrs_node = {}
-            label = node['key']
-            # label = str(node[PTNNCFGraph.ID_NODE_ATTR]) + ' ' + str(ia_op_exec_context)
-            # if 'conv2d' in label.lower():
-            #     label = "*prunable*\n" + label
-            tokens = label.split("/")
-            new_tokens = []
-            for i, token in enumerate(tokens):
-                if (i + 1) % 2 == 0:
-                    token += "\n"
-                new_tokens.append(token)
-            attrs_node['label'] = '/'.join(new_tokens)
-
-            if node['node_name'] in node_color_map:
-                # cluster_id = self.df.cluster_id[self.df.node_name == node_name].values[0]
-                # attrs_node['label'] += "\n(cluster {})".format(cluster_id)
-                # mcd.CSS4_COLORS
-                # attrs_node['color'] = mcd.CSS4_COLORS[node_color_map[node['node_name']]]
-
-                attrs_node['color'] = node_color_map[node['node_name']]
-                if node['node_name'] in learnable_node_color_map:
-                    attrs_node['label'] += "\n{}\n".format(str(tuple(opbook[node['node_name']].op_mod.weight.shape)))
-                    attrs_node['style'] = 'filled'
-                else:
-                    attrs_node['style'] = 'diagonals'
-                    # At present, there are 8 style values recognized: filled , invisible , diagonals , rounded . dashed , dotted , solid and bold
-
-            out_graph.add_node(node_name, **attrs_node)
-
-        for u, v in g._nx_graph.edges:
-            out_graph.add_edge(u, v, label=g._nx_graph.edges[u, v][PTNNCFGraph.ACTIVATION_SHAPE_EDGE_ATTR])
-
-        mapping = {k: v["label"] for k, v in out_graph.nodes.items()}
-        out_graph = nx.relabel_nodes(out_graph, mapping)
-        for node in out_graph.nodes.values():
-            node.pop("label")
-
-        if path is None:
-            path = 'mvmt_prunableops_group_viz.dot'
-        path = os.path.join(self.config.get("log_dir", "."), path)
-
-        nx.drawing.nx_pydot.write_dot(out_graph, path)
-
-        try:
-            A = to_agraph(out_graph)
-            A.layout('dot')
-            png_path = os.path.splitext(path)[0] + '.png'
-            A.draw(png_path)
-        except ImportError:
-            print("Graphviz is not installed - only the .dot model visualization format will be used. "
-                  "Install pygraphviz into your Python environment and graphviz system-wide to enable "
-                  "PNG rendering.")

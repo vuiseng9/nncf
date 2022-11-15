@@ -255,6 +255,7 @@ class StructuredMaskHandler:
                 ctx.populate_dependent_structured_mask_to_operand()
 
     def report_structured_sparsity(self, dirname):
+        # return
         listofentry = []
         for group in self._structured_mask_ctx_groups:
             ctxes = group.structured_mask_context_list
