@@ -2,7 +2,8 @@ import itertools
 import logging
 from copy import deepcopy
 from functools import reduce
-from typing import Iterable, List, Tuple, Union, Optional
+from collections import OrderedDict
+from typing import Iterable, List, Tuple, Union, Optional, Dict
 
 import numpy as np
 import torch
@@ -10,10 +11,17 @@ from nncf.experimental.torch.search_building_blocks.search_blocks import \
     BuildingBlockType
 from nncf.torch.sparsity.base_algo import SparseModuleInfo
 from nncf.experimental.torch.sparsity.movement.layers import MovementSparsifier
+from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import STRUCTURED_MASK_STRATEGY
+from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import BaseStructuredMaskStrategy, StructuredMaskRule
 from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlockType
 from nncf.common.utils.debug import is_debug
+from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlock, get_building_blocks, BuildingBlockType, BlockFilteringStrategy
+from nncf.torch.layers import NNCF_MODULES_OP_NAMES, NNCFLinear
+from nncf.torch.nncf_network import NNCFNetwork
 
 logger = logging.getLogger('nncf')
+
+SUPPORTED_NNCF_MODULES = [NNCFLinear]
 
 
 def contains_any(tested_str: str,
@@ -129,13 +137,15 @@ class SparsifiedModuleInfoGroup:
 
 
 class StructuredMaskContextGroup:
-    def __init__(self, group_type: BuildingBlockType,
+    def __init__(self, group_id: int,
+                 group_type: BuildingBlockType,
                  structured_mask_context_list: List[StructuredMaskContext]) -> None:
+        self.group_id = group_id
         self.group_type = group_type
         self.structured_mask_context_list = structured_mask_context_list
 
     def __repr__(self) -> str:
-        str_ = f'{self.group_type}: ['
+        str_ = f'[{self.group_id}]{self.group_type}: ['
         for ctx in self.structured_mask_context_list:
             str_ += f'\n\t{ctx}'
         if len(self.structured_mask_context_list) == 0:
@@ -147,34 +157,70 @@ class StructuredMaskContextGroup:
 class StructuredMaskHandler:
 
     def __init__(self,
-                 sparsified_module_info_groups: List[SparsifiedModuleInfoGroup],
-                 strategy):
-        self.sparsified_module_info_groups = sparsified_module_info_groups
+                 compressed_model: NNCFNetwork,
+                 sparsified_module_info_list,
+                 strategy: BaseStructuredMaskStrategy):
         self.strategy = strategy
         self.strategy_by_group_type = strategy.strategy_by_group_type
-        self._structured_mask_ctx_groups = self._create_structured_mask_ctx_groups()
+        self.compressed_model = compressed_model
+        self.sparsified_module_info_list = sparsified_module_info_list
+
+        self._sparsified_module_info_groups = self._get_prunable_sparsified_module_info_group(compressed_model,
+                                                                                              sparsified_module_info_list)
+        self._structured_mask_ctx_groups = self._create_structured_mask_context_groups(
+            self._sparsified_module_info_groups,
+            self.strategy_by_group_type)
 
         logger.debug('Structured mask contexts by group:')
         for group in self._structured_mask_ctx_groups:
             logger.debug(str(group))
 
-    def _create_structured_mask_ctx_groups(self) -> List[StructuredMaskContextGroup]:
-        structured_mask_ctx_groups = []
-        for group in self.sparsified_module_info_groups:
+    @staticmethod
+    def _get_prunable_sparsified_module_info_group(
+            compressed_model: NNCFNetwork,
+            sparsified_module_info_list
+    ) -> List[SparsifiedModuleInfoGroup]:
+        module_2_sparse_module_info_map = {minfo.module: minfo for minfo in sparsified_module_info_list}
+        building_blocks, _ = get_building_blocks(compressed_model,
+                                                 target_block_types=[BuildingBlockType.MSHA, BuildingBlockType.FF],
+                                                 block_filter_strategy=BlockFilteringStrategy.KEEP_SMALL,
+                                                 hw_fused_ops=True)
+        groups = []
+        for group_id, building_block in enumerate(building_blocks):
+            sparsified_module_info = []
+            for op_addr in building_block.op_addresses:
+                if op_addr.operator_name in [m.op_func_name for m in SUPPORTED_NNCF_MODULES]:
+                    module = compressed_model.get_module_by_scope(op_addr.scope_in_model)
+                    module_info = module_2_sparse_module_info_map[module]
+                    sparsified_module_info.append(module_info)
+            groups.append(SparsifiedModuleInfoGroup(group_id,
+                                                    building_block.block_type,
+                                                    sparsified_module_info))
+        return groups
+
+    @staticmethod
+    def _create_structured_mask_context_groups(
+        sparsified_module_info_groups: List[SparsifiedModuleInfoGroup],
+        rule_by_group_type: Dict[BuildingBlockType, List[StructuredMaskRule]]
+    ) -> List[StructuredMaskContextGroup]:
+        groups = []
+        for group in sparsified_module_info_groups:
             group_type = group.group_type
+            group_id = group.group_id
             ctxes = []
-            for module_info in group.sparse_module_info:
-                for rule in self.strategy_by_group_type[group_type]:
-                    if contains_any(module_info.module_node_name, rule.keywords):
-                        ctx = StructuredMaskContext(module_info.operand,
-                                                    module_info.module_node_name,
+            for minfo in group.sparse_module_info:
+                for rule in rule_by_group_type[group_type]:
+                    if contains_any(minfo.module_node_name, rule.keywords):
+                        ctx = StructuredMaskContext(minfo.operand,
+                                                    minfo.module_node_name,
                                                     rule.prune_grid)
                         ctxes.append(ctx)
                         break
                 else:
-                    raise ValueError("Invalid entry, pls debug")
-            structured_mask_ctx_groups.append(StructuredMaskContextGroup(group_type, ctxes))
-        return structured_mask_ctx_groups
+                    raise ValueError("No structured mask rule found for "
+                                     f"[{group_type}]{minfo.module_node_name}.")
+            groups.append(StructuredMaskContextGroup(group_id, group_type, ctxes))
+        return groups
 
     def update_independent_structured_mask(self):
         for group in self._structured_mask_ctx_groups:
@@ -207,3 +253,55 @@ class StructuredMaskHandler:
         for group in self._structured_mask_ctx_groups:
             for ctx in group.structured_mask_context_list:
                 ctx.populate_dependent_structured_mask_to_operand()
+
+    def report_structured_sparsity(self, dirname):
+        listofentry = []
+        for group in self._structured_mask_ctx_groups:
+            ctxes = group.structured_mask_context_list
+            group_id = group.group_id
+            for ctx in ctxes:
+                nncf_graph_node_name = ctx.sparsifying_node_name
+                named_mod = self.op2namedmodule[nncf_graph_node_name]
+                block_id = group_id
+                orig_wshape = tuple(list(ctx.sparse_module_info.module.weight.shape))
+                if hasattr(ctx.sparse_module_info.module, 'bias'):
+                    orig_bshape = tuple(list(ctx.sparse_module_info.module.bias.shape))
+
+                if any(map(nncf_graph_node_name.__contains__, ['BertIntermediate', 'BertOutput'])):
+                    head_id_to_keep = 'skip reporting'
+                    if nncf_graph_node_name.__contains__('BertIntermediate'):
+                        final_wshape = (ctx.sparse_module_info.operand.weight_ctx.binary_mask.amax(dim=1).count_nonzero().item(), orig_wshape[1])
+                        final_bshape = (ctx.sparse_module_info.operand.bias_ctx.binary_mask.count_nonzero().item(),)
+                    else:
+                        final_wshape = (orig_wshape[0], ctx.sparse_module_info.operand.weight_ctx.binary_mask.amax(dim=0).count_nonzero().item())
+                        final_bshape = (ctx.sparse_module_info.operand.bias_ctx.binary_mask.count_nonzero().item(),)
+                else:
+                    ndiv = ctx.dependent_structured_mask.reshape(-1).shape[0]
+                    head_id_to_keep = torch.masked_select(torch.range(0, ndiv - 1, dtype=int),
+                                                          ctx.dependent_structured_mask.reshape(-1).cpu().to(bool)).tolist()
+
+                    if any(map(nncf_graph_node_name.__contains__, ['query', 'key', 'value'])):
+                        # prune by row
+                        final_wshape = (ctx.sparse_module_info.operand.weight_ctx.binary_mask.amax(dim=1).count_nonzero().item(), orig_wshape[1])
+                        final_bshape = (ctx.sparse_module_info.operand.bias_ctx.binary_mask.count_nonzero().item(),)
+                    else:
+                        # prune by col
+                        final_wshape = (orig_wshape[0], ctx.sparse_module_info.operand.weight_ctx.binary_mask.amax(dim=0).count_nonzero().item())
+                        final_bshape = (ctx.sparse_module_info.operand.bias_ctx.binary_mask.count_nonzero().item(),)
+
+                listofentry.append(
+                    dict(
+                        pt_module_name=named_mod,
+                        block_id=block_id,
+                        weight_shape=orig_wshape,
+                        prune_w_shape=final_wshape,
+                        bias_shape=orig_bshape,
+                        prune_b_shape=final_bshape,
+                        head_id_to_keep=head_id_to_keep,
+                        nncf_graph_node=nncf_graph_node_name
+                    )
+                )
+        df = pd.DataFrame.from_dict(listofentry)
+        df.to_csv(os.path.join(dirname, 'structured_sparsity.csv'))
+        with open(os.path.join(dirname, 'structured_sparsity.md'), 'w') as f:
+            df.to_markdown(f)

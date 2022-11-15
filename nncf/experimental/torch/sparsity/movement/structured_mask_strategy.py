@@ -29,7 +29,7 @@ class StructuredMaskRule:
         binary_mask_slice: Union[Tuple[slice, slice], Tuple[slice]] = (
             slice(None),
             slice(None),
-        ), 
+        ),
         # TODO(yujie): delete this slice for now. May added later for torchvision transformers.
     ) -> None:
         self.keywords: List[str] = [keywords] if isinstance(keywords, str) else keywords
@@ -49,7 +49,7 @@ class StructuredMaskRule:
 class BaseStructuredMaskStrategy:
     @property
     def strategy_by_group_type(self):
-        pass
+        return {}
 
     @classmethod
     def from_compressed_model(cls, compressed_model: NNCFNetwork):
@@ -76,7 +76,7 @@ class HuggingFaceBertStructuredMaskStrategy(BaseStructuredMaskStrategy):
         return cls(dim_per_head=hidden_dim // num_heads)
 
     @property
-    def strategy_by_group_type(self) -> Dict[str, List[StructuredMaskRule]]:
+    def strategy_by_group_type(self) -> Dict[BuildingBlockType, List[StructuredMaskRule]]:
         config = {
             BuildingBlockType.MSHA: [
                 StructuredMaskRule(
