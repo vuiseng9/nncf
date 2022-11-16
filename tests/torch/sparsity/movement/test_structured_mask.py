@@ -1,5 +1,6 @@
 from unittest.mock import Mock
 from pathlib import Path
+import re
 
 import pytest
 import torch
@@ -318,15 +319,24 @@ class TestStructuredMaskHandler:
         for mock_method in mock_methods:
             mock_method.assert_called_once()
 
-    def test_report_structured_sparsity(self, tmp_path, mocker):
+    @pytest.mark.parametrize('max_num_of_kept_heads_to_report', [1, 20])
+    def test_report_structured_sparsity(self, tmp_path, mocker, max_num_of_kept_heads_to_report):
         file_name = 'structured_report'
-        df = self.handler.report_structured_sparsity(tmp_path, file_name=file_name,
-                                                     to_csv=True, to_markdown=True)
+        df = self.handler.report_structured_sparsity(
+            tmp_path, file_name=file_name, to_csv=True, to_markdown=True,
+            max_num_of_kept_heads_to_report=max_num_of_kept_heads_to_report)
         assert isinstance(df, pd.DataFrame)
         columns = df.columns.to_list()
         mock_stat = StructuredMaskContextStatistics(*([mocker.Mock()] * 6))
         ref_columns = ["group_id", "type", "torch_module", *mock_stat.__dict__.keys()]
         assert sorted(columns) == sorted(ref_columns)
+        assert len(df) == 6
+        for item in df['head_or_channel_id_to_keep']:
+            if isinstance(item, list):
+                assert len(item) <= max_num_of_kept_heads_to_report
+            else:
+                assert isinstance(item, str)
+                assert re.fullmatch(r'\[[0-9]+ items\]', item) is not None
         assert Path(tmp_path, f'{file_name}.csv').is_file()
         assert Path(tmp_path, f'{file_name}.md').is_file()
 
