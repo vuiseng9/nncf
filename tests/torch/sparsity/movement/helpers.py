@@ -27,19 +27,21 @@ MODEL_NAME = "google/bert_uncased_L-2_H-128_A-2"
 DATASET_NAME = "yelp_review_full"
 
 
-def mock_linear_nncf_node(in_features: int, out_features: int, bias: bool = True):
+def mock_linear_nncf_node(in_features: int = 1, out_features: int = 1,
+                          bias: bool = True, node_name='linear'):
     graph = NNCFGraph()
-    linear = graph.add_nncf_node('linear', 'linear', 'linear', LinearLayerAttributes(True, in_features, out_features, bias=bias))
+    linear = graph.add_nncf_node(node_name, 'linear', 'linear',
+                                 LinearLayerAttributes(True, in_features, out_features, bias=bias))
     return linear
 
 
-def ensure_tensor(value, dtype=torch.float, device=torch.device('cpu')):
-    if isinstance(value, np.ndarray):
-        return torch.from_numpy(value).to(dtype=dtype, device=device)
-    elif isinstance(value, torch.Tensor):
-        return value.to(dtype=dtype, device=device)
+def ensure_tensor(data, dtype=torch.float, device=torch.device('cpu')):
+    if isinstance(data, np.ndarray):
+        return torch.from_numpy(data).to(dtype=dtype, device=device)
+    elif isinstance(data, torch.Tensor):
+        return data.to(dtype=dtype, device=device)
     else:
-        return torch.tensor(value, dtype=dtype, device=device)
+        return torch.tensor(data, dtype=dtype, device=device)
 
 
 class ParamDict:

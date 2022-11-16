@@ -1,4 +1,5 @@
 from unittest.mock import Mock
+from pathlib import Path
 
 import pytest
 import torch
@@ -11,10 +12,15 @@ from tests.torch.sparsity.movement.helpers import ParamDict
 from nncf.torch import create_compressed_model
 from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlockType
 from nncf.experimental.torch.sparsity.movement.layers import MovementSparsifier, SparseConfig, SparseStructure
-from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskContextGroup, StructuredMaskHandler, StructuredMaskContext
+from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskContextGroup
+from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskHandler
+from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskContext
+from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskContextStatistics
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import detect_supported_model_family
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import STRUCTURED_MASK_STRATEGY
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import StructuredMaskRule
+
+import pandas as pd
 
 desc_test_update_independent_structured_mask = {
     "prune1row": dict(
@@ -43,6 +49,45 @@ desc_test_update_independent_structured_mask = {
     )
 }
 
+desc_test_gather_statistics_from_operand = {
+    "row_prune_with_bias": dict(
+        weight_mask=ensure_tensor([[0] * 4, [0] * 4, [1] * 4, [1] * 4]),
+        bias_mask=ensure_tensor([0, 0, 1, 1]),
+        prune_grid=(2, 4),
+        prune_by_row=True,
+        pruned_weight_shape=(2, 4),
+        pruned_bias_shape=(2,),
+        head_to_keep=[1]
+    ),
+    "row_prune_without_bias": dict(
+        weight_mask=ensure_tensor([[0] * 4, [0] * 4, [1] * 4, [1] * 4]),
+        bias_mask=None,
+        prune_grid=(2, 4),
+        prune_by_row=True,
+        pruned_weight_shape=(2, 4),
+        pruned_bias_shape=(0,),
+        head_to_keep=[1]
+    ),
+    "col_prune_with_bias": dict(
+        weight_mask=ensure_tensor([[1, 1, 1, 0]] * 4),
+        bias_mask=ensure_tensor([1, 1, 1, 1]),
+        prune_grid=(4, 1),
+        prune_by_row=False,
+        pruned_weight_shape=(4, 3),
+        pruned_bias_shape=(4,),
+        head_to_keep=[0, 1, 2]
+    ),
+    "col_prune_without_bias": dict(
+        weight_mask=ensure_tensor([[1, 1, 1, 0]] * 4),
+        bias_mask=None,
+        prune_grid=(4, 1),
+        prune_by_row=False,
+        pruned_weight_shape=(4, 3),
+        pruned_bias_shape=(0,),
+        head_to_keep=[0, 1, 2]
+    )
+}
+
 
 class TestStructuredMaskContext:
     @pytest.mark.parametrize(('input_grid', 'ref_resolved_grid'), [
@@ -55,7 +100,8 @@ class TestStructuredMaskContext:
             mock_linear_nncf_node(4, 4),
             SparseConfig(SparseStructure.FINE),
         )
-        ctx = StructuredMaskContext(operand, 'linear', input_grid)
+        prune_by_row = (input_grid[0] not in [-1, 4])
+        ctx = StructuredMaskContext(operand, 'linear', input_grid, prune_by_row)
         assert ctx.grid_size == ref_resolved_grid
 
     @pytest.mark.parametrize(('structure_grid_size', 'ref_mask_shape'), [
@@ -70,7 +116,8 @@ class TestStructuredMaskContext:
             mock_linear_nncf_node(4, 4),
             SparseConfig(SparseStructure.FINE),
         )
-        ctx = StructuredMaskContext(operand, 'linear', structure_grid_size)
+        prune_by_row = (structure_grid_size[0] not in [-1, 4])
+        ctx = StructuredMaskContext(operand, 'linear', structure_grid_size, prune_by_row)
         assert getattr(ctx, mask_name) is None
         # initialize
         ref_mask1 = torch.ones(ref_mask_shape)
@@ -101,7 +148,7 @@ class TestStructuredMaskContext:
         sparsifier.weight_ctx.binary_mask = desc['weight_binary_mask']
         if sparsifier.prune_bias:
             sparsifier.bias_ctx.binary_mask = desc['bias_binary_mask']
-        ctx = StructuredMaskContext(sparsifier, 'linear', desc['prune_grid'])
+        ctx = StructuredMaskContext(sparsifier, 'linear', desc['prune_grid'], True)
         ctx.update_independent_structured_mask()
         assert torch.equal(ctx.independent_structured_mask,
                            desc['ref_independent_structured_mask'])
@@ -114,15 +161,39 @@ class TestStructuredMaskContext:
              prune_grid=(1, 2),
              ref_binary_mask=ensure_tensor([[1, 1], [0, 0], [1, 1]]))
     ])
-    def test_populate_dependent_structured_mask(self, desc):
+    def test_populate_dependent_structured_mask(self, desc: dict):
         sparsifier = Mock()
         sparsifier.prune_bias = True
         sparsifier.weight_ctx.binary_mask = torch.zeros_like(desc['ref_binary_mask'])
-        ctx = StructuredMaskContext(sparsifier, 'linear', desc['prune_grid'])
+        ctx = StructuredMaskContext(sparsifier, 'linear', desc['prune_grid'], True)
         ctx.dependent_structured_mask = desc['mask']
         ctx.populate_dependent_structured_mask_to_operand()
         assert torch.equal(sparsifier.weight_ctx.binary_mask, desc['ref_binary_mask'])
         assert torch.equal(sparsifier.bias_ctx.binary_mask, desc['ref_binary_mask'].amax(dim=1))
+
+    @pytest.mark.parametrize('desc', desc_test_gather_statistics_from_operand.values(),
+                             ids=desc_test_gather_statistics_from_operand.keys())
+    def test_gather_statistics_from_operand(self, desc: dict):
+        prune_bias = (desc['bias_mask'] is not None)
+        weight_shape = tuple(desc['weight_mask'].shape)
+        bias_shape = tuple(desc['bias_mask'].shape) if prune_bias else (0,)
+        node = mock_linear_nncf_node(weight_shape[1], weight_shape[0], bias=prune_bias)
+        sparsifier = MovementSparsifier(node, SparseConfig(SparseStructure.FINE))
+        sparsifier.weight_ctx.binary_mask = desc['weight_mask']
+        if prune_bias:
+            sparsifier.bias_ctx.binary_mask = desc['bias_mask']
+        ctx = StructuredMaskContext(sparsifier, node.node_name,
+                                    desc['prune_grid'], desc['prune_by_row'])
+        ref_stats = StructuredMaskContextStatistics(
+            weight_shape=weight_shape,
+            pruned_weight_shape=desc['pruned_weight_shape'],
+            bias_shape=bias_shape,
+            pruned_bias_shape=desc['pruned_bias_shape'],
+            head_or_channel_id_to_keep=desc['head_to_keep'],
+            module_node_name=node.node_name,
+        )
+        stats = ctx.gather_statistics_from_operand()
+        assert stats.__dict__ == ref_stats.__dict__
 
 
 class TransformerLayerMaskParam:
@@ -197,7 +268,7 @@ class TestStructuredMaskHandler:
         self.compression_ctrl, self.compressed_model = create_compressed_model(self.model, self.nncf_config,
                                                                                dump_graphs=False)
         strategy = STRUCTURED_MASK_STRATEGY.get(run_recipe.model_family).from_compressed_model(self.compressed_model)
-        self.handler = StructuredMaskHandler(self.compression_ctrl.prunable_sparsified_module_info_groups, strategy)
+        self.handler = StructuredMaskHandler(self.compressed_model, self.compression_ctrl.sparsified_module_info, strategy)
         self.run_recipe = run_recipe
         self.all_ctxes = []
         for group in self.handler._structured_mask_ctx_groups:
@@ -246,6 +317,18 @@ class TestStructuredMaskHandler:
         handler.populate_dependent_structured_mask_to_operand()
         for mock_method in mock_methods:
             mock_method.assert_called_once()
+
+    def test_report_structured_sparsity(self, tmp_path, mocker):
+        file_name = 'structured_report'
+        df = self.handler.report_structured_sparsity(tmp_path, file_name=file_name,
+                                                     to_csv=True, to_markdown=True)
+        assert isinstance(df, pd.DataFrame)
+        columns = df.columns.to_list()
+        mock_stat = StructuredMaskContextStatistics(*([mocker.Mock()] * 6))
+        ref_columns = ["group_id", "type", "torch_module", *mock_stat.__dict__.keys()]
+        assert sorted(columns) == sorted(ref_columns)
+        assert Path(tmp_path, f'{file_name}.csv').is_file()
+        assert Path(tmp_path, f'{file_name}.md').is_file()
 
 
 class TestStructuredMaskStrategy:

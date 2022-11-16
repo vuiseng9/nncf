@@ -109,12 +109,6 @@ class MovementSparsityBuilder(BaseSparsityAlgoBuilder):
         return MovementSparsityController(model, self._sparsified_module_info, self.config)
 
 
-class PrunableOp:
-    def __init__(self, op_addr: OperationAddress, op_mod: Optional[torch.nn.Module]):
-        self.op_addr = op_addr
-        self.op_mod = op_mod
-
-
 @ADAPTIVE_COMPRESSION_CONTROLLERS.register('pt_movement_sparsity')
 class MovementSparsityController(BaseSparsityAlgoController):
     def __init__(self, target_model: NNCFNetwork, sparsified_module_info: List[SparseModuleInfo],
@@ -246,23 +240,23 @@ class MovementSparsityController(BaseSparsityAlgoController):
             model_state_dict[key] = value
         self.model.load_state_dict(model_state_dict)
 
-    def _get_all_node_op_addresses_in_block(self, nncf_network, blocks):
-        graph = nncf_network.get_original_graph()
-        all_nodes_per_skipped_block_idxs = {}
-        for idx, block in enumerate(blocks):
-            start_node, end_node = block.start_node_name, block.end_node_name
-            start_node_key, end_node_key = None, None
-            for node in graph._nx_graph._node.values():
-                if start_node == str(node['node_name']):
-                    start_node_key = node['key']
-                if end_node == str(node['node_name']):
-                    end_node_key = node['key']
-            simple_paths = nx.all_simple_paths(graph._nx_graph, start_node_key, end_node_key)
-            all_nodes_in_block = set()
-            for node_keys_in_path in simple_paths:
-                for node_key in node_keys_in_path:
-                    all_nodes_in_block.add(str(graph._nx_graph._node[node_key]['node_name']))
-            start_op_address = str(graph._nx_graph._node[start_node_key]['node_name'])
-            all_nodes_in_block.remove(start_op_address)
-            all_nodes_per_skipped_block_idxs[idx] = list(all_nodes_in_block)
-        return all_nodes_per_skipped_block_idxs
+    # def _get_all_node_op_addresses_in_block(self, nncf_network, blocks):
+    #     graph = nncf_network.get_original_graph()
+    #     all_nodes_per_skipped_block_idxs = {}
+    #     for idx, block in enumerate(blocks):
+    #         start_node, end_node = block.start_node_name, block.end_node_name
+    #         start_node_key, end_node_key = None, None
+    #         for node in graph._nx_graph._node.values():
+    #             if start_node == str(node['node_name']):
+    #                 start_node_key = node['key']
+    #             if end_node == str(node['node_name']):
+    #                 end_node_key = node['key']
+    #         simple_paths = nx.all_simple_paths(graph._nx_graph, start_node_key, end_node_key)
+    #         all_nodes_in_block = set()
+    #         for node_keys_in_path in simple_paths:
+    #             for node_key in node_keys_in_path:
+    #                 all_nodes_in_block.add(str(graph._nx_graph._node[node_key]['node_name']))
+    #         start_op_address = str(graph._nx_graph._node[start_node_key]['node_name'])
+    #         all_nodes_in_block.remove(start_op_address)
+    #         all_nodes_per_skipped_block_idxs[idx] = list(all_nodes_in_block)
+    #     return all_nodes_per_skipped_block_idxs
