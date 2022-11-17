@@ -31,7 +31,7 @@ from nncf.torch.graph.transformations.commands import PTTargetPoint
 from nncf.torch.graph.transformations.commands import TransformationPriority
 from nncf.experimental.torch.sparsity.movement.layers import MovementSparsifier, SparseConfig, SparseStructure
 from nncf.experimental.torch.sparsity.movement.layers import SparseConfigByScope
-from nncf.experimental.torch.sparsity.movement.loss import ImportanceLoss, SparseLossForPerLayerSparsity
+from nncf.experimental.torch.sparsity.movement.loss import ImportanceLoss
 from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskHandler, SparsifiedModuleInfoGroup
 from nncf.torch.module_operations import UpdateWeightAndBias
 from nncf.torch.utils import get_world_size, get_model_device
