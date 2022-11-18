@@ -9,12 +9,12 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn.functional as F
-from nncf.experimental.torch.search_building_blocks.search_blocks import \
-    BuildingBlockType
+from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlockType
 from nncf.torch.sparsity.base_algo import SparseModuleInfo
 from nncf.experimental.torch.sparsity.movement.layers import MovementSparsifier
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import STRUCTURED_MASK_STRATEGY
-from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import BaseStructuredMaskStrategy, StructuredMaskRule
+from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import StructuredMaskRule
+from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import BaseStructuredMaskStrategy
 from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlockType
 from nncf.common.utils.debug import is_debug
 from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlock, get_building_blocks, BuildingBlockType, BlockFilteringStrategy
@@ -65,13 +65,15 @@ class StructuredMaskContext:
         operand_mask: torch.Tensor = sparsifier_operand.weight_ctx.binary_mask   # type: ignore
         self.operand_mask_shape = operand_mask.shape
         self.grid_size = self._resolve_grid_size(grid_size)
-        self.structured_mask_shape = torch.Size(dim // grid for dim, grid in zip(self.operand_mask_shape, self.grid_size))
+        self.structured_mask_shape = torch.Size(dim // grid for dim, grid in
+                                                zip(self.operand_mask_shape, self.grid_size))
         self.prune_by_row = prune_by_row
         self._independent_structured_mask = None
         self._dependent_structured_mask = None
 
     def __repr__(self) -> str:
-        return f"<StructuredMaskContext for \"{self.module_node_name}\">"
+        prune_info = 'row prune' if self.prune_by_row else 'column prune'
+        return f"<StructuredMaskContext({prune_info} in {self.grid_size}) for \"{self.module_node_name}\">"
 
     @property
     def independent_structured_mask(self) -> Optional[torch.Tensor]:
