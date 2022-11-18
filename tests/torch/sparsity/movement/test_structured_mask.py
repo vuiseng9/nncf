@@ -2,6 +2,7 @@ from unittest.mock import Mock
 from pathlib import Path
 import re
 
+import logging
 import pytest
 import torch
 from tests.torch.sparsity.movement.helpers import BaseMockRunRecipe
@@ -113,10 +114,7 @@ class TestStructuredMaskContext:
                              ids=['dependent', 'independent'])
     def test_structured_mask_setter(self, is_dependent_mask: bool, structure_grid_size, ref_mask_shape):
         mask_name = 'dependent_structured_mask' if is_dependent_mask else 'independent_structured_mask'
-        operand = MovementSparsifier(
-            mock_linear_nncf_node(4, 4),
-            SparseConfig(SparseStructure.FINE),
-        )
+        operand = MovementSparsifier(mock_linear_nncf_node(4, 4))
         prune_by_row = (structure_grid_size[0] not in [-1, 4])
         ctx = StructuredMaskContext(operand, 'linear', structure_grid_size, prune_by_row)
         assert getattr(ctx, mask_name) is None
@@ -128,7 +126,6 @@ class TestStructuredMaskContext:
         assert getattr(ctx, mask_name).device == ref_mask1.device
         id_on_creation = id(getattr(ctx, mask_name))
         assert id_on_creation != id(ref_mask1)
-
         # reset value
         ref_mask2 = torch.zeros(ref_mask_shape, requires_grad=True)
         setattr(ctx, mask_name, ref_mask2)
@@ -136,10 +133,29 @@ class TestStructuredMaskContext:
         assert getattr(ctx, mask_name).requires_grad is False
         assert id(getattr(ctx, mask_name)) == id_on_creation
 
-        # set with wrong shape
-        ref_mask3 = torch.ones(ref_mask_shape).unsqueeze(0)
+    @pytest.mark.parametrize('is_dependent_mask', [True, False],
+                             ids=['dependent', 'independent'])
+    def test_structured_mask_setter_with_wrong_shape(self, is_dependent_mask: bool):
+        mask_name = 'dependent_structured_mask' if is_dependent_mask else 'independent_structured_mask'
+        operand = MovementSparsifier(mock_linear_nncf_node(1, 1))
+        ctx = StructuredMaskContext(operand, 'linear', (1, 1), True)
         with pytest.raises(ValueError, match='Wrong shape'):
-            setattr(ctx, mask_name, ref_mask3)
+            setattr(ctx, mask_name, torch.ones(2))
+
+    @pytest.mark.parametrize('is_dependent_mask', [True, False],
+                             ids=['dependent', 'independent'])
+    def test_structured_mask_setter_with_device_change(self, is_dependent_mask: bool, mocker, caplog):
+        mask_name = 'dependent_structured_mask' if is_dependent_mask else 'independent_structured_mask'
+        operand = MovementSparsifier(mock_linear_nncf_node(1, 1))
+        ctx = StructuredMaskContext(operand, 'linear', (1, 1), True)
+        setattr(ctx, mask_name, torch.ones((1, 1)))
+        # use 'meta' device for check since it does not need gpus
+        mock_meta_mask = torch.ones((1, 1), device=torch.device('meta'))
+        with caplog.at_level(logging.WARNING, logger='nncf'):
+            mocker.patch.object(logging.getLogger('nncf'), 'propagate', return_value=True)
+            setattr(ctx, mask_name, mock_meta_mask)
+            assert getattr(ctx, mask_name).device == torch.device('meta')
+        assert f'Changing {mask_name} device' in caplog.text
 
     @pytest.mark.parametrize('desc', desc_test_update_independent_structured_mask.values(),
                              ids=desc_test_update_independent_structured_mask.keys())
