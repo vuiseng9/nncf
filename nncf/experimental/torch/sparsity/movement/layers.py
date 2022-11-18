@@ -110,7 +110,7 @@ class MovementSparsifier(nn.Module):
     def __init__(
         self,
         target_module_node: NNCFNode,
-        sparse_cfg: SparseConfig,
+        sparse_cfg: SparseConfig = SparseConfig(mode=SparseStructure.FINE),
         frozen: bool = True,
         compression_lr_multiplier: Optional[float] = None,
         layer_loss_lambda: float = 0.5,

@@ -196,6 +196,37 @@ class TestStructuredMaskContext:
         stats = ctx.gather_statistics_from_operand()
         assert stats.__dict__ == ref_stats.__dict__
 
+    @pytest.mark.parametrize('prune_by_row', [True, False])
+    def test_string_representation(self, prune_by_row: bool):
+        node = mock_linear_nncf_node(1, 1, node_name='mock_linear')
+        grid_size = (1, 1)
+        operand = MovementSparsifier(node, SparseConfig(SparseStructure.FINE))
+        ctx = StructuredMaskContext(operand, node.node_name, grid_size, prune_by_row)
+        row_or_col = 'row' if prune_by_row else 'column'
+        ref_str = f'<StructuredMaskContext({row_or_col} prune by {grid_size}) for "{node.node_name}">'
+        assert str(ctx) == ref_str
+
+
+class TestStructuredMaskContextGroup:
+    @pytest.mark.parametrize('num_contexts', [0, 1, 2])
+    def test_string_representation(self, num_contexts: int):
+        ctxes = [Mock(__str__=Mock(return_value=f'ctx{i}')) for i in range(num_contexts)]
+        ctx_group = StructuredMaskContextGroup(0, BuildingBlockType.FF, ctxes)
+        if num_contexts == 0:
+            assert str(ctx_group) == f'[0]{BuildingBlockType.FF}: []'
+        else:
+            assert str(ctx_group) == f'[0]{BuildingBlockType.FF}: [%s\n]' % (
+                ''.join(f'\n\tctx{i}' for i in range(num_contexts)))
+
+
+class TestStructuredMaskRule:
+    @pytest.mark.parametrize('keywords', ['key1', ['key1', 'key2']])
+    def test_string_representation(self, keywords):
+        rule = StructuredMaskRule(keywords, True, (1, 1))
+        keywords = [keywords] if isinstance(keywords, str) else keywords
+        ref_str = f'StructuredMaskRule(keywords={keywords}, prune_by_row={True}, prune_grid=(1, 1))'
+        assert str(rule) == ref_str
+
 
 class TransformerLayerMaskParam:
     def __init__(self, MHSA_Q: torch.Tensor,

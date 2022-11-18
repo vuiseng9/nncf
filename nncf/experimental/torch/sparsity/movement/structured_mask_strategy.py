@@ -30,7 +30,7 @@ class StructuredMaskRule:
         self.prune_by_row = prune_by_row
         self.prune_grid = prune_grid
 
-    def __repr__(self) -> str:
+    def __str__(self) -> str:
         return "%s(%s)" % (
             self.__class__.__name__,
             ', '.join(f'{k}={v}' for k, v in self.__dict__.items())
