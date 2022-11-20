@@ -144,9 +144,6 @@ class MovementSparsityController(BaseSparsityAlgoController):
             return CompressionStage.FULLY_COMPRESSED
         return CompressionStage.PARTIALLY_COMPRESSED
 
-    def freeze(self):
-        self._loss.disable()
-
     def distributed(self):
         if not dist.is_initialized():
             raise KeyError('Could not set distributed mode for the compression algorithm '

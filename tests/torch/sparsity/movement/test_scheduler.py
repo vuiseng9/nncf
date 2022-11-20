@@ -9,8 +9,6 @@ from nncf.experimental.torch.sparsity.movement.scheduler import MovementPolynomi
 from tests.torch.sparsity.movement.helpers import SchedulerParams
 from pytest import approx
 
-# TODO(yujie): add enable_structured_masking test
-
 
 desc_test_decayed_importance_threshold_and_regularization_factor = {
     "normal_warmup_range": dict(

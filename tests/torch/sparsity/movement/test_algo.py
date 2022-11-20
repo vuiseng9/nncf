@@ -15,7 +15,6 @@ from transformers import TrainingArguments
 from transformers.trainer_callback import TrainerControl
 from transformers.trainer_callback import TrainerState
 
-from nncf.common.sparsity.schedulers import PolynomialThresholdScheduler
 from nncf.common.sparsity.statistics import MovementSparsityStatistics
 from nncf.common.utils.helpers import matches_any
 from nncf.common.utils.helpers import should_consider_scope
