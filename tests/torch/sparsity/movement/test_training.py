@@ -219,8 +219,8 @@ mrpc_movement_desc_template = \
     .real_dataset("mrpc")\
     .config_name("bert_tiny_uncased_mrpc_movement.json")\
     .learning_rate(1e-4)\
-    .batch_size(128)\
-    .num_train_epochs(5)\
+    .batch_size(64)\
+    .num_train_epochs(6)\
     .seed(42)\
 
 MOVEMENT_DESCRIPTORS = {
