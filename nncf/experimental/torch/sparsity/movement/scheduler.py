@@ -31,7 +31,7 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
     scheduler will start calculation only after `steps_per_epoch` is calculated.
     """
 
-    def __init__(self, controller: SparsityController, params: dict):
+    def __init__(self, controller: 'MovementSparsityController', params: dict):
         """
         TODO: revise docstring
         Initializes a sparsity scheduler with a polynomial decay schedule.
@@ -59,7 +59,7 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
             self.final_importance_threshold,
             (self.warmup_end_epoch - self.warmup_start_epoch),
             params.get('power', 3),
-            params.get('concave', True)
+            concave=True
         )
         self.current_importance_threshold = self.init_importance_threshold
         self._cached_importance_threshold = None
