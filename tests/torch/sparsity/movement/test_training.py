@@ -225,51 +225,55 @@ mrpc_movement_desc_template = \
 
 MOVEMENT_DESCRIPTORS = {
     "mrpc_cuda_1proc": deepcopy(mrpc_movement_desc_template)
-    .expected_eval_f1(approx(0.815, abs=0.05))
-    .expected_eval_acc(approx(0.716, abs=0.05))
-    .expected_rela_sparsity(approx(0.187, abs=0.15)),
+    .expected_eval_f1(approx(0.81, abs=0.05))
+    .expected_eval_acc(approx(0.71, abs=0.06))
+    .expected_rela_sparsity(approx(0.20, abs=0.12)),
 
     "mrpc_cuda_1proc_fp16": deepcopy(mrpc_movement_desc_template)
     .enable_autocast_fp16()
-    .expected_eval_f1(approx(0.815, abs=0.05))
-    .expected_eval_acc(approx(0.716, abs=0.05))
-    .expected_rela_sparsity(approx(0.187, abs=0.15)),
+    .expected_eval_f1(approx(0.81, abs=0.05))
+    .expected_eval_acc(approx(0.71, abs=0.06))
+    .expected_rela_sparsity(approx(0.20, abs=0.12)),
+
 
     "mrpc_cuda_2proc_dp": deepcopy(mrpc_movement_desc_template)
     .batch_size(32)
     .data_parallel(n_process=2)
-    .expected_eval_f1(approx(0.786, abs=0.05))
-    .expected_eval_acc(approx(0.676, abs=0.05))
-    .expected_rela_sparsity(approx(0.29, abs=0.15)),
+    .expected_eval_f1(approx(0.81, abs=0.05))
+    .expected_eval_acc(approx(0.71, abs=0.06))
+    .expected_rela_sparsity(approx(0.20, abs=0.12)),
+
 
     "mrpc_cuda_2proc_dp_fp16": deepcopy(mrpc_movement_desc_template)
     .batch_size(32)
     .data_parallel(n_process=2)
     .enable_autocast_fp16()
-    .expected_eval_f1(approx(0.786, abs=0.05))
-    .expected_eval_acc(approx(0.676, abs=0.05))
-    .expected_rela_sparsity(approx(0.29, abs=0.15)),
+    .expected_eval_f1(approx(0.81, abs=0.05))
+    .expected_eval_acc(approx(0.71, abs=0.06))
+    .expected_rela_sparsity(approx(0.20, abs=0.12)),
+
 
     "mrpc_cuda_2proc_ddp": deepcopy(mrpc_movement_desc_template)
     .batch_size(32)
     .distributed_data_parallel(n_process=2)
-    .expected_eval_f1(approx(0.839, abs=0.05))
-    .expected_eval_acc(approx(0.748, abs=0.05))
-    .expected_rela_sparsity(approx(0.116, abs=0.15)),
+    .expected_eval_f1(approx(0.81, abs=0.05))
+    .expected_eval_acc(approx(0.71, abs=0.06))
+    .expected_rela_sparsity(approx(0.20, abs=0.12)),
+
 
     "mrpc_cuda_2proc_ddp_fp16": deepcopy(mrpc_movement_desc_template)
     .batch_size(32)
     .distributed_data_parallel(n_process=2)
     .enable_autocast_fp16()
-    .expected_eval_f1(approx(0.838, abs=0.05))
-    .expected_eval_acc(approx(0.748, abs=0.05))
-    .expected_rela_sparsity(approx(0.116, abs=0.15)),
+    .expected_eval_f1(approx(0.81, abs=0.05))
+    .expected_eval_acc(approx(0.71, abs=0.06))
+    .expected_rela_sparsity(approx(0.20, abs=0.12)),
 
     "mrpc_cpu_1proc": deepcopy(mrpc_movement_desc_template)
     .cpu_only()
-    .expected_eval_f1(approx(0.811, abs=0.05))
-    .expected_eval_acc(approx(0.691, abs=0.05))
-    .expected_rela_sparsity(approx(0.171, abs=0.15)),
+    .expected_eval_f1(approx(0.81, abs=0.05))
+    .expected_eval_acc(approx(0.71, abs=0.06))
+    .expected_rela_sparsity(approx(0.20, abs=0.12)),
 }
 
 
