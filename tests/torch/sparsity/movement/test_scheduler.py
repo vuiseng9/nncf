@@ -1,5 +1,6 @@
 from typing import List, Optional, Union
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock
+from collections import defaultdict
 
 import nncf
 import numpy as np
@@ -57,6 +58,61 @@ def test_scheduler_decayed_importance_threshold_and_regularization_factor(desc):
             factor.append(scheduler.current_importance_lambda)
     assert np.allclose(threshold, desc['ref_threshold'], atol=1e-4)
     assert np.allclose(factor, desc['ref_factor'], atol=1e-4)
+
+
+@pytest.mark.parametrize('desc',
+                         desc_test_decayed_importance_threshold_and_regularization_factor.values(),
+                         ids=desc_test_decayed_importance_threshold_and_regularization_factor.keys())
+def test_scheduler_update_operand_importance_threshold(desc):
+    num_minfo = 2
+    minfo_list = [Mock() for _ in range(num_minfo)]
+    scheduler = MovementPolynomialThresholdScheduler(controller=Mock(sparsified_module_info=minfo_list),
+                                                     params=desc['params'].__dict__)
+    threshold_dict = defaultdict(list)
+    for epoch in range(5):
+        scheduler.epoch_step()
+        for batch in range(desc['params'].steps_per_epoch):
+            scheduler.step()
+            for i, minfo in enumerate(minfo_list):
+                threshold_dict[f'threshold{i}'].append(minfo.operand.importance_threshold)
+    for threshold in threshold_dict.values():
+        assert np.allclose(threshold, desc['ref_threshold'], atol=1e-4)
+
+
+@pytest.mark.parametrize('enable_structured_masking', [True, False])
+def test_scheduler_enable_structured_masking(enable_structured_masking: bool):
+    num_minfo = 2
+    controller = Mock(sparsified_module_info=[Mock() for _ in range(num_minfo)])
+
+    def assert_controller_structured_masking_calls(is_called: bool):
+        assert_fn = 'assert_called_once' if is_called else 'assert_not_called'
+        getattr(controller.reset_independent_structured_mask, assert_fn)()
+        getattr(controller.resolve_structured_mask, assert_fn)()
+        getattr(controller.populate_structured_mask, assert_fn)()
+
+    def assert_controller_requires_grad_calls(is_called: bool):
+        assert_fn = 'assert_called_once' if is_called else 'assert_not_called'
+        for minfo in controller.sparsified_module_info:
+            getattr(minfo.operand.requires_grad_, assert_fn)()
+
+    params = SchedulerParams(warmup_start_epoch=0, warmup_end_epoch=1, steps_per_epoch=2,
+                             enable_structured_masking=enable_structured_masking)
+    scheduler = MovementPolynomialThresholdScheduler(controller, params=params.__dict__)
+    scheduler.epoch_step()
+    scheduler.step()
+    scheduler.step()
+    scheduler.epoch_step()
+    assert_controller_structured_masking_calls(is_called=False)
+    assert_controller_requires_grad_calls(is_called=False)
+    scheduler.step()
+    assert_controller_structured_masking_calls(is_called=enable_structured_masking)  # check called at this step
+    assert_controller_requires_grad_calls(is_called=True)
+    scheduler.step()
+    scheduler.epoch_step()
+    scheduler.step()
+    scheduler.step()
+    assert_controller_structured_masking_calls(is_called=enable_structured_masking)  # check only called once
+    assert_controller_requires_grad_calls(is_called=True)
 
 
 def test_scheduler_get_state():
@@ -145,7 +201,17 @@ def test_scheduler_can_infer_steps_per_epoch():
     assert scheduler.current_importance_lambda == factor_after_6_step_calls
 
 
-def test_scheduler_raises_error_of_improper_steps_per_epoch_setting():
+def test_scheduler_error_on_improper_warmup_start_epoch_value():
     params = SchedulerParams(warmup_start_epoch=0, steps_per_epoch=None)
     with pytest.raises(ValueError):
         _ = MovementPolynomialThresholdScheduler(controller=MagicMock(), params=params.__dict__)
+
+
+def test_scheduler_error_on_wrong_steps_per_epoch_value():
+    params = SchedulerParams(warmup_start_epoch=1, steps_per_epoch=2)
+    scheduler = MovementPolynomialThresholdScheduler(controller=MagicMock(), params=params.__dict__)
+    scheduler.epoch_step()
+    for _ in range(3):
+        scheduler.step()
+    with pytest.raises(Exception, match='Scheduling may be incorrect'):
+        scheduler.epoch_step()
