@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 import nncf
 import numpy as np
 import pytest
-from nncf.common.sparsity.schedulers import PolynomialThresholdScheduler
+from nncf.experimental.torch.sparsity.movement.scheduler import MovementPolynomialThresholdScheduler
 from tests.torch.sparsity.movement.helpers import SchedulerParams
 from pytest import approx
 
@@ -47,7 +47,7 @@ desc_test_decayed_importance_threshold_and_regularization_factor = {
                          desc_test_decayed_importance_threshold_and_regularization_factor.values(),
                          ids=desc_test_decayed_importance_threshold_and_regularization_factor.keys())
 def test_scheduler_decayed_importance_threshold_and_regularization_factor(desc):
-    scheduler = PolynomialThresholdScheduler(controller=MagicMock(), params=desc['params'].__dict__)
+    scheduler = MovementPolynomialThresholdScheduler(controller=MagicMock(), params=desc['params'].__dict__)
     threshold, factor = [], []
     for epoch in range(5):
         scheduler.epoch_step()
@@ -61,7 +61,7 @@ def test_scheduler_decayed_importance_threshold_and_regularization_factor(desc):
 
 def test_scheduler_get_state():
     params = SchedulerParams()
-    scheduler = PolynomialThresholdScheduler(controller=MagicMock(), params=params.__dict__)
+    scheduler = MovementPolynomialThresholdScheduler(controller=MagicMock(), params=params.__dict__)
     assert scheduler.get_state() == {'current_epoch': -1,
                                      'current_step': -1,
                                      '_steps_per_epoch': params.steps_per_epoch}
@@ -87,7 +87,7 @@ def test_scheduler_load_state(params):
     reload_step = 6
     steps_per_epoch = params.steps_per_epoch or 8  # check if we can resume 1st epoch even with `steps_per_epoch` not specified
 
-    ref_scheduler = PolynomialThresholdScheduler(controller=MagicMock(), params=params.__dict__)
+    ref_scheduler = MovementPolynomialThresholdScheduler(controller=MagicMock(), params=params.__dict__)
     ref_threshold, ref_factor = [], []
     for epoch in range(5):
         ref_scheduler.epoch_step()
@@ -98,7 +98,7 @@ def test_scheduler_load_state(params):
                 ref_factor.append(ref_scheduler.current_importance_lambda)
 
     # check state dict is loaded
-    scheduler = PolynomialThresholdScheduler(controller=MagicMock(), params=params.__dict__)
+    scheduler = MovementPolynomialThresholdScheduler(controller=MagicMock(), params=params.__dict__)
     ref_state = {'current_epoch': reload_step // steps_per_epoch,
                  'current_step': reload_step,
                  '_steps_per_epoch': params.steps_per_epoch}
@@ -128,7 +128,7 @@ def test_scheduler_can_infer_steps_per_epoch():
     params = SchedulerParams(2, 1, 3, -1, 0, 0.1, steps_per_epoch=None)
     threshold_after_6_step_calls = approx(-0.7656, abs=1e-4)
     factor_after_6_step_calls = approx(0.0234, abs=1e-4)
-    scheduler = PolynomialThresholdScheduler(controller=MagicMock(), params=params.__dict__)
+    scheduler = MovementPolynomialThresholdScheduler(controller=MagicMock(), params=params.__dict__)
 
     scheduler.epoch_step()
     for _ in range(4):
@@ -148,4 +148,4 @@ def test_scheduler_can_infer_steps_per_epoch():
 def test_scheduler_raises_error_of_improper_steps_per_epoch_setting():
     params = SchedulerParams(warmup_start_epoch=0, steps_per_epoch=None)
     with pytest.raises(ValueError):
-        _ = PolynomialThresholdScheduler(controller=MagicMock(), params=params.__dict__)
+        _ = MovementPolynomialThresholdScheduler(controller=MagicMock(), params=params.__dict__)

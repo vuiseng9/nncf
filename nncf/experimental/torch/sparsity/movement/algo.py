@@ -32,6 +32,7 @@ from nncf.torch.graph.transformations.commands import TransformationPriority
 from nncf.experimental.torch.sparsity.movement.layers import MovementSparsifier, SparseConfig, SparseStructure
 from nncf.experimental.torch.sparsity.movement.layers import SparseConfigByScope
 from nncf.experimental.torch.sparsity.movement.loss import ImportanceLoss
+from nncf.experimental.torch.sparsity.movement.scheduler import MovementPolynomialThresholdScheduler
 from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskHandler, SparsifiedModuleInfoGroup
 from nncf.torch.module_operations import UpdateWeightAndBias
 from nncf.torch.utils import get_world_size, get_model_device
@@ -118,8 +119,7 @@ class MovementSparsityController(BaseSparsityAlgoController):
         self._distributed = False
         sparsify_operations = [m.operand for m in self.sparsified_module_info]
         params = deepcopy(algo_config.get('params', {}))
-        scheduler_cls = SPARSITY_SCHEDULERS.get('threshold_polynomial_decay')  # TODO(yujie): hard coded this scheduler name
-        self._scheduler = scheduler_cls(self, params)
+        self._scheduler = MovementPolynomialThresholdScheduler(self, params)
         self._loss = ImportanceLoss(sparsify_operations, self.scheduler)
 
         # TODO: review - perhaps not the right place
