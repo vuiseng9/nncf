@@ -184,7 +184,8 @@ class MovementSparsityController(BaseSparsityAlgoController):
         return ncor_values / nvalues
 
     def statistics(self, quickly_collected_only=False) -> NNCFStatistics:
-        collector = PTSparseModelStatisticsCollector(self.model, self.sparsified_module_info)
+        collector = PTSparseModelStatisticsCollector(self.model, self.sparsified_module_info,
+                                                     supports_sparse_bias=True)
         model_statistics = collector.collect()
 
         stats = MovementSparsityStatistics(model_statistics,
@@ -229,7 +230,7 @@ class MovementSparsityController(BaseSparsityAlgoController):
                             minfo.operand.apply_binary_mask(module.weight)
                         if hasattr(module, 'bias') and module.bias is not None:
                             sparse_state_dict[name + '.bias'] = \
-                                minfo.operand.apply_binary_mask(module.bias, isbias=True)
+                                minfo.operand.apply_binary_mask(module.bias, is_bias=True)
 
         model_state_dict = self.model.state_dict()
         for key, value in sparse_state_dict.items():

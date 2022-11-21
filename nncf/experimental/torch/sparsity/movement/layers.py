@@ -180,8 +180,8 @@ class MovementSparsifier(nn.Module):
         ctx.binary_mask = mask
         return mask
 
-    def apply_binary_mask(self, param_tensor, isbias=False):
-        ctx = self.bias_ctx if isbias else self.weight_ctx
+    def apply_binary_mask(self, param_tensor, is_bias=False):
+        ctx = self.bias_ctx if is_bias else self.weight_ctx
         return ctx.apply_binary_mask(param_tensor)
 
     @staticmethod
