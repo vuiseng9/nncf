@@ -13,7 +13,7 @@ from nncf.experimental.torch.search_building_blocks.search_blocks import \
     BuildingBlockType
 from nncf.torch.sparsity.base_algo import SparseModuleInfo
 from nncf.experimental.torch.sparsity.movement.layers import MovementSparsifier
-from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import STRUCTURED_MASK_STRATEGY
+from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import detect_supported_model_family
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import BaseStructuredMaskStrategy, StructuredMaskRule
 from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlockType
 from nncf.common.utils.debug import is_debug
@@ -256,6 +256,33 @@ class StructuredMaskHandler:
             groups.append(SparsifiedModuleInfoGroup(group_id,
                                                     building_block.block_type,
                                                     sparsified_module_info))
+
+        if detect_supported_model_family(compressed_model) == "huggingface_mobilebert":
+            # current get_building_blocks cannot detect MHSA in mobilebert
+            # manual creation of MHSA group
+            group_id = len(groups)
+
+            sm_info_per_mhsa_group = OrderedDict()
+            for sparse_info in sparsified_module_info_list:
+                if 'MobileBertAttention' in sparse_info.module_node_name:
+                    txblk = sparse_info.module_node_name.split("/")[4]
+
+                    if txblk not in sm_info_per_mhsa_group:
+                        sm_info_per_mhsa_group[txblk] = []
+                    
+                    sm_info_per_mhsa_group[txblk].append(sparse_info)
+
+            for group_id_offset, (group_key, group_sminfos) in enumerate(sm_info_per_mhsa_group.items()):
+                assert len(group_sminfos) == 4, "bug's alive, check mobilebert definition"
+                groups.append(
+                    SparsifiedModuleInfoGroup(group_id+group_id_offset,
+                                            BuildingBlockType.MSHA,
+                                            group_sminfos))
+            if True:
+                for gid, g in enumerate(groups):
+                    print(gid, g.group_id, g.group_type)
+                    for e in g.sparse_module_info:
+                        print("\t", e.module_node_name)
         return groups
 
     @staticmethod

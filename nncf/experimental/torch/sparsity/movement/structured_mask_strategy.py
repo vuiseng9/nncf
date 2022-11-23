@@ -106,6 +106,55 @@ class HuggingFaceBertStructuredMaskStrategy(BaseStructuredMaskStrategy):
         return config
 
 
+@STRUCTURED_MASK_STRATEGY.register("huggingface_mobilebert")
+class HuggingFaceBertStructuredMaskStrategy(BaseStructuredMaskStrategy):
+    MHSA_Q: str = "query"
+    MHSA_K: str = "key"
+    MHSA_V: str = "value"
+    MHSA_O: str = "MobileBertSelfOutput"
+    FFN_I: str = "MobileBertIntermediate"
+    FFN_O: list = ["FFNOutput", "MobileBertOutput"]
+
+    def __init__(self, dim_per_head: int) -> None:
+        super().__init__()
+        self.dim_per_head = dim_per_head
+
+    @classmethod
+    def from_compressed_model(cls, compressed_model: NNCFNetwork):
+        hidden_dim = compressed_model.nncf_module.mobilebert.config.true_hidden_size
+        num_heads = compressed_model.nncf_module.mobilebert.config.num_attention_heads
+        return cls(dim_per_head=hidden_dim // num_heads)
+
+    @property
+    def strategy_by_group_type(self) -> Dict[str, List[StructuredMaskRule]]:
+        config = {
+            BuildingBlockType.MSHA: [
+                StructuredMaskRule(
+                    keywords=[self.MHSA_Q, self.MHSA_K, self.MHSA_V],
+                    prune_by_row=True,
+                    prune_grid=(self.dim_per_head, -1),
+                ),
+                StructuredMaskRule(
+                    keywords=[self.MHSA_O],
+                    prune_by_row=False,
+                    prune_grid=(-1, self.dim_per_head),
+                ),
+            ],
+            BuildingBlockType.FF: [
+                StructuredMaskRule(
+                    keywords=[self.FFN_I],
+                    prune_by_row=True,
+                    prune_grid=(1, -1),
+                ),
+                StructuredMaskRule(
+                    keywords=self.FFN_O,
+                    prune_by_row=False,
+                    prune_grid=(-1, 1),
+                ),
+            ],
+        }
+        return config
+
 @STRUCTURED_MASK_STRATEGY.register("huggingface_wav2vec2")
 class HuggingFaceWav2Vec2StructuredMaskStrategy(HuggingFaceBertStructuredMaskStrategy):
     MHSA_Q: str = "q_proj"
