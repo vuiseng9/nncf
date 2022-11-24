@@ -2,11 +2,13 @@ from collections import OrderedDict
 from copy import deepcopy
 from pathlib import Path
 from typing import List, Literal, Optional, Sequence, Tuple, Union
+from dataclasses import dataclass
 
 import datasets
 from datasets import load_dataset
 import numpy as np
 import pytest
+from pytest import approx
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -58,10 +60,22 @@ def ensure_tensor(data, dtype=torch.float, device=torch.device('cpu')):
         return torch.tensor(data, dtype=dtype, device=device)
 
 
+def is_roughly_non_decreasing(x_list, atol=0.01):
+    x_list = list(x_list)
+    assert atol >= 0
+    return all(a <= b + atol for a, b in zip(x_list[:-1], x_list[1:]))
+
+
+def is_roughly_of_same_value(x_list, atol=1e-6):
+    x_list = list(x_list)
+    assert atol >= 0
+    return all(x == approx(x_list[0], abs=atol) for x in x_list[1:])
+
+
 class ParamDict:
-    def __init__(self, dtype=torch.float, device=torch.device('cpu'), **kwargs):
-        self.keys = kwargs.keys()
-        for name, value in kwargs.items():
+    def __init__(self, dtype=torch.float, device=torch.device('cpu'), **param_kwargs):
+        self.keys = param_kwargs.keys()
+        for name, value in param_kwargs.items():
             setattr(self, name, ensure_tensor(value, dtype, device) if
                     value is not None else None)
 
@@ -161,8 +175,7 @@ class TransformerBlockInfo:
 
 
 class TransformerBlockModuleOrderedDict(OrderedDict):
-    def __init__(self, mhsa_q: nn.Module, mhsa_k: nn.Module, mhsa_v: nn.Module,
-                 mhsa_o: nn.Module, ffn_i: nn.Module, ffn_o=nn.Module) -> None:
+    def __init__(self, mhsa_q, mhsa_k, mhsa_v, mhsa_o, ffn_i, ffn_o) -> None:
         super().__init__(mhsa_q=mhsa_q, mhsa_k=mhsa_k, mhsa_v=mhsa_v,
                          mhsa_o=mhsa_o, ffn_i=ffn_i, ffn_o=ffn_o)
 
@@ -200,6 +213,10 @@ class BaseMockRunRecipe:
         self.scheduler_keys = set(self.algo_config.scheduler_params.__dict__.keys())
         self.algo_keys = set(self.algo_config.__dict__.keys())
         self.set_log_dir(log_dir)
+
+    @property
+    def scheduler_params(self):
+        return self.algo_config.scheduler_params
 
     def set_log_dir(self, log_dir=None):
         self.log_dir = log_dir
@@ -250,6 +267,15 @@ class BaseMockRunRecipe:
 
     @property
     def model(self) -> nn.Module:
+        torch_model = self._create_model()
+        g = torch.Generator()
+        g.manual_seed(42)
+        with torch.no_grad():
+            for name, parameter in torch_model.named_parameters():
+                parameter.normal_(generator=g)
+        return torch_model
+
+    def _create_model(self) -> nn.Module:
         pass
 
     @property
@@ -275,7 +301,7 @@ class BaseMockRunRecipe:
         print(config_dict)
         return NNCFConfig.from_dict(config_dict)
 
-    def generate_mock_dataset(self, num_samples: int = 20, seed: int = 42) -> datasets.Dataset:
+    def generate_mock_dataset(self, num_samples: int = 16, seed: int = 42) -> datasets.Dataset:
         g = torch.Generator()
         g.manual_seed(seed)
         input_dict = {}
@@ -316,8 +342,7 @@ class Wav2Vec2RunRecipe(BaseMockRunRecipe):
         scheduler_params=SchedulerParams(),
     )
 
-    @property
-    def model(self):
+    def _create_model(self):
         return AutoModelForAudioClassification.from_config(self.model_config)
 
     @property
@@ -356,10 +381,10 @@ class BertRunRecipe(BaseMockRunRecipe):
     default_model_config = BertConfig(
         hidden_size=4,
         intermediate_size=6,
-        max_position_embeddings=512,
+        max_position_embeddings=128,
         num_attention_heads=2,
         num_hidden_layers=1,
-        vocab_size=30522,
+        vocab_size=10,
         num_labels=2,
     )
     default_algo_config = NNCFAlgoConfig(
@@ -372,17 +397,17 @@ class BertRunRecipe(BaseMockRunRecipe):
         scheduler_params=SchedulerParams(),
     )
 
-    @property
-    def model(self):
+    def _create_model(self):
         return AutoModelForSequenceClassification.from_config(self.model_config)
 
     @property
     def model_input_info(self) -> List[dict]:
+        dim = self.model_config.max_position_embeddings
         return [
-            {"sample_size": [1, 256], "type": "long", "keyword": "input_ids"},
-            {"sample_size": [1, 256], "type": "long", "keyword": "token_type_ids"},
-            {"sample_size": [1, 256], "type": "long", "keyword": "position_ids"},
-            {"sample_size": [1, 256], "type": "long", "keyword": "attention_mask"},
+            {"sample_size": [1, dim], "type": "long", "keyword": "input_ids"},
+            {"sample_size": [1, dim], "type": "long", "keyword": "token_type_ids"},
+            {"sample_size": [1, dim], "type": "long", "keyword": "position_ids"},
+            {"sample_size": [1, dim], "type": "long", "keyword": "attention_mask"},
         ]
 
     @property
@@ -434,8 +459,7 @@ class SwinRunRecipe(BaseMockRunRecipe):
         scheduler_params=SchedulerParams(),
     )
 
-    @property
-    def model(self):
+    def _create_model(self):
         return AutoModelForImageClassification.from_config(self.model_config)
 
     @property
@@ -510,15 +534,14 @@ class LinearRunRecipe(BaseMockRunRecipe):
         bias=True
     )
     default_algo_config = NNCFAlgoConfig(
-        sparse_structure_by_scopes=[
-            {"mode": "block", "sparse_factors": [2, 2], "target_scopes": "{re}model"},
-        ],
         enable_structured_masking=False
     )
 
-    @property
-    def model(self):
-        return LinearForClassification(self.model_config.input_size, self.model_config.num_classes)
+    def _create_model(self):
+        model_config = self.model_config
+        return LinearForClassification(input_size=model_config.input_size,
+                                       bias=model_config.bias,
+                                       num_classes=model_config.num_classes)
 
     @property
     def model_input_info(self) -> List[dict]:
@@ -537,10 +560,12 @@ class Conv2dRunRecipe(BaseMockRunRecipe):
         enable_structured_masking=False
     )
 
-    @property
-    def model(self):
-        return Conv2dForClassification(self.model_config.input_size,
-                                       self.model_config.num_classes)
+    def _create_model(self):
+        model_config = self.model_config
+        return Conv2dForClassification(input_size=model_config.input_size,
+                                       bias=model_config.bias,
+                                       num_classes=model_config.num_classes)
+
 
     @property
     def model_input_info(self) -> List[dict]:
@@ -616,7 +641,10 @@ class CompressionTrainer(Trainer):
             if not callbacks:
                 compression_callback = CompressionCallback(compression_ctrl)
                 callbacks = [compression_callback]
-        self.compression_callbacks = callbacks
+                self.compression_callback = compression_callback
+            else:
+                assert len(callbacks) == 1
+                self.compression_callback = callbacks[0]
         super().__init__(callbacks=callbacks, *args, **kwargs)
         if not (self.args.local_rank == -1 or self.args.no_cuda or compression_ctrl is None):
             compression_ctrl.distributed()
@@ -632,7 +660,7 @@ class CompressionTrainer(Trainer):
 class CompressionCallback(TrainerCallback):
     def __init__(self, compression_ctrl: CompressionAlgorithmController) -> None:
         self.compression_ctrl = compression_ctrl
-        self._compression_log = []
+        self._compression_log_by_step = OrderedDict()
 
     def on_epoch_begin(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
         self.compression_ctrl.scheduler.epoch_step()
@@ -644,36 +672,47 @@ class CompressionCallback(TrainerCallback):
         stats = self.compression_ctrl.statistics()
         stat_dict = prepare_for_tensorboard(stats)
         stat_dict.update(step=state.global_step, epoch=state.epoch)
-        self._compression_log.append(stat_dict)
+        self._compression_log_by_step[state.global_step] = stat_dict
 
     def on_train_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
         self._training_log = state.log_history
 
-    def get_compress_log(self):
-        return self._compression_log
+    def get_compress_log(self, step_starts_from_1=True):
+        if step_starts_from_1:
+            return self._compression_log_by_step
+        return {(step - 1): log for step, log in self._compression_log_by_step.items()}
 
     def get_train_log(self):
         return self._training_log
 
 
-def run_movement_pipeline(tmp_path, compression_ctrl, compressed_model, train_dataset, eval_dataset, batch_size,
-                          callback: Optional[CompressionCallback] = None, **training_kwargs):
-    default_args = dict(
-        output_dir=Path(tmp_path) / "test_trainer",
+def build_compression_trainer(tmp_path, compression_ctrl, compressed_model,
+                              train_dataset: datasets.Dataset,
+                              eval_dataset: Optional[datasets.Dataset] = None,
+                              callback: Optional[CompressionCallback] = None,
+                              batch_size: int = 1,
+                              **training_kwargs):
+    training_args = dict(
+        output_dir=Path(tmp_path),
         label_names=["labels"],
         evaluation_strategy="epoch",
+        logging_steps=1,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
         num_train_epochs=6,
         learning_rate=1e-3,
         optim="adamw_torch",
         remove_unused_columns=False,
+        seed=42,
+        full_determinism=True,
         report_to="none",
         disable_tqdm=True,
         no_cuda=True,
     )
-    default_args.update(training_kwargs)
-    training_args = TrainingArguments(**default_args)
+    if eval_dataset is None:
+        training_args['evaluation_strategy'] = 'no'
+    training_args.update(training_kwargs)
+    training_args = TrainingArguments(**training_args)
 
     def compute_metrics(eval_pred):
         logits, labels = eval_pred
@@ -692,13 +731,23 @@ def run_movement_pipeline(tmp_path, compression_ctrl, compressed_model, train_da
         eval_dataset=eval_dataset,
         compute_metrics=compute_metrics,
     )
-
-    train_result = trainer.train()
-    eval_result = trainer.evaluate()
-    return train_result, eval_result, callback
+    return trainer
 
 
-def initialize_sparsifer_parameters(operand: MovementSparsifier, mean: float = 0., std: float = 3.):
-    nn.init.normal_(operand.weight_importance, mean, std)
-    if operand.prune_bias:
-        nn.init.normal_(operand.bias_importance, mean, std)
+def initialize_sparsifer_parameters_by_normal(operand: MovementSparsifier, mean: float = 0., std: float = 3.):
+    with torch.no_grad():
+        nn.init.normal_(operand.weight_importance.data, mean, std)
+        if operand.prune_bias:
+            nn.init.normal_(operand.bias_importance.data, mean, std)
+
+
+def initialize_sparsifer_parameters(operand: MovementSparsifier):
+    with torch.no_grad():
+        device = operand.weight_importance.device
+        weight_init_tensor = torch.linspace(-1, 1, steps=operand.weight_importance.numel(), device=device)\
+            .reshape_as(operand.weight_importance)
+        operand.weight_importance.copy_(weight_init_tensor)
+        if operand.prune_bias:
+            bias_init_tensor = torch.linspace(-1, 1, steps=operand.bias_importance.numel(), device=device)\
+                .reshape_as(operand.bias_importance)
+            operand.bias_importance.copy_(bias_init_tensor)
