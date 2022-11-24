@@ -10,22 +10,24 @@
  See the License for the specific language governing permissions and
  limitations under the License.
 """
-import math
 from copy import deepcopy
 from enum import Enum
+import math
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
+from torch import nn
+
 from nncf.common.graph import NNCFNode
 from nncf.common.utils.debug import is_debug
-from nncf.torch.layer_utils import COMPRESSION_MODULES, CompressionParameter
-from nncf.torch.sparsity.functions import \
-    apply_binary_mask as apply_binary_mask_impl
-from nncf.torch.sparsity.layers import BinaryMask
 from nncf.experimental.torch.sparsity.movement.functions import binary_mask_by_threshold
-from nncf.torch.utils import is_tracing_state, no_jit_trace
-from torch import nn
+from nncf.torch.layer_utils import COMPRESSION_MODULES
+from nncf.torch.layer_utils import CompressionParameter
+from nncf.torch.sparsity.functions import apply_binary_mask as apply_binary_mask_impl
+from nncf.torch.sparsity.layers import BinaryMask
+from nncf.torch.utils import is_tracing_state
+from nncf.torch.utils import no_jit_trace
 
 
 class SparseStructure(str, Enum):
@@ -127,7 +129,8 @@ class MovementSparsifier(nn.Module):
         self.sparse_factors = self._get_sparse_factors(weight_shape, sparse_cfg)
         self.sparse_structure = sparse_cfg.mode
 
-        weight_importance_shape = self._get_weight_importance_shape(weight_shape, self.sparse_factors, self.sparse_structure)
+        weight_importance_shape = self._get_weight_importance_shape(
+            weight_shape, self.sparse_factors, self.sparse_structure)
         self._bool_expand_importance = (tuple(weight_importance_shape) != tuple(weight_shape))
         self.weight_importance = CompressionParameter(
             torch.zeros(weight_importance_shape),
@@ -156,7 +159,8 @@ class MovementSparsifier(nn.Module):
     def extra_repr(self):
         return 'sparse_structure: {} {}'.format(self.sparse_structure.value, self.sparse_factors)
 
-    def forward(self, weight: torch.Tensor, bias: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+    def forward(self, weight: torch.Tensor, bias: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor,
+                                                                                          Optional[torch.Tensor]]:
         if is_tracing_state():
             with no_jit_trace():
                 masked_weight = weight.mul_(self.weight_ctx.binary_mask)
@@ -189,8 +193,8 @@ class MovementSparsifier(nn.Module):
         sparse_factors = sparse_config.sparse_factors
         if sparse_config.mode == SparseStructure.BLOCK:
             r, c = sparse_factors
-            assert weight_shape[0] % r == 0, "r: {} is not a factor of dim axes 0".format(r)
-            assert weight_shape[1] % c == 0, "c: {} is not a factor of dim axes 1".format(c)
+            assert weight_shape[0] % r == 0, "r: {} is not a factor of dim axis 0".format(r)
+            assert weight_shape[1] % c == 0, "c: {} is not a factor of dim axis 1".format(c)
 
         if sparse_config.mode == SparseStructure.PER_DIM:
             if sparse_config.sparse_axis < 0 or sparse_config.sparse_axis >= len(weight_shape):
@@ -203,7 +207,8 @@ class MovementSparsifier(nn.Module):
         return sparse_factors
 
     @staticmethod
-    def _get_weight_importance_shape(weight_shape, sparse_factors: Tuple[int, int], sparse_structure: SparseStructure) -> Tuple[int, int]:
+    def _get_weight_importance_shape(weight_shape, sparse_factors: Tuple[int, int],
+                                     sparse_structure: SparseStructure) -> Tuple[int, int]:
         if sparse_structure == SparseStructure.FINE:
             return weight_shape
 

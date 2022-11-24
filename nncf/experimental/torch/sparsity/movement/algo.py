@@ -92,16 +92,21 @@ class MovementSparsityBuilder(BaseSparsityAlgoBuilder):
             self._sparsified_module_info.append(
                 SparseModuleInfo(node_name, sparsified_module, sparsifying_operation))
 
+        if not insertion_commands:
+            raise RuntimeError('No sparsifiable layer found for movement sparisty algorithm.')  # TODO(yujie): add test
         return insertion_commands
 
     def create_weight_sparsifying_operation(self, target_module_node: NNCFNode, compression_lr_multiplier: float):
         sparse_cfg = SparseConfig(SparseStructure.FINE)
         node_name = target_module_node.node_name
+        matched_scopes = []
         for configs_per_scopes in self._sparse_configs_by_scopes:
             target_scopes = configs_per_scopes.target_scopes
             if matches_any(node_name, target_scopes):
                 sparse_cfg = configs_per_scopes.sparse_config
-                break
+                matched_scopes.append(target_scopes)
+        if len(matched_scopes) >= 2:
+            raise RuntimeError(f'"{node_name}" is matched by multiple items in `sparse_structure_by_scopes`.')
 
         return MovementSparsifier(target_module_node, sparse_cfg=sparse_cfg, frozen=False,
                                   compression_lr_multiplier=compression_lr_multiplier)
@@ -127,8 +132,10 @@ class MovementSparsityController(BaseSparsityAlgoController):
         if self._scheduler.enable_structured_masking:
             model_family = detect_supported_model_family(self.model)
             if model_family not in STRUCTURED_MASK_STRATEGY.registry_dict:
-                raise RuntimeError("You set `enable_structured_masking=True`, but no supported model is detected. "
-                                   "Supported model families: {}".format(list(STRUCTURED_MASK_STRATEGY.keys())))
+                raise RuntimeError(
+                    "You set `enable_structured_masking=True`, but no supported model is detected. "
+                    "Supported model families: {}".format(
+                        list(STRUCTURED_MASK_STRATEGY.registry_dict.keys())))
             strategy_cls = STRUCTURED_MASK_STRATEGY.get(model_family)
             strategy = strategy_cls.from_compressed_model(self.model)
             self._structured_mask_handler = StructuredMaskHandler(self.model,

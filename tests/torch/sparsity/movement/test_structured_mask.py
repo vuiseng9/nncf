@@ -1,16 +1,20 @@
-from unittest.mock import Mock
+import logging
 from pathlib import Path
 import re
+from unittest.mock import Mock
 
-import logging
+import pandas as pd
 import pytest
 import torch
+
+import nncf
 from tests.torch.sparsity.movement.helpers import BaseMockRunRecipe
 from tests.torch.sparsity.movement.helpers import BertRunRecipe
 from tests.torch.sparsity.movement.helpers import Wav2Vec2RunRecipe
 from tests.torch.sparsity.movement.helpers import mock_linear_nncf_node
 from tests.torch.sparsity.movement.helpers import ensure_tensor
 from tests.torch.sparsity.movement.helpers import ParamDict
+from tests.torch.sparsity.movement.helpers import TransformerBlockModuleOrderedDict
 from nncf.torch import create_compressed_model
 from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlockType
 from nncf.experimental.torch.sparsity.movement.layers import MovementSparsifier, SparseConfig, SparseStructure
@@ -21,8 +25,6 @@ from nncf.experimental.torch.sparsity.movement.structured_mask_handler import St
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import detect_supported_model_family
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import STRUCTURED_MASK_STRATEGY
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import StructuredMaskRule
-
-import pandas as pd
 
 desc_test_update_independent_structured_mask = {
     "prune1row": dict(
@@ -244,66 +246,46 @@ class TestStructuredMaskRule:
         assert str(rule) == ref_str
 
 
-class TransformerLayerMaskParam:
-    def __init__(self, MHSA_Q: torch.Tensor,
-                 MHSA_K: torch.Tensor,
-                 MHSA_V: torch.Tensor,
-                 MHSA_O: torch.Tensor,
-                 FFN_I: torch.Tensor,
-                 FFN_O: torch.Tensor):
-        self.MHSA_Q = MHSA_Q
-        self.MHSA_K = MHSA_K
-        self.MHSA_V = MHSA_V
-        self.MHSA_O = MHSA_O
-        self.FFN_I = FFN_I
-        self.FFN_O = FFN_O
-
-    @property
-    def params_in_transformer_block_order(self):
-        return [self.MHSA_Q, self.MHSA_K, self.MHSA_V,
-                self.MHSA_O, self.FFN_I, self.FFN_O]
-
-
 desc_test_resolve_dependent_structured = {
     "prune_1head_1channel": dict(
-        independent_structured=TransformerLayerMaskParam(
-            MHSA_Q=ensure_tensor([[1], [0]]),
-            MHSA_K=ensure_tensor([[1], [0]]),
-            MHSA_V=ensure_tensor([[1], [0]]),
-            MHSA_O=ensure_tensor([[1, 0]]),
-            FFN_I=ensure_tensor([[1], [1], [0]]),
-            FFN_O=ensure_tensor([[1, 1, 0]]),
+        independent_structured=TransformerBlockModuleOrderedDict(
+            mhsa_q=ensure_tensor([[1], [0]]),
+            mhsa_k=ensure_tensor([[1], [0]]),
+            mhsa_v=ensure_tensor([[1], [0]]),
+            mhsa_o=ensure_tensor([[1, 0]]),
+            ffn_i=ensure_tensor([[1], [1], [0]]),
+            ffn_o=ensure_tensor([[1, 1, 0]]),
         ),
-        dependent_structured=TransformerLayerMaskParam(
-            MHSA_Q=ensure_tensor([[1], [0]]),
-            MHSA_K=ensure_tensor([[1], [0]]),
-            MHSA_V=ensure_tensor([[1], [0]]),
-            MHSA_O=ensure_tensor([[1, 0]]),
-            FFN_I=ensure_tensor([[1], [1], [0]]),
-            FFN_O=ensure_tensor([[1, 1, 0]]),
+        dependent_structured=TransformerBlockModuleOrderedDict(
+            mhsa_q=ensure_tensor([[1], [0]]),
+            mhsa_k=ensure_tensor([[1], [0]]),
+            mhsa_v=ensure_tensor([[1], [0]]),
+            mhsa_o=ensure_tensor([[1, 0]]),
+            ffn_i=ensure_tensor([[1], [1], [0]]),
+            ffn_o=ensure_tensor([[1, 1, 0]]),
         ),
     ),
     "prune_0head_0channel": dict(
-        independent_structured=TransformerLayerMaskParam(
-            MHSA_Q=ensure_tensor([[1], [0]]),
-            MHSA_K=ensure_tensor([[1], [0]]),
-            MHSA_V=ensure_tensor([[0], [1]]),
-            MHSA_O=ensure_tensor([[1, 0]]),
-            FFN_I=ensure_tensor([[1], [1], [0]]),
-            FFN_O=ensure_tensor([[1, 0, 1]]),
+        independent_structured=TransformerBlockModuleOrderedDict(
+            mhsa_q=ensure_tensor([[1], [0]]),
+            mhsa_k=ensure_tensor([[1], [0]]),
+            mhsa_v=ensure_tensor([[0], [1]]),
+            mhsa_o=ensure_tensor([[1, 0]]),
+            ffn_i=ensure_tensor([[1], [1], [0]]),
+            ffn_o=ensure_tensor([[1, 0, 1]]),
         ),
-        dependent_structured=TransformerLayerMaskParam(
-            MHSA_Q=ensure_tensor([[1], [1]]),
-            MHSA_K=ensure_tensor([[1], [1]]),
-            MHSA_V=ensure_tensor([[1], [1]]),
-            MHSA_O=ensure_tensor([[1, 1]]),
-            FFN_I=ensure_tensor([[1], [1], [1]]),
-            FFN_O=ensure_tensor([[1, 1, 1]]),
+        dependent_structured=TransformerBlockModuleOrderedDict(
+            mhsa_q=ensure_tensor([[1], [1]]),
+            mhsa_k=ensure_tensor([[1], [1]]),
+            mhsa_v=ensure_tensor([[1], [1]]),
+            mhsa_o=ensure_tensor([[1, 1]]),
+            ffn_i=ensure_tensor([[1], [1], [1]]),
+            ffn_o=ensure_tensor([[1, 1, 1]]),
         ),
     )
 }
 
-run_recipes = [BertRunRecipe(), Wav2Vec2RunRecipe()]
+run_recipes = [BertRunRecipe.from_default(), Wav2Vec2RunRecipe.from_default()]
 
 
 @pytest.mark.parametrize('run_recipe', run_recipes,
@@ -316,7 +298,8 @@ class TestStructuredMaskHandler:
         self.compression_ctrl, self.compressed_model = create_compressed_model(self.model, self.nncf_config,
                                                                                dump_graphs=False)
         strategy = STRUCTURED_MASK_STRATEGY.get(run_recipe.model_family).from_compressed_model(self.compressed_model)
-        self.handler = StructuredMaskHandler(self.compressed_model, self.compression_ctrl.sparsified_module_info, strategy)
+        self.handler = StructuredMaskHandler(
+            self.compressed_model, self.compression_ctrl.sparsified_module_info, strategy)
         self.run_recipe = run_recipe
         self.all_ctxes = []
         for group in self.handler._structured_mask_ctx_groups:
@@ -349,19 +332,21 @@ class TestStructuredMaskHandler:
         handler = self.handler
         run_recipe = self.run_recipe
         modules = run_recipe.get_nncf_modules_in_transformer_block_order(self.compressed_model)[0]
-        module_2_node_name = {minfo.module: minfo.module_node_name for minfo in self.compression_ctrl.sparsified_module_info}
+        module_2_node_name = {minfo.module: minfo.module_node_name
+                              for minfo in self.compression_ctrl.sparsified_module_info}
         node_name_2_context = {ctx.module_node_name: ctx for ctx in self.all_ctxes}
         ctxes = [node_name_2_context[module_2_node_name[m]] for m in modules]
-        for ctx, param in zip(ctxes, desc['independent_structured'].params_in_transformer_block_order):
+        for ctx, param in zip(ctxes, desc['independent_structured'].values()):
             ctx.independent_structured_mask = param
 
         handler.resolve_dependent_structured_mask()
-        for ctx, ref_param in zip(ctxes, desc['dependent_structured'].params_in_transformer_block_order):
+        for ctx, ref_param in zip(ctxes, desc['dependent_structured'].values()):
             assert torch.allclose(ctx.dependent_structured_mask, ref_param)
 
     def test_populate_dependent_structured_mask_to_operand(self, mocker):
         handler = self.handler
-        mock_methods = [mocker.patch.object(ctx, 'populate_dependent_structured_mask_to_operand') for ctx in self.all_ctxes]
+        mock_methods = [mocker.patch.object(ctx, 'populate_dependent_structured_mask_to_operand')
+                        for ctx in self.all_ctxes]
         handler.populate_dependent_structured_mask_to_operand()
         for mock_method in mock_methods:
             mock_method.assert_called_once()
@@ -408,7 +393,7 @@ class TestStructuredMaskStrategy:
         compression_ctrl, compressed_model = create_compressed_model(model, nncf_config, dump_graphs=False)
         strategy_cls = STRUCTURED_MASK_STRATEGY.get(run_recipe.model_family)
         strategy = strategy_cls.from_compressed_model(compressed_model)
-        ref_dim_per_head = run_recipe.transformer_block_info_in_model['dim_per_head']
+        ref_dim_per_head = run_recipe.transformer_block_info[0].dim_per_head
         assert strategy.dim_per_head == ref_dim_per_head
         rules_by_group_type = strategy.strategy_by_group_type
         for group_type, rule_list in rules_by_group_type.items():

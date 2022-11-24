@@ -1,27 +1,40 @@
+from collections import OrderedDict
 from copy import deepcopy
-from typing import List, Optional, Union
 from pathlib import Path
+from typing import List, Literal, Optional, Sequence, Tuple, Union
 
+import datasets
+from datasets import load_dataset
 import numpy as np
 import pytest
 import torch
 import torch.nn as nn
-from datasets import load_dataset
+import torch.nn.functional as F
+import torch.utils.data
+from transformers import AutoModelForAudioClassification
+from transformers import AutoModelForImageClassification
+from transformers import AutoModelForSequenceClassification
+from transformers import AutoTokenizer
+from transformers import BertConfig
+from transformers import PreTrainedModel
+from transformers import PretrainedConfig
+from transformers import SwinConfig
+from transformers import Trainer
+from transformers import TrainingArguments
+from transformers import Wav2Vec2Config
+from transformers.trainer_callback import TrainerCallback
+from transformers.trainer_callback import TrainerControl
+from transformers.trainer_callback import TrainerState
+
 from nncf import NNCFConfig
 from nncf.api.compression import CompressionAlgorithmController
-from nncf.experimental.torch.sparsity.movement.algo import MovementSparsifier
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
-from transformers import Trainer as BaseTrainer
-from transformers import TrainingArguments, BertConfig
-from transformers import Wav2Vec2Config
-from transformers import AutoModelForAudioClassification
-from transformers import SwinConfig
-from transformers import AutoModelForImageClassification
-from transformers.trainer_callback import (TrainerCallback, TrainerControl,
-                                           TrainerState)
 from nncf.common.graph.graph import NNCFGraph
 from nncf.common.graph.graph import NNCFNode
 from nncf.common.graph.layer_attributes import LinearLayerAttributes
+from nncf.common.utils.tensorboard import prepare_for_tensorboard
+from nncf.experimental.torch.sparsity.movement.algo import MovementSparsifier
+from nncf.torch.nncf_network import NNCFNetwork
+from tests.torch.test_algo_common import BasicLinearTestModel
 
 MODEL_NAME = "google/bert_uncased_L-2_H-128_A-2"
 DATASET_NAME = "yelp_review_full"
@@ -30,8 +43,9 @@ DATASET_NAME = "yelp_review_full"
 def mock_linear_nncf_node(in_features: int = 1, out_features: int = 1,
                           bias: bool = True, node_name='linear'):
     graph = NNCFGraph()
-    linear = graph.add_nncf_node(node_name, 'linear', 'linear',
-                                 LinearLayerAttributes(True, in_features, out_features, bias=bias))
+    linear = graph.add_nncf_node(
+        node_name, 'linear', 'linear',
+        LinearLayerAttributes(True, in_features, out_features, bias=bias))
     return linear
 
 
@@ -66,7 +80,8 @@ def yelp_dataset():
     n_train_samples, n_val_samples = 128, 128
 
     def tokenize_fn(examples):
-        row = tokenizer(examples["text"], padding="max_length", truncation=True, max_length=max_length)
+        row = tokenizer(examples["text"], padding="max_length",
+                        truncation=True, max_length=max_length)
         row['position_ids'] = list(range(max_length))
         return row
 
@@ -134,6 +149,24 @@ class SchedulerParams:
         self.enable_structured_masking = enable_structured_masking
 
 
+class TransformerBlockInfo:
+    def __init__(self, num_hidden_layers: int = 1,
+                 hidden_size: int = 4,
+                 intermediate_size: int = 3,
+                 dim_per_head: int = 2) -> None:
+        self.num_hidden_layers = num_hidden_layers
+        self.hidden_size = hidden_size
+        self.intermediate_size = intermediate_size
+        self.dim_per_head = dim_per_head
+
+
+class TransformerBlockModuleOrderedDict(OrderedDict):
+    def __init__(self, mhsa_q: nn.Module, mhsa_k: nn.Module, mhsa_v: nn.Module,
+                 mhsa_o: nn.Module, ffn_i: nn.Module, ffn_o=nn.Module) -> None:
+        super().__init__(mhsa_q=mhsa_q, mhsa_k=mhsa_k, mhsa_v=mhsa_v,
+                         mhsa_o=mhsa_o, ffn_i=ffn_i, ffn_o=ffn_o)
+
+
 class NNCFAlgoConfig:
     def __init__(self, sparse_structure_by_scopes=[],
                  ignored_scopes=[],
@@ -157,36 +190,106 @@ class NNCFAlgoConfig:
 class BaseMockRunRecipe:
     model_family: str
     supports_structured_masking: bool
+    default_model_config = PretrainedConfig()
+    default_algo_config = NNCFAlgoConfig()
 
     def __init__(self, model_config, algo_config: NNCFAlgoConfig, log_dir=None) -> None:
-        self.model_config = deepcopy(model_config)
-        self.algo_config = deepcopy(algo_config)
+        self.model_config = model_config
+        self.algo_config = algo_config
+        self.model_keys = set(self.model_config.__dict__.keys())
+        self.scheduler_keys = set(self.algo_config.scheduler_params.__dict__.keys())
+        self.algo_keys = set(self.algo_config.__dict__.keys())
+        self.set_log_dir(log_dir)
+
+    def set_log_dir(self, log_dir=None):
         self.log_dir = log_dir
         if log_dir is not None:
             Path(log_dir).mkdir(exist_ok=True, parents=True)
 
+    @classmethod
+    def from_default(cls, log_dir=None, **override_kwargs):
+        model_config = deepcopy(cls.default_model_config)
+        algo_config = deepcopy(cls.default_algo_config)
+        scheduler_config = algo_config.scheduler_params
+        model_keys = set(model_config.__dict__.keys())
+        scheduler_keys = set(scheduler_config.__dict__.keys())
+        algo_keys = set(algo_config.__dict__.keys())
+        for key, value in override_kwargs.items():
+            if key in model_keys:
+                setattr(model_config, key, value)
+            elif key in algo_keys:
+                setattr(algo_config, key, value)
+            elif key in scheduler_keys:
+                setattr(scheduler_config, key, value)
+            else:
+                raise ValueError(f'Unknown config: {key}')
+        return cls(model_config, algo_config, log_dir)
+
+    def get(self, key: str):
+        if key == 'log_dir':
+            return self.log_dir
+        if key in self.model_keys:
+            return self.model_config.__dict__[key]
+        if key in self.algo_keys:
+            return self.algo_config.__dict__[key]
+        if key in self.scheduler_keys:
+            return self.algo_config.scheduler_params.__dict__[key]
+        raise KeyError(f'{key} not found.')
+
+    def set(self, key: str, value):
+        if key == 'log_dir':
+            self.set_log_dir(value)
+        elif key in self.model_keys:
+            setattr(self.model_config, key, value)
+        elif key in self.algo_keys:
+            setattr(self.algo_config, key, value)
+        elif key in self.scheduler_keys:
+            setattr(self.algo_config.scheduler_params, key, value)
+        else:
+            raise KeyError(f'"{key}" not found.')
+
     @property
-    def model(self):
+    def model(self) -> nn.Module:
         pass
 
     @property
-    def transformer_block_info_in_model(self):
-        return {}
+    def model_input_info(self) -> List[dict]:
+        return []
 
     @property
-    def nncf_config(self):
-        pass
-
-    @property
-    def mock_dataset(self):
-        pass
+    def transformer_block_info(self) -> List[TransformerBlockInfo]:
+        return []
 
     @staticmethod
-    def get_nncf_modules_in_transformer_block_order(compressed_model):
-        """Returns the NNCF modules in usual transformer block order, 
-        i.e., List[Tuple(query, key, value, output, feedforward_in, feedforward_out)]
-        """
+    def get_nncf_modules_in_transformer_block_order(
+            compressed_model: NNCFNetwork) -> List[TransformerBlockModuleOrderedDict]:
         return []
+
+    @property
+    def nncf_config(self) -> NNCFConfig:
+        config_dict = {
+            "input_info": self.model_input_info,
+            "compression": self.algo_config.to_dict()}
+        if self.log_dir is not None:
+            config_dict['log_dir'] = str(self.log_dir)
+        print(config_dict)
+        return NNCFConfig.from_dict(config_dict)
+
+    def generate_mock_dataset(self, num_samples: int = 20, seed: int = 42) -> datasets.Dataset:
+        g = torch.Generator()
+        g.manual_seed(seed)
+        input_dict = {}
+        for input_info in self.model_input_info:
+            shape = list(input_info.get('sample_size'))
+            keyword = input_info.get('keyword')
+            if input_info.get('type', 'float') == 'float':
+                tensor = torch.randn((num_samples, *shape[1:]), dtype=torch.float, generator=g)
+            else:
+                tensor = torch.randint(0, 2, (num_samples, *shape[1:]), generator=g)
+            input_dict[keyword] = tensor
+        input_dict['labels'] = torch.arange(self.model_config.num_labels).repeat(
+            num_samples // self.model_config.num_labels + 1)[:num_samples]
+        return datasets.Dataset.from_dict(input_dict)
 
 
 class Wav2Vec2RunRecipe(BaseMockRunRecipe):
@@ -196,7 +299,7 @@ class Wav2Vec2RunRecipe(BaseMockRunRecipe):
         hidden_size=4,
         num_hidden_layers=1,
         num_attention_heads=2,
-        intermediate_size=3,
+        intermediate_size=6,
         conv_dim=(4, 4),
         conv_stride=(1, 1),
         conv_kernel=(3, 3),
@@ -213,54 +316,38 @@ class Wav2Vec2RunRecipe(BaseMockRunRecipe):
         scheduler_params=SchedulerParams(),
     )
 
-    def __init__(self,
-                 model_config: Optional[Wav2Vec2Config] = None,
-                 algo_config: Optional[NNCFAlgoConfig] = None):
-        model_config = model_config or Wav2Vec2RunRecipe.default_model_config
-        algo_config = algo_config or Wav2Vec2RunRecipe.default_algo_config
-        super().__init__(model_config, algo_config)
-
     @property
     def model(self):
         return AutoModelForAudioClassification.from_config(self.model_config)
 
     @property
-    def transformer_block_info_in_model(self):
+    def model_input_info(self) -> List[dict]:
+        return [{"sample_size": [1, 32], "keyword": "input_values"}]
+
+    @property
+    def transformer_block_info(self):
         model_config = self.model_config
-        return dict(
+        return [TransformerBlockInfo(
             num_hidden_layers=model_config.num_hidden_layers,
-            dim_per_head=model_config.hidden_size // model_config.num_attention_heads,
-        )
+            hidden_size=model_config.hidden_size,
+            intermediate_size=model_config.intermediate_size,
+            dim_per_head=model_config.hidden_size // model_config.num_attention_heads
+        )]
 
     @staticmethod
-    def get_nncf_modules_in_transformer_block_order(compressed_wav2vec2_model):
+    def get_nncf_modules_in_transformer_block_order(
+            compressed_model: NNCFNetwork) -> List[TransformerBlockModuleOrderedDict]:
         modules = []
-        for block in compressed_wav2vec2_model.nncf_module.wav2vec2.encoder.layers:
-            modules.append(
-                (block.attention.q_proj,
-                 block.attention.k_proj,
-                 block.attention.v_proj,
-                 block.attention.out_proj,
-                 block.feed_forward.intermediate_dense,
-                 block.feed_forward.output_dense)
+        for block in compressed_model.nncf_module.wav2vec2.encoder.layers:
+            modules.append(TransformerBlockModuleOrderedDict(
+                block.attention.q_proj,
+                block.attention.k_proj,
+                block.attention.v_proj,
+                block.attention.out_proj,
+                block.feed_forward.intermediate_dense,
+                block.feed_forward.output_dense)
             )
         return modules
-
-    @property
-    def nncf_config(self):
-        config_dict = {
-            "input_info": [
-                {"sample_size": [1, 32], "keyword": "input_values"}
-            ],
-            "compression": self.algo_config.to_dict()
-        }
-        if self.log_dir is not None:
-            config_dict['log_dir'] = str(self.log_dir)
-        return NNCFConfig.from_dict(config_dict)
-
-    @property
-    def mock_dataset(self):
-        pass
 
 
 class BertRunRecipe(BaseMockRunRecipe):
@@ -268,7 +355,7 @@ class BertRunRecipe(BaseMockRunRecipe):
     supports_structured_masking = True
     default_model_config = BertConfig(
         hidden_size=4,
-        intermediate_size=3,
+        intermediate_size=6,
         max_position_embeddings=512,
         num_attention_heads=2,
         num_hidden_layers=1,
@@ -285,52 +372,180 @@ class BertRunRecipe(BaseMockRunRecipe):
         scheduler_params=SchedulerParams(),
     )
 
-    def __init__(self,
-                 model_config: Optional[BertConfig] = None,
-                 algo_config: Optional[NNCFAlgoConfig] = None):
-        model_config = model_config or BertRunRecipe.default_model_config
-        algo_config = algo_config or BertRunRecipe.default_algo_config
-        super().__init__(model_config, algo_config)
-
     @property
     def model(self):
         return AutoModelForSequenceClassification.from_config(self.model_config)
 
     @property
-    def transformer_block_info_in_model(self):
-        model_config = self.model_config
-        return dict(
-            num_hidden_layers=model_config.num_hidden_layers,
-            dim_per_head=model_config.hidden_size // model_config.num_attention_heads,
-        )
+    def model_input_info(self) -> List[dict]:
+        return [
+            {"sample_size": [1, 256], "type": "long", "keyword": "input_ids"},
+            {"sample_size": [1, 256], "type": "long", "keyword": "token_type_ids"},
+            {"sample_size": [1, 256], "type": "long", "keyword": "position_ids"},
+            {"sample_size": [1, 256], "type": "long", "keyword": "attention_mask"},
+        ]
 
     @property
-    def nncf_config(self):
-        config_dict = {
-            "input_info": [
-                {"sample_size": [1, 256], "type": "long", "keyword": "input_ids"},
-                {"sample_size": [1, 256], "type": "long", "keyword": "token_type_ids"},
-                {"sample_size": [1, 256], "type": "long", "keyword": "position_ids"},
-                {"sample_size": [1, 256], "type": "long", "keyword": "attention_mask"},
-            ],
-            "compression": self.algo_config.to_dict()}
-        if self.log_dir is not None:
-            config_dict['log_dir'] = str(self.log_dir)
-        return NNCFConfig.from_dict(config_dict)
+    def transformer_block_info(self):
+        model_config = self.model_config
+        return [TransformerBlockInfo(
+            num_hidden_layers=model_config.num_hidden_layers,
+            hidden_size=model_config.hidden_size,
+            intermediate_size=model_config.intermediate_size,
+            dim_per_head=model_config.hidden_size // model_config.num_attention_heads
+        )]
 
     @staticmethod
-    def get_nncf_modules_in_transformer_block_order(compressed_bert_model):
+    def get_nncf_modules_in_transformer_block_order(compressed_model) -> List[TransformerBlockModuleOrderedDict]:
         modules = []
-        for block in compressed_bert_model.nncf_module.bert.encoder.layer:
-            modules.append(
-                (block.attention.self.query,
-                 block.attention.self.key,
-                 block.attention.self.value,
-                 block.attention.output.dense,
-                 block.intermediate.dense,
-                 block.output.dense)
+        for block in compressed_model.nncf_module.bert.encoder.layer:
+            modules.append(TransformerBlockModuleOrderedDict(
+                block.attention.self.query,
+                block.attention.self.key,
+                block.attention.self.value,
+                block.attention.output.dense,
+                block.intermediate.dense,
+                block.output.dense)
             )
         return modules
+
+
+class SwinRunRecipe(BaseMockRunRecipe):
+    model_family = 'huggingface_swin'
+    supports_structured_masking = True
+    default_model_config = SwinConfig(
+        image_size=4,
+        patch_size=1,
+        num_channels=3,
+        embed_dim=4,
+        depths=[1, 1],
+        num_heads=[2, 4],
+        window_size=2,
+        mlp_ratio=6 / 4,
+        num_labels=2
+    )
+    default_algo_config = NNCFAlgoConfig(
+        sparse_structure_by_scopes=[
+            {"mode": "block", "sparse_factors": [2, 2], "target_scopes": "{re}.*attention*"},
+            {"mode": "per_dim", "axis": 0, "target_scopes": "{re}.*SwinIntermediate.*"},
+            {"mode": "per_dim", "axis": 1, "target_scopes": "{re}.*SwinOutput.*"},
+        ],
+        ignored_scopes=["{re}embedding", "{re}pooler", "{re}classifier"],
+        scheduler_params=SchedulerParams(),
+    )
+
+    @property
+    def model(self):
+        return AutoModelForImageClassification.from_config(self.model_config)
+
+    @property
+    def model_input_info(self) -> List[dict]:
+        img_size = self.model_config.image_size
+        return [{"sample_size": [1, self.model_config.num_channels, img_size, img_size],
+                 "keyword": 'pixel_values'}]
+
+    @property
+    def transformer_block_info(self) -> List[TransformerBlockInfo]:
+        model_config = self.model_config
+        info_list = []
+        for i, (depth, num_head) in enumerate(zip(model_config.depths, model_config.num_heads)):
+            hidden_size = model_config.embed_dim * int(2 ** i)
+            intermediate_size = int(hidden_size * model_config.mlp_ratio)
+            dim_per_head = hidden_size // num_head
+            info_list.append(TransformerBlockInfo(
+                num_hidden_layers=depth,
+                hidden_size=hidden_size,
+                intermediate_size=intermediate_size,
+                dim_per_head=dim_per_head
+            ))
+        return info_list
+
+    @staticmethod
+    def get_nncf_modules_in_transformer_block_order(compressed_model) -> List[TransformerBlockModuleOrderedDict]:
+        modules = []
+        for layer in compressed_model.nncf_module.swin.encoder.layers:
+            for block in layer.blocks:
+                modules.append(TransformerBlockModuleOrderedDict(
+                    block.attention.self.query,
+                    block.attention.self.key,
+                    block.attention.self.value,
+                    block.attention.output.dense,
+                    block.intermediate.dense,
+                    block.output.dense)
+                )
+        return modules
+
+
+class LinearForClassification(PreTrainedModel):
+
+    def __init__(self, input_size: int = 4, bias: bool = True, num_classes: int = 2):
+        super().__init__(PretrainedConfig())
+        self.model = nn.Linear(input_size, num_classes, bias=bias)
+
+    def forward(self, tensor, labels=None):
+        logits = self.model(tensor)
+        if labels is not None:
+            loss = F.cross_entropy(logits, labels)
+            return {"loss": loss, "logits": logits}
+        return {"logits": logits}
+
+
+class Conv2dForClassification(LinearForClassification):
+
+    def __init__(self, input_size: int = 4, bias: bool = True, num_classes: int = 2):
+        super().__init__(input_size, bias, num_classes)
+        self.model = nn.Sequential(
+            nn.Conv2d(3, num_classes, kernel_size=3, stride=1, padding=1, bias=bias),
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+        )
+
+
+class LinearRunRecipe(BaseMockRunRecipe):
+    model_family = 'linear'
+    supports_structured_masking = False
+    default_model_config = PretrainedConfig(
+        num_classes=2,
+        input_size=4,
+        bias=True
+    )
+    default_algo_config = NNCFAlgoConfig(
+        sparse_structure_by_scopes=[
+            {"mode": "block", "sparse_factors": [2, 2], "target_scopes": "{re}model"},
+        ],
+        enable_structured_masking=False
+    )
+
+    @property
+    def model(self):
+        return LinearForClassification(self.model_config.input_size, self.model_config.num_classes)
+
+    @property
+    def model_input_info(self) -> List[dict]:
+        return [{"sample_size": [1, self.model_config.input_size], "keyword": "tensor"}]
+
+
+class Conv2dRunRecipe(BaseMockRunRecipe):
+    model_family = 'conv2d'
+    supports_structured_masking = False
+    default_model_config = PretrainedConfig(
+        num_classes=2,
+        input_size=4,
+        bias=True
+    )
+    default_algo_config = NNCFAlgoConfig(
+        enable_structured_masking=False
+    )
+
+    @property
+    def model(self):
+        return Conv2dForClassification(self.model_config.input_size,
+                                       self.model_config.num_classes)
+
+    @property
+    def model_input_info(self) -> List[dict]:
+        return [{"sample_size": [1, 3, self.model_config.input_size, self.model_config.input_size],
+                 "keyword": "tensor"}]
 
 
 class ConfigBuilder:
@@ -342,7 +557,7 @@ class ConfigBuilder:
             "init_importance_threshold": -0.1,
             "final_importance_threshold": 0.0,
             "importance_regularization_factor": 0.2,
-            "steps_per_epoch": 128 // 32,
+            "steps_per_epoch": 4,
             "enable_structured_masking": True,
             "sparse_structure_by_scopes": [
                 {"mode": "block", "sparse_factors": [16, 16], "target_scopes": "{re}.*attention*"},
@@ -391,89 +606,88 @@ class ConfigBuilder:
         return self
 
 
-class Trainer(BaseTrainer):
-    def __init__(self, compression_ctrl, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
+class CompressionTrainer(Trainer):
+    def __init__(self,
+                 compression_ctrl: Optional[CompressionAlgorithmController],
+                 callbacks: Optional[List[TrainerCallback]] = None,
+                 *args, **kwargs):
         self.compression_ctrl = compression_ctrl
+        if compression_ctrl is not None:
+            if not callbacks:
+                compression_callback = CompressionCallback(compression_ctrl)
+                callbacks = [compression_callback]
+        self.compression_callbacks = callbacks
+        super().__init__(callbacks=callbacks, *args, **kwargs)
+        if not (self.args.local_rank == -1 or self.args.no_cuda or compression_ctrl is None):
+            compression_ctrl.distributed()
 
     def compute_loss(self, model, inputs, return_outputs=False):
-        loss_main, outputs = super().compute_loss(model, inputs, return_outputs=True)
-        loss_compress = self.compression_ctrl.loss()
-        loss = loss_main + loss_compress
+        loss, outputs = super().compute_loss(model, inputs, return_outputs=True)
+        if self.compression_ctrl is not None:
+            loss_compress = self.compression_ctrl.loss()
+            loss = loss + loss_compress
         return (loss, outputs) if return_outputs else loss
 
 
-class BaseCallback(TrainerCallback):
+class CompressionCallback(TrainerCallback):
     def __init__(self, compression_ctrl: CompressionAlgorithmController) -> None:
         self.compression_ctrl = compression_ctrl
-        self._compress_log = dict()
+        self._compression_log = []
 
-    def get_compress_log(self):
-        return self._compress_log.copy()
-
-    def get_train_log(self):
-        return self._train_log.copy()
-
-    def on_train_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
-        self._train_log = state.log_history
+    def on_epoch_begin(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+        self.compression_ctrl.scheduler.epoch_step()
 
     def on_step_begin(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
         self.compression_ctrl.scheduler.step()
 
     def on_step_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
-        movement_ctrl_statistics = self.compression_ctrl.statistics().movement_sparsity
-        info = dict(
-            step=state.global_step,
-            epoch=state.epoch,
-            importance_regularization_factor=movement_ctrl_statistics.importance_regularization_factor,
-            importance_threshold=movement_ctrl_statistics.importance_threshold,
-            relative_sparsity=movement_ctrl_statistics.model_statistics.sparsity_level_for_layers,
-        )
-        self._compress_log[float(state.epoch)] = info
+        stats = self.compression_ctrl.statistics()
+        stat_dict = prepare_for_tensorboard(stats)
+        stat_dict.update(step=state.global_step, epoch=state.epoch)
+        self._compression_log.append(stat_dict)
 
-    def on_epoch_begin(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
-        self.compression_ctrl.scheduler.epoch_step()
-        mvmt_ctrl = self.compression_ctrl  # TODO: mutliple child ctrls
-        # should move into the scheduler codes
-        if self.compression_ctrl.scheduler.get_state()["current_epoch"] == mvmt_ctrl.scheduler.warmup_end_epoch:
-            print('Fill stage')
-            mvmt_ctrl.reset_independent_structured_mask()
-            mvmt_ctrl.resolve_structured_mask()
-            mvmt_ctrl.populate_structured_mask()
+    def on_train_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+        self._training_log = state.log_history
+
+    def get_compress_log(self):
+        return self._compression_log
+
+    def get_train_log(self):
+        return self._training_log
 
 
-def run_movement_pipeline(tmp_path, compression_ctrl, compressed_model,
-                          callbacks: Optional[List[BaseCallback]] = None, **kwargs):  # temporarily remove fixture for model & dataset
-    train_dataset, eval_dataset = yelp_dataset()
-    args = dict(
-        output_dir=tmp_path / "test_trainer",
+def run_movement_pipeline(tmp_path, compression_ctrl, compressed_model, train_dataset, eval_dataset, batch_size,
+                          callback: Optional[CompressionCallback] = None, **training_kwargs):
+    default_args = dict(
+        output_dir=Path(tmp_path) / "test_trainer",
         label_names=["labels"],
         evaluation_strategy="epoch",
-        per_device_train_batch_size=32,
-        per_device_eval_batch_size=32,
+        per_device_train_batch_size=batch_size,
+        per_device_eval_batch_size=batch_size,
         num_train_epochs=6,
         learning_rate=1e-3,
         optim="adamw_torch",
         remove_unused_columns=False,
         report_to="none",
         disable_tqdm=True,
-        no_cuda=True,  # TODO: where to set cuda devices for cuda training?
+        no_cuda=True,
     )
-    args.update(kwargs)
-    training_args = TrainingArguments(**args)
+    default_args.update(training_kwargs)
+    training_args = TrainingArguments(**default_args)
 
     def compute_metrics(eval_pred):
         logits, labels = eval_pred
         predictions = np.argmax(logits, axis=-1)
         return dict(acc=(predictions == labels).mean())
 
-    if callbacks is None:
-        callbacks = [BaseCallback(compression_ctrl)]
-    trainer = Trainer(
+    if callback is None:
+        callback = CompressionCallback(compression_ctrl)
+
+    trainer = CompressionTrainer(
         model=compressed_model,
         args=training_args,
         compression_ctrl=compression_ctrl,
-        callbacks=callbacks,
+        callbacks=[callback],
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         compute_metrics=compute_metrics,
@@ -481,10 +695,10 @@ def run_movement_pipeline(tmp_path, compression_ctrl, compressed_model,
 
     train_result = trainer.train()
     eval_result = trainer.evaluate()
-    return train_result, eval_result, callbacks
+    return train_result, eval_result, callback
 
 
 def initialize_sparsifer_parameters(operand: MovementSparsifier, mean: float = 0., std: float = 3.):
-    torch.nn.init.normal_(operand.weight_importance, mean, std)
+    nn.init.normal_(operand.weight_importance, mean, std)
     if operand.prune_bias:
-        torch.nn.init.normal_(operand.bias_importance, mean, std)
+        nn.init.normal_(operand.bias_importance, mean, std)

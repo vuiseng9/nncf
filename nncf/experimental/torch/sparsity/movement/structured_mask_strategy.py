@@ -133,4 +133,13 @@ class HuggingFaceSwinStructuredMaskStrategy(BaseTransformerStructuredMaskStrateg
 
     @classmethod
     def from_compressed_model(cls, compressed_model: NNCFNetwork):
-        return cls(dim_per_head=compressed_model.nncf_module.swin.config.encoder_stride)
+        model_config = compressed_model.nncf_module.swin.config
+        dim_per_head_list = []
+        for i, num_head in enumerate(model_config.num_heads):
+            hidden_size = model_config.embed_dim * int(2 ** i)
+            dim_per_head = hidden_size // num_head
+            dim_per_head_list.append(dim_per_head)
+        if any(dim != dim_per_head_list[0] for dim in dim_per_head_list[1:]):
+            raise NotImplementedError('Currently we only support SwinTransformers '
+                                      'whose attention heads all have the same dimension.')  # TODO(yujie): add test
+        return cls(dim_per_head=dim_per_head_list[0])
