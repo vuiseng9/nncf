@@ -8,16 +8,8 @@ import pytest
 import torch
 
 import nncf
-from tests.torch.sparsity.movement.helpers import BaseMockRunRecipe
-from tests.torch.sparsity.movement.helpers import BertRunRecipe
-from tests.torch.sparsity.movement.helpers import Wav2Vec2RunRecipe
-from tests.torch.sparsity.movement.helpers import mock_linear_nncf_node
-from tests.torch.sparsity.movement.helpers import ensure_tensor
-from tests.torch.sparsity.movement.helpers import ParamDict
-from tests.torch.sparsity.movement.helpers import TransformerBlockModuleOrderedDict
 from nncf.torch import create_compressed_model
 from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlockType
-from nncf.experimental.torch.sparsity.movement.layers import MovementSparsifier, SparseConfig, SparseStructure
 from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskContextGroup
 from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskHandler
 from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskContext
@@ -25,6 +17,21 @@ from nncf.experimental.torch.sparsity.movement.structured_mask_handler import St
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import detect_supported_model_family
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import STRUCTURED_MASK_STRATEGY
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import StructuredMaskRule
+from nncf.experimental.torch.sparsity.movement.layers import MovementSparsifier, SparseConfig, SparseStructure
+from tests.torch.sparsity.movement.helpers import BaseMockRunRecipe
+from tests.torch.sparsity.movement.helpers import BertRunRecipe
+from tests.torch.sparsity.movement.helpers import Wav2Vec2RunRecipe
+from tests.torch.sparsity.movement.helpers import mock_linear_nncf_node
+from tests.torch.sparsity.movement.helpers import ensure_tensor
+from tests.torch.sparsity.movement.helpers import SwinRunRecipe
+from tests.torch.sparsity.movement.helpers import TransformerBlockModuleOrderedDict
+
+STRUCTURED_MASK_SUPPORTED_RECIPES = [
+    BertRunRecipe.from_default(hidden_size=4, intermediate_size=3),
+    Wav2Vec2RunRecipe.from_default(hidden_size=4, intermediate_size=3),
+    SwinRunRecipe.from_default(embed_dim=4, mlp_ratio=0.75, qkv_bias=False),
+    SwinRunRecipe.from_default(embed_dim=4, mlp_ratio=0.75, depths=[1], num_heads=[2])
+]
 
 desc_test_update_independent_structured_mask = {
     "prune1row": dict(
@@ -285,43 +292,44 @@ desc_test_resolve_dependent_structured = {
     )
 }
 
-run_recipes = [BertRunRecipe.from_default(), Wav2Vec2RunRecipe.from_default()]
 
-
-@pytest.mark.parametrize('run_recipe', run_recipes,
-                         ids=[r.model_family for r in run_recipes])
 class TestStructuredMaskHandler:
-    @pytest.fixture(autouse=True)
-    def setup(self, run_recipe):
-        self.model = run_recipe.model
-        self.nncf_config = run_recipe.nncf_config
-        self.compression_ctrl, self.compressed_model = create_compressed_model(self.model, self.nncf_config,
-                                                                               dump_graphs=False)
-        strategy = STRUCTURED_MASK_STRATEGY.get(run_recipe.model_family).from_compressed_model(self.compressed_model)
-        self.handler = StructuredMaskHandler(
-            self.compressed_model, self.compression_ctrl.sparsified_module_info, strategy)
-        self.run_recipe = run_recipe
-        self.all_ctxes = []
-        for group in self.handler._structured_mask_ctx_groups:
-            self.all_ctxes.extend(group.structured_mask_context_list)
+    def create_handler(self, run_recipe: BaseMockRunRecipe):
+        compression_ctrl, compressed_model = create_compressed_model(run_recipe.model,
+                                                                     run_recipe.nncf_config,
+                                                                     dump_graphs=False)
+        strategy = STRUCTURED_MASK_STRATEGY.get(run_recipe.model_family).from_compressed_model(compressed_model)
+        handler = StructuredMaskHandler(compressed_model,
+                                        compression_ctrl.sparsified_module_info,
+                                        strategy)
+        all_ctxes = []
+        for group in handler._structured_mask_ctx_groups:
+            all_ctxes.extend(group.structured_mask_context_list)
+        return compression_ctrl, compressed_model, handler, all_ctxes
 
-    def test_create_ctx_groups(self):
-        handler = self.handler
-        run_recipe = self.run_recipe
-        assert len(handler._structured_mask_ctx_groups) == 2
+    @pytest.mark.parametrize('run_recipe', STRUCTURED_MASK_SUPPORTED_RECIPES,
+                             ids=[r.model_family for r in STRUCTURED_MASK_SUPPORTED_RECIPES])
+    def test_create_ctx_groups(self, run_recipe):
+        compression_ctrl, compressed_model, handler, all_ctxes = self.create_handler(run_recipe)
+        num_transformer_blocks = sum(tbinfo.num_hidden_layers for tbinfo in run_recipe.transformer_block_info)
+        assert len(handler._structured_mask_ctx_groups) == num_transformer_blocks * 2
         handler._structured_mask_ctx_groups.sort(key=lambda group: group.group_type.value)
-        group_ff = handler._structured_mask_ctx_groups[0]
-        assert isinstance(group_ff, StructuredMaskContextGroup)
-        assert group_ff.group_type == BuildingBlockType.FF
-        assert len(group_ff.structured_mask_context_list) == 2
-        group_mhsa = handler._structured_mask_ctx_groups[1]
-        assert isinstance(group_mhsa, StructuredMaskContextGroup)
-        assert group_mhsa.group_type == BuildingBlockType.MSHA
-        assert len(group_mhsa.structured_mask_context_list) == 4
+        for i in range(num_transformer_blocks):
+            group_ff = handler._structured_mask_ctx_groups[i]
+            assert isinstance(group_ff, StructuredMaskContextGroup)
+            assert group_ff.group_type == BuildingBlockType.FF
+            assert len(group_ff.structured_mask_context_list) == 2
+        for i in range(num_transformer_blocks, num_transformer_blocks * 2):
+            group_mhsa = handler._structured_mask_ctx_groups[i]
+            assert isinstance(group_mhsa, StructuredMaskContextGroup)
+            assert group_mhsa.group_type == BuildingBlockType.MSHA
+            assert len(group_mhsa.structured_mask_context_list) == 4
 
     def test_update_independent_structured_mask(self, mocker):
-        handler = self.handler
-        mock_methods = [mocker.patch.object(ctx, 'update_independent_structured_mask') for ctx in self.all_ctxes]
+        recipe = STRUCTURED_MASK_SUPPORTED_RECIPES[0]
+        compression_ctrl, compressed_model, handler, all_ctxes = self.create_handler(recipe)
+        mock_methods = [mocker.patch.object(ctx, 'update_independent_structured_mask')
+                        for ctx in all_ctxes]
         handler.update_independent_structured_mask()
         for mock_method in mock_methods:
             mock_method.assert_called_once()
@@ -329,13 +337,13 @@ class TestStructuredMaskHandler:
     @pytest.mark.parametrize('desc', desc_test_resolve_dependent_structured.values(),
                              ids=desc_test_resolve_dependent_structured.keys())
     def test_resolve_dependent_structured_mask(self, desc):
-        handler = self.handler
-        run_recipe = self.run_recipe
-        modules = run_recipe.get_nncf_modules_in_transformer_block_order(self.compressed_model)[0]
+        run_recipe = STRUCTURED_MASK_SUPPORTED_RECIPES[0]
+        compression_ctrl, compressed_model, handler, all_ctxes = self.create_handler(run_recipe)
+        module_dict = run_recipe.get_nncf_modules_in_transformer_block_order(compressed_model)[0]
         module_2_node_name = {minfo.module: minfo.module_node_name
-                              for minfo in self.compression_ctrl.sparsified_module_info}
-        node_name_2_context = {ctx.module_node_name: ctx for ctx in self.all_ctxes}
-        ctxes = [node_name_2_context[module_2_node_name[m]] for m in modules]
+                              for minfo in compression_ctrl.sparsified_module_info}
+        node_name_2_context = {ctx.module_node_name: ctx for ctx in all_ctxes}
+        ctxes = [node_name_2_context[module_2_node_name[m]] for m in module_dict.values()]
         for ctx, param in zip(ctxes, desc['independent_structured'].values()):
             ctx.independent_structured_mask = param
 
@@ -344,9 +352,10 @@ class TestStructuredMaskHandler:
             assert torch.allclose(ctx.dependent_structured_mask, ref_param)
 
     def test_populate_dependent_structured_mask_to_operand(self, mocker):
-        handler = self.handler
+        recipe = STRUCTURED_MASK_SUPPORTED_RECIPES[0]
+        compression_ctrl, compressed_model, handler, all_ctxes = self.create_handler(recipe)
         mock_methods = [mocker.patch.object(ctx, 'populate_dependent_structured_mask_to_operand')
-                        for ctx in self.all_ctxes]
+                        for ctx in all_ctxes]
         handler.populate_dependent_structured_mask_to_operand()
         for mock_method in mock_methods:
             mock_method.assert_called_once()
@@ -354,7 +363,9 @@ class TestStructuredMaskHandler:
     @pytest.mark.parametrize('max_num_of_kept_heads_to_report', [1, 20])
     def test_report_structured_sparsity(self, tmp_path, mocker, max_num_of_kept_heads_to_report):
         file_name = 'structured_report'
-        df = self.handler.report_structured_sparsity(
+        recipe = STRUCTURED_MASK_SUPPORTED_RECIPES[0]
+        compression_ctrl, compressed_model, handler, all_ctxes = self.create_handler(recipe)
+        df = handler.report_structured_sparsity(
             tmp_path, file_name=file_name, to_csv=True, to_markdown=True,
             max_num_of_kept_heads_to_report=max_num_of_kept_heads_to_report)
         assert isinstance(df, pd.DataFrame)
@@ -362,7 +373,7 @@ class TestStructuredMaskHandler:
         mock_stat = StructuredMaskContextStatistics(*([mocker.Mock()] * 6))
         ref_columns = ["group_id", "type", "torch_module", *mock_stat.__dict__.keys()]
         assert sorted(columns) == sorted(ref_columns)
-        assert len(df) == 6
+        assert len(df) == 6 * sum(tbinfo.num_hidden_layers for tbinfo in recipe.transformer_block_info)
         for item in df['head_or_channel_id_to_keep']:
             if isinstance(item, list):
                 assert len(item) <= max_num_of_kept_heads_to_report
@@ -374,7 +385,7 @@ class TestStructuredMaskHandler:
 
 
 class TestStructuredMaskStrategy:
-    @pytest.mark.parametrize('run_recipe', run_recipes)
+    @pytest.mark.parametrize('run_recipe', STRUCTURED_MASK_SUPPORTED_RECIPES)
     def test_detect_supported_model_family(self, run_recipe: BaseMockRunRecipe):
         model = run_recipe.model
         nncf_config = run_recipe.nncf_config
@@ -386,7 +397,7 @@ class TestStructuredMaskStrategy:
         else:
             assert retval is None
 
-    @pytest.mark.parametrize('run_recipe', filter(lambda r: r.supports_structured_masking, run_recipes))
+    @pytest.mark.parametrize('run_recipe', STRUCTURED_MASK_SUPPORTED_RECIPES)
     def test_create_strategy(self, run_recipe: BaseMockRunRecipe):
         model = run_recipe.model
         nncf_config = run_recipe.nncf_config

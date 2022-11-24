@@ -337,8 +337,12 @@ class Wav2Vec2RunRecipe(BaseMockRunRecipe):
     )
 
     default_algo_config = NNCFAlgoConfig(
-        sparse_structure_by_scopes=[],
-        ignored_scopes=[],
+        sparse_structure_by_scopes=[
+            {"mode": "block", "sparse_factors": [2, 2], "target_scopes": "{re}Wav2Vec2Attention"},
+            {"mode": "per_dim", "axis": 0, "target_scopes": "{re}intermediate_dense"},
+            {"mode": "per_dim", "axis": 1, "target_scopes": "{re}output_dense"},
+        ],
+        ignored_scopes=["{re}feature_extractor"],
         scheduler_params=SchedulerParams(),
     )
 
@@ -389,9 +393,9 @@ class BertRunRecipe(BaseMockRunRecipe):
     )
     default_algo_config = NNCFAlgoConfig(
         sparse_structure_by_scopes=[
-            {"mode": "block", "sparse_factors": [2, 2], "target_scopes": "{re}.*attention*"},
-            {"mode": "per_dim", "axis": 0, "target_scopes": "{re}.*BertIntermediate.*"},
-            {"mode": "per_dim", "axis": 1, "target_scopes": "{re}.*BertOutput.*"},
+            {"mode": "block", "sparse_factors": [2, 2], "target_scopes": "{re}attention"},
+            {"mode": "per_dim", "axis": 0, "target_scopes": "{re}BertIntermediate"},
+            {"mode": "per_dim", "axis": 1, "target_scopes": "{re}BertOutput"},
         ],
         ignored_scopes=["{re}embedding", "{re}pooler", "{re}classifier"],
         scheduler_params=SchedulerParams(),
@@ -451,9 +455,9 @@ class SwinRunRecipe(BaseMockRunRecipe):
     )
     default_algo_config = NNCFAlgoConfig(
         sparse_structure_by_scopes=[
-            {"mode": "block", "sparse_factors": [2, 2], "target_scopes": "{re}.*attention*"},
-            {"mode": "per_dim", "axis": 0, "target_scopes": "{re}.*SwinIntermediate.*"},
-            {"mode": "per_dim", "axis": 1, "target_scopes": "{re}.*SwinOutput.*"},
+            {"mode": "block", "sparse_factors": [2, 2], "target_scopes": "{re}attention"},
+            {"mode": "per_dim", "axis": 0, "target_scopes": "{re}SwinIntermediate"},
+            {"mode": "per_dim", "axis": 1, "target_scopes": "{re}SwinOutput"},
         ],
         ignored_scopes=["{re}embedding", "{re}pooler", "{re}classifier"],
         scheduler_params=SchedulerParams(),
@@ -566,7 +570,6 @@ class Conv2dRunRecipe(BaseMockRunRecipe):
                                        bias=model_config.bias,
                                        num_classes=model_config.num_classes)
 
-
     @property
     def model_input_info(self) -> List[dict]:
         return [{"sample_size": [1, 3, self.model_config.input_size, self.model_config.input_size],
@@ -585,9 +588,9 @@ class ConfigBuilder:
             "steps_per_epoch": 4,
             "enable_structured_masking": True,
             "sparse_structure_by_scopes": [
-                {"mode": "block", "sparse_factors": [16, 16], "target_scopes": "{re}.*attention*"},
-                {"mode": "per_dim", "axis": 0, "target_scopes": "{re}.*BertIntermediate.*"},
-                {"mode": "per_dim", "axis": 1, "target_scopes": "{re}.*BertOutput.*"},
+                {"mode": "block", "sparse_factors": [16, 16], "target_scopes": "{re}attention"},
+                {"mode": "per_dim", "axis": 0, "target_scopes": "{re}BertIntermediate"},
+                {"mode": "per_dim", "axis": 1, "target_scopes": "{re}BertOutput"},
             ],
             "ignored_scopes": ["{re}embedding", "{re}pooler", "{re}classifier"],
         }
