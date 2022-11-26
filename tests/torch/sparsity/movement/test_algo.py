@@ -248,14 +248,13 @@ def test_layer_actual_behavior_matches_sparsifer_mask(sparse_structure_by_scopes
         assert torch.allclose(equiv_bias, torch.zeros_like(equiv_bias))
 
 
-@pytest.mark.parametrize('desc', [
-    # TODO(yujie): check fill operation cases
-    dict(
+desc_test_controller_structured_mask_filling = {
+    "prune_1head_1channel": dict(
         unstructured_binary_mask=TransformerBlockModuleOrderedDict(
             mhsa_q=ParamDict(weight=[[1, 0, 0, 0], [1, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], bias=[0, 0, 0, 0]),
             mhsa_k=ParamDict(weight=[[0, 1, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], bias=[1, 0, 0, 0]),
             mhsa_v=ParamDict(weight=[[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], bias=[0, 1, 0, 0]),
-            mhsa_o=ParamDict(weight=[[0, 1, 0, 0], [1, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], bias=[0, 0, 0, 0]),
+            mhsa_o=ParamDict(weight=[[0, 1, 0, 0], [1, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], bias=[1, 1, 1, 0]),
             ffn_i=ParamDict(weight=[[1, 1, 0, 1], [1, 1, 0, 1], [0, 0, 0, 0]], bias=[1, 0, 0]),
             ffn_o=ParamDict(weight=[[0, 1, 0], [1, 1, 0], [1, 1, 0], [1, 1, 0]], bias=[0, 0, 0, 0])
         ),
@@ -268,15 +267,71 @@ def test_layer_actual_behavior_matches_sparsifer_mask(sparse_structure_by_scopes
             ffn_o=ParamDict(weight=[[1, 1, 0], [1, 1, 0], [1, 1, 0], [1, 1, 0]], bias=[1, 1, 1, 1])
         )
     ),
-])
+    "prune_1head_1channel_no_mhsa_qkv_bias": dict(
+        unstructured_binary_mask=TransformerBlockModuleOrderedDict(
+            mhsa_q=ParamDict(weight=[[0, 0, 0, 0], [0, 0, 0, 0], [1, 0, 0, 0], [1, 0, 0, 0]], bias=None),
+            mhsa_k=ParamDict(weight=[[0, 0, 0, 0], [0, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 0]], bias=None),
+            mhsa_v=ParamDict(weight=[[0, 0, 0, 0], [0, 0, 0, 0], [1, 0, 0, 0], [0, 1, 0, 0]], bias=None),
+            mhsa_o=ParamDict(weight=[[0, 0, 0, 1], [0, 0, 1, 0], [0, 0, 0, 0], [0, 0, 1, 0]], bias=[1, 1, 0, 0]),
+            ffn_i=ParamDict(weight=[[1, 1, 0, 1], [1, 1, 0, 1], [0, 0, 0, 0]], bias=[1, 0, 0]),
+            ffn_o=ParamDict(weight=[[0, 1, 0], [1, 1, 0], [1, 1, 0], [1, 1, 0]], bias=[0, 0, 0, 0])
+        ),
+        ref_structured_binary_mask=TransformerBlockModuleOrderedDict(
+            mhsa_q=ParamDict(weight=[[0, 0, 0, 0], [0, 0, 0, 0], [1, 1, 1, 1], [1, 1, 1, 1]], bias=None),
+            mhsa_k=ParamDict(weight=[[0, 0, 0, 0], [0, 0, 0, 0], [1, 1, 1, 1], [1, 1, 1, 1]], bias=None),
+            mhsa_v=ParamDict(weight=[[0, 0, 0, 0], [0, 0, 0, 0], [1, 1, 1, 1], [1, 1, 1, 1]], bias=None),
+            mhsa_o=ParamDict(weight=[[0, 0, 1, 1], [0, 0, 1, 1], [0, 0, 1, 1], [0, 0, 1, 1]], bias=[1, 1, 1, 1]),
+            ffn_i=ParamDict(weight=[[1, 1, 1, 1], [1, 1, 1, 1], [0, 0, 0, 0]], bias=[1, 1, 0]),
+            ffn_o=ParamDict(weight=[[1, 1, 0], [1, 1, 0], [1, 1, 0], [1, 1, 0]], bias=[1, 1, 1, 1])
+        )
+    ),
+    "prune_1channel_no_mhsa_o_bias": dict(
+        unstructured_binary_mask=TransformerBlockModuleOrderedDict(
+            mhsa_q=ParamDict(weight=[[0, 0, 0, 0], [0, 0, 0, 0], [1, 0, 0, 0], [1, 0, 0, 0]], bias=[1, 0, 0, 0]),
+            mhsa_k=ParamDict(weight=[[0, 0, 0, 0], [0, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 0]], bias=[0, 0, 0, 0]),
+            mhsa_v=ParamDict(weight=[[0, 0, 0, 0], [0, 0, 0, 0], [1, 0, 0, 0], [0, 1, 0, 0]], bias=[0, 0, 0, 0]),
+            mhsa_o=ParamDict(weight=[[1, 0, 0, 1], [0, 0, 1, 0], [0, 0, 0, 0], [0, 0, 1, 0]], bias=None),
+            ffn_i=ParamDict(weight=[[1, 1, 0, 1], [1, 1, 0, 1], [0, 0, 0, 0]], bias=[1, 0, 0]),
+            ffn_o=ParamDict(weight=[[0, 1, 0], [1, 1, 0], [1, 1, 0], [1, 1, 0]], bias=[0, 0, 0, 0])
+        ),
+        ref_structured_binary_mask=TransformerBlockModuleOrderedDict(
+            mhsa_q=ParamDict(weight=torch.ones((4, 4)), bias=torch.ones(4)),
+            mhsa_k=ParamDict(weight=torch.ones((4, 4)), bias=torch.ones(4)),
+            mhsa_v=ParamDict(weight=torch.ones((4, 4)), bias=torch.ones(4)),
+            mhsa_o=ParamDict(weight=torch.ones((4, 4)), bias=None),
+            ffn_i=ParamDict(weight=[[1, 1, 1, 1], [1, 1, 1, 1], [0, 0, 0, 0]], bias=[1, 1, 0]),
+            ffn_o=ParamDict(weight=[[1, 1, 0], [1, 1, 0], [1, 1, 0], [1, 1, 0]], bias=[1, 1, 1, 1])
+        )
+    ),
+    "prune_none_no_ffn_bias": dict(
+        unstructured_binary_mask=TransformerBlockModuleOrderedDict(
+            mhsa_q=ParamDict(weight=[[1, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [1, 0, 0, 0]], bias=[1, 0, 0, 0]),
+            mhsa_k=ParamDict(weight=[[0, 0, 0, 0], [0, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 0]], bias=[0, 0, 0, 0]),
+            mhsa_v=ParamDict(weight=[[0, 0, 0, 0], [0, 0, 0, 0], [1, 0, 0, 0], [0, 1, 0, 0]], bias=[0, 0, 0, 0]),
+            mhsa_o=ParamDict(weight=[[0, 0, 0, 1], [0, 0, 1, 0], [0, 0, 0, 0], [0, 0, 1, 0]], bias=[1, 1, 0, 0]),
+            ffn_i=ParamDict(weight=[[1, 1, 0, 1], [1, 1, 0, 1], [0, 0, 0, 0]], bias=None),
+            ffn_o=ParamDict(weight=[[0, 1, 0], [1, 0, 1], [1, 1, 0], [1, 1, 0]], bias=None)
+        ),
+        ref_structured_binary_mask=TransformerBlockModuleOrderedDict(
+            mhsa_q=ParamDict(weight=torch.ones((4, 4)), bias=torch.ones(4)),
+            mhsa_k=ParamDict(weight=torch.ones((4, 4)), bias=torch.ones(4)),
+            mhsa_v=ParamDict(weight=torch.ones((4, 4)), bias=torch.ones(4)),
+            mhsa_o=ParamDict(weight=torch.ones((4, 4)), bias=torch.ones(4)),
+            ffn_i=ParamDict(weight=torch.ones((3, 4)), bias=None),
+            ffn_o=ParamDict(weight=torch.ones((4, 3)), bias=None)
+        )
+    ),
+}
+
+
+@pytest.mark.parametrize('desc', desc_test_controller_structured_mask_filling.values(),
+                         ids=desc_test_controller_structured_mask_filling.keys())
 def test_controller_structured_mask_filling(tmp_path: Path, desc: dict):
-    qkv_bias = (desc['unstructured_binary_mask']['mhsa_q'].bias is not None)
-    recipe = SwinRunRecipe.from_default(embed_dim=4,
-                                        mlp_ratio=0.75,
-                                        depths=[1],
-                                        num_heads=[2],
-                                        qkv_bias=qkv_bias,
-                                        log_dir=tmp_path)
+    mhsa_qkv_bias = (desc['unstructured_binary_mask']['mhsa_q'].bias is not None)
+    mhsa_o_bias = (desc['unstructured_binary_mask']['mhsa_o'].bias is not None)
+    ffn_bias = (desc['unstructured_binary_mask']['ffn_i'].bias is not None)
+    recipe = BertRunRecipe.from_default(log_dir=tmp_path, mhsa_qkv_bias=mhsa_qkv_bias,
+                                        mhsa_o_bias=mhsa_o_bias, ffn_bias=ffn_bias)
     compression_ctrl, compressed_model = create_compressed_model(recipe.model,
                                                                  recipe.nncf_config,
                                                                  dump_graphs=False)
