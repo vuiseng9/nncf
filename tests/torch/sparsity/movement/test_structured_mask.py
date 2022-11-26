@@ -8,6 +8,7 @@ import pytest
 import torch
 
 import nncf
+from nncf.config import NNCFConfig
 from nncf.torch import create_compressed_model
 from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlockType
 from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskContextGroup
@@ -392,9 +393,10 @@ class TestStructuredMaskHandler:
 class TestStructuredMaskStrategy:
     @pytest.mark.parametrize('run_recipe', STRUCTURED_MASK_SUPPORTED_RECIPES)
     def test_detect_supported_model_family(self, run_recipe: BaseMockRunRecipe):
-        model = run_recipe.model
-        nncf_config = run_recipe.nncf_config
-        compression_ctrl, compressed_model = create_compressed_model(model, nncf_config, dump_graphs=False)
+        empty_nncf_config = NNCFConfig(input_info=run_recipe.model_input_info)
+        _, compressed_model = create_compressed_model(run_recipe.model,
+                                                      empty_nncf_config,
+                                                      dump_graphs=False)
         retval = detect_supported_model_family(compressed_model)
         if run_recipe.supports_structured_masking:
             assert retval == run_recipe.model_family
@@ -404,9 +406,10 @@ class TestStructuredMaskStrategy:
 
     @pytest.mark.parametrize('run_recipe', STRUCTURED_MASK_SUPPORTED_RECIPES)
     def test_create_strategy(self, run_recipe: BaseMockRunRecipe):
-        model = run_recipe.model
-        nncf_config = run_recipe.nncf_config
-        compression_ctrl, compressed_model = create_compressed_model(model, nncf_config, dump_graphs=False)
+        empty_nncf_config = NNCFConfig(input_info=run_recipe.model_input_info)
+        _, compressed_model = create_compressed_model(run_recipe.model,
+                                                      empty_nncf_config,
+                                                      dump_graphs=False)
         strategy_cls = STRUCTURED_MASK_STRATEGY.get(run_recipe.model_family)
         strategy = strategy_cls.from_compressed_model(compressed_model)
         ref_dim_per_head = run_recipe.transformer_block_info[0].dim_per_head
@@ -417,3 +420,13 @@ class TestStructuredMaskStrategy:
             assert isinstance(rule_list, list)
             for rule in rule_list:
                 assert isinstance(rule, StructuredMaskRule)
+
+    def test_error_on_unsupported_swin_models(self):
+        run_recipe = SwinRunRecipe.from_default(depths=[1, 1], num_heads=[2, 2])
+        empty_nncf_config = NNCFConfig(input_info=run_recipe.model_input_info)
+        _, compressed_model = create_compressed_model(run_recipe.model,
+                                                      empty_nncf_config,
+                                                      dump_graphs=False)
+        strategy_cls = STRUCTURED_MASK_STRATEGY.get(run_recipe.model_family)
+        with pytest.raises(NotImplementedError, match='the same dimension'):
+            strategy = strategy_cls.from_compressed_model(compressed_model)
