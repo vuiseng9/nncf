@@ -141,5 +141,5 @@ class HuggingFaceSwinStructuredMaskStrategy(BaseTransformerStructuredMaskStrateg
             dim_per_head_list.append(dim_per_head)
         if any(dim != dim_per_head_list[0] for dim in dim_per_head_list[1:]):
             raise NotImplementedError('Currently we only support SwinTransformers '
-                                      'whose attention heads all have the same dimension.')  # TODO(yujie): add test
+                                      'whose attention heads all have the same dimension.')
         return cls(dim_per_head=dim_per_head_list[0])

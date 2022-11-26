@@ -93,8 +93,7 @@ class MovementSparsityBuilder(BaseSparsityAlgoBuilder):
                 SparseModuleInfo(node_name, sparsified_module, sparsifying_operation))
 
         if not insertion_commands:
-            raise RuntimeError('No sparsifiable layer found for movement sparisty algorithm.')  # TODO(yujie): add test
-        return insertion_commands
+            raise RuntimeError('No sparsifiable layer found for movement sparisty algorithm.')
 
     def create_weight_sparsifying_operation(self, target_module_node: NNCFNode, compression_lr_multiplier: float):
         sparse_cfg = SparseConfig(SparseStructure.FINE)
@@ -227,17 +226,18 @@ class MovementSparsityController(BaseSparsityAlgoController):
         self._propagate_masks()
 
     def _propagate_masks(self):
-        # TODO(yujie): change the O(mn) complexity
         sparse_state_dict = OrderedDict()
+        module_vs_name_map = {module: name for name, module in self.model.named_modules()}
         with torch.no_grad():
             for minfo in self.sparsified_module_info:
-                for name, module in self.model.named_modules():
-                    if module == minfo.module:
-                        sparse_state_dict[name + '.weight'] = \
-                            minfo.operand.apply_binary_mask(module.weight)
-                        if hasattr(module, 'bias') and module.bias is not None:
-                            sparse_state_dict[name + '.bias'] = \
-                                minfo.operand.apply_binary_mask(module.bias, is_bias=True)
+                operand = minfo.operand
+                module = minfo.module
+                name = module_vs_name_map[module]
+                sparse_state_dict[name + '.weight'] = \
+                    operand.apply_binary_mask(module.weight)
+                if hasattr(module, 'bias') and module.bias is not None:
+                    sparse_state_dict[name + '.bias'] = \
+                        operand.apply_binary_mask(module.bias, is_bias=True)
 
         model_state_dict = self.model.state_dict()
         for key, value in sparse_state_dict.items():
