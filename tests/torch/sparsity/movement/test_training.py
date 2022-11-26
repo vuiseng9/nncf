@@ -285,17 +285,15 @@ def finalize_desc(desc, is_long_training, dataset_dir, tmp_path_factory, weekly_
     return desc.finalize(dataset_dir, tmp_path_factory, weekly_models_path)
 
 
-@pytest.fixture(
-    name="movement_desc_long", scope="module", params=MOVEMENT_DESCRIPTORS.values(), ids=list(MOVEMENT_DESCRIPTORS.keys())
-)
+@pytest.fixture(name="movement_desc_long", scope="module", params=MOVEMENT_DESCRIPTORS.values(),
+                ids=list(MOVEMENT_DESCRIPTORS.keys()))
 def fixture_movement_desc_long(request, dataset_dir, tmp_path_factory, weekly_models_path):
     desc: MovementTrainingTestDescriptor = request.param
     return finalize_desc(desc, True, dataset_dir, tmp_path_factory, weekly_models_path)
 
 
-@pytest.fixture(
-    name="movement_desc_short", scope="module", params=MOVEMENT_DESCRIPTORS.values(), ids=list(MOVEMENT_DESCRIPTORS.keys())
-)
+@pytest.fixture(name="movement_desc_short", scope="module", params=MOVEMENT_DESCRIPTORS.values(),
+                ids=list(MOVEMENT_DESCRIPTORS.keys()))
 def fixture_movement_desc_short(request, dataset_dir, tmp_path_factory, weekly_models_path):
     desc: MovementTrainingTestDescriptor = request.param
     desc = deepcopy(desc).quick_check()
