@@ -358,7 +358,7 @@ def test_controller_structured_mask_filling(tmp_path: Path, desc: dict):
 
 
 @ pytest.mark.parametrize(('warmup_start_epoch', 'warmup_end_epoch'),
-                          [(1, 2), (0, 1), (2, 3), (1, 1), (-1, -1)])
+                          [(1, 2), (0, 1), (2, 3), (2, 5)])
 def test_importance_threshold_and_regularization_factor_range(tmp_path,
                                                               warmup_start_epoch: int,
                                                               warmup_end_epoch: int):

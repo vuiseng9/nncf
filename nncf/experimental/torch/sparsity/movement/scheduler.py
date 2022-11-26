@@ -54,6 +54,13 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
                              '`steps_per_epoch`. Please either change `warmup_start_epoch` to a larger '
                              'number or specify `steps_per_epoch` in the config.')
 
+        if self.warmup_start_epoch < 0 or self.warmup_end_epoch <= self.warmup_start_epoch:
+            raise ValueError('Movement sparsity requires 0 <= warmup_start_epoch < warmup_end_epoch.')
+
+        if self.init_importance_threshold >= self.final_importance_threshold:
+            logger.warning('`init_importance_threshold` is equal to or greater than `final_importance_threshold`. '
+                           'Movement sparsity may not work as expected.')
+
         self.schedule = PolynomialDecaySchedule(
             self.init_importance_threshold,
             self.final_importance_threshold,

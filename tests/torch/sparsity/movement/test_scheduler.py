@@ -1,7 +1,9 @@
 from collections import defaultdict
 from typing import List, Optional, Union
+from unittest.mock import patch
 from unittest.mock import MagicMock
 from unittest.mock import Mock
+import logging
 
 import numpy as np
 import pytest
@@ -31,15 +33,7 @@ desc_test_decayed_importance_threshold_and_regularization_factor = {
                                enable_structured_masking=False),
         ref_threshold=[0., 0., 0., 0., 0., 0., 0., 1.0219, 1.8785, 2.5887, 3.1702, 3.6396, 4.0123, 4.3027, 4.5237],
         ref_factor=[0., 0., 0., 0., 0., 0., 0., 2.0438, 3.7570, 5.1775, 6.3405, 7.2793, 8.0247, 8.6053, 9.0474]
-    ),
-    "no_warmup": dict(
-        params=SchedulerParams(power=4,
-                               warmup_start_epoch=-1, warmup_end_epoch=0,
-                               init_importance_threshold=-1, final_importance_threshold=2,
-                               importance_regularization_factor=5, steps_per_epoch=2,
-                               enable_structured_masking=True),
-        ref_threshold=[2.] * 10,
-        ref_factor=[5.] * 10),
+    )
 }
 
 
@@ -200,10 +194,31 @@ def test_scheduler_can_infer_steps_per_epoch():
     assert scheduler.current_importance_lambda == factor_after_6_step_calls
 
 
-def test_scheduler_error_on_improper_warmup_start_epoch_value():
-    params = SchedulerParams(warmup_start_epoch=0, steps_per_epoch=None)
-    with pytest.raises(ValueError):
-        _ = MovementPolynomialThresholdScheduler(controller=MagicMock(), params=params.__dict__)
+@pytest.mark.parametrize('desc', [
+    dict(params=SchedulerParams(warmup_start_epoch=0, steps_per_epoch=None),
+         error=ValueError,
+         match='must be >= 1 to enable the auto calculation'),
+    dict(params=SchedulerParams(warmup_start_epoch=-1),
+         error=ValueError,
+         match='0 <= warmup_start_epoch < warmup_end_epoch'),
+    dict(params=SchedulerParams(warmup_start_epoch=1, warmup_end_epoch=1),
+         error=ValueError,
+         match='0 <= warmup_start_epoch < warmup_end_epoch')
+])
+def test_scheduler_error_on_wrong_config(desc: dict):
+    with pytest.raises(desc['error'], match=desc['match']):
+        _ = MovementPolynomialThresholdScheduler(controller=MagicMock(), params=desc['params'].__dict__)
+
+
+@pytest.mark.parametrize('desc', [
+    dict(params=SchedulerParams(init_importance_threshold=2, final_importance_threshold=1),
+         match='`init_importance_threshold` is equal to or greater'),
+])
+def test_scheduler_warn_on_improper_config(desc: dict, mocker, caplog):
+    with caplog.at_level(logging.WARNING, logger='nncf'):
+        mocker.patch.object(logging.getLogger('nncf'), 'propagate', return_value=True)
+        _ = MovementPolynomialThresholdScheduler(controller=MagicMock(), params=desc['params'].__dict__)
+    assert desc['match'] in caplog.text
 
 
 def test_scheduler_error_on_wrong_steps_per_epoch_value():

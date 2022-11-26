@@ -94,6 +94,7 @@ class MovementSparsityBuilder(BaseSparsityAlgoBuilder):
 
         if not insertion_commands:
             raise RuntimeError('No sparsifiable layer found for movement sparisty algorithm.')
+        return insertion_commands
 
     def create_weight_sparsifying_operation(self, target_module_node: NNCFNode, compression_lr_multiplier: float):
         sparse_cfg = SparseConfig(SparseStructure.FINE)
@@ -142,8 +143,7 @@ class MovementSparsityController(BaseSparsityAlgoController):
                                                                   strategy)
 
     def compression_stage(self) -> CompressionStage:
-        # if self._mode == 'local':
-        #     return CompressionStage.FULLY_COMPRESSED
+        # TODO(yujie): add test
         if self.scheduler.current_epoch < self.scheduler.warmup_start_epoch:
             return CompressionStage.UNCOMPRESSED
         if self.scheduler.current_sparsity_level >= self.scheduler.warmup_end_epoch:
