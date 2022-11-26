@@ -160,11 +160,6 @@ class MovementTrainingValidator(BaseSampleValidator):
         runner = Command(cmd)
         env_with_cuda_reproducibility = os.environ.copy()
         env_with_cuda_reproducibility["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
-        if not self._desc.cpu_only_:
-            dev_ids = os.environ["CUDA_VISIBLE_DEVICES"].split(",")
-            n_process = self._desc.n_process
-            env_with_cuda_reproducibility["CUDA_VISIBLE_DEVICES"] = ",".join(
-                dev_ids[:n_process])
         runner.kwargs.update(env=env_with_cuda_reproducibility)
         runner.run(timeout=self._desc.timeout_)
 
