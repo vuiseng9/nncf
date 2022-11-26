@@ -28,6 +28,11 @@ from tests.torch.sparsity.movement.helpers import TransformerBlockModuleOrderedD
 
 STRUCTURED_MASK_SUPPORTED_RECIPES = [
     BertRunRecipe.from_default(hidden_size=4, intermediate_size=3),
+    BertRunRecipe.from_default(hidden_size=4, intermediate_size=3, mhsa_qkv_bias=False),
+    BertRunRecipe.from_default(hidden_size=4, intermediate_size=3, mhsa_o_bias=False),
+    BertRunRecipe.from_default(hidden_size=4, intermediate_size=3, ffn_bias=False),
+    BertRunRecipe.from_default(hidden_size=4, intermediate_size=3,
+                               mhsa_qkv_bias=False, mhsa_o_bias=False, ffn_bias=False),
     Wav2Vec2RunRecipe.from_default(hidden_size=4, intermediate_size=3),
     SwinRunRecipe.from_default(embed_dim=4, mlp_ratio=0.75, qkv_bias=False),
     SwinRunRecipe.from_default(embed_dim=4, mlp_ratio=0.75, depths=[1], num_heads=[2])

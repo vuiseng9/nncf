@@ -1,14 +1,15 @@
-from typing import List, Optional, Union
-from unittest.mock import MagicMock, Mock
 from collections import defaultdict
+from typing import List, Optional, Union
+from unittest.mock import MagicMock
+from unittest.mock import Mock
 
-import nncf
 import numpy as np
 import pytest
-from nncf.experimental.torch.sparsity.movement.scheduler import MovementPolynomialThresholdScheduler
-from tests.torch.sparsity.movement.helpers import SchedulerParams
 from pytest import approx
 
+import nncf
+from nncf.experimental.torch.sparsity.movement.scheduler import MovementPolynomialThresholdScheduler
+from tests.torch.sparsity.movement.helpers import SchedulerParams
 
 desc_test_decayed_importance_threshold_and_regularization_factor = {
     "normal_warmup_range": dict(

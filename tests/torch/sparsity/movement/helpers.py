@@ -3,6 +3,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import List, Literal, Optional, Sequence, Tuple, Union
 from dataclasses import dataclass
+from unittest.mock import Mock
 
 import datasets
 from datasets import load_dataset
@@ -32,21 +33,19 @@ from nncf import NNCFConfig
 from nncf.api.compression import CompressionAlgorithmController
 from nncf.common.graph.graph import NNCFGraph
 from nncf.common.graph.graph import NNCFNode
+from nncf.common.graph.operator_metatypes import OperatorMetatype
 from nncf.common.graph.layer_attributes import LinearLayerAttributes
 from nncf.common.utils.tensorboard import prepare_for_tensorboard
 from nncf.experimental.torch.sparsity.movement.algo import MovementSparsifier
 from nncf.torch.nncf_network import NNCFNetwork
 from tests.torch.test_algo_common import BasicLinearTestModel
 
-MODEL_NAME = "google/bert_uncased_L-2_H-128_A-2"
-DATASET_NAME = "yelp_review_full"
-
 
 def mock_linear_nncf_node(in_features: int = 1, out_features: int = 1,
                           bias: bool = True, node_name='linear'):
     graph = NNCFGraph()
     linear = graph.add_nncf_node(
-        node_name, 'linear', 'linear',
+        node_name, 'linear', Mock(),
         LinearLayerAttributes(True, in_features, out_features, bias=bias))
     return linear
 
@@ -58,6 +57,18 @@ def ensure_tensor(data, dtype=torch.float, device=torch.device('cpu')):
         return data.to(dtype=dtype, device=device)
     else:
         return torch.tensor(data, dtype=dtype, device=device)
+
+
+def initialize_sparsifer_parameters(operand: MovementSparsifier):
+    with torch.no_grad():
+        device = operand.weight_importance.device
+        weight_init_tensor = torch.linspace(-1, 1, steps=operand.weight_importance.numel(), device=device)\
+            .reshape_as(operand.weight_importance)
+        operand.weight_importance.copy_(weight_init_tensor)
+        if operand.prune_bias:
+            bias_init_tensor = torch.linspace(-1, 1, steps=operand.bias_importance.numel(), device=device)\
+                .reshape_as(operand.bias_importance)
+            operand.bias_importance.copy_(bias_init_tensor)
 
 
 def is_roughly_non_decreasing(x_list, atol=0.01):
@@ -84,66 +95,6 @@ class ParamDict:
         return getattr(self, key)
 
 
-# @pytest.fixture
-
-
-def yelp_dataset():
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-    dataset = load_dataset(DATASET_NAME)
-    max_length = 128
-    n_train_samples, n_val_samples = 128, 128
-
-    def tokenize_fn(examples):
-        row = tokenizer(examples["text"], padding="max_length",
-                        truncation=True, max_length=max_length)
-        row['position_ids'] = list(range(max_length))
-        return row
-
-    train_dataset = dataset["train"].shuffle(seed=42).select(range(n_train_samples)).map(tokenize_fn)
-    test_dataset = dataset["test"].shuffle(seed=42).select(range(n_val_samples)).map(tokenize_fn)
-    return train_dataset, test_dataset
-
-
-# @pytest.fixture
-def bert_tiny_torch_model():
-    return AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, num_labels=5)
-
-
-def bert_tiny_unpretrained():
-    model_cfg = {
-        "hidden_size": 4,
-        "intermediate_size": 3,
-        "max_position_embeddings": 512,
-        "model_type": "bert",
-        "num_attention_heads": 2,
-        "num_hidden_layers": 1,
-        "vocab_size": 30522,
-    }
-    return AutoModelForSequenceClassification.from_config(BertConfig(**model_cfg, num_labels=5))
-
-
-def wav2vec2_model():
-    config = Wav2Vec2Config(
-        hidden_size=4,
-        num_hidden_layers=1,
-        num_attention_heads=2,
-        intermediate_size=6,
-        conv_dim=(4, 4),
-        conv_stride=(1, 1),
-        conv_kernel=(3, 3),
-        num_conv_pos_embeddings=3,
-        num_conv_pos_embedding_groups=1,
-        proj_codevector_dim=4,
-        classifier_proj_size=3
-    )
-    return AutoModelForAudioClassification.from_config(config)
-
-
-def swin_model():
-    config = SwinConfig()  # TODO(yujie): change config for a smaller model
-    return AutoModelForImageClassification.from_config(config)
-
-
 class SchedulerParams:
     def __init__(self, power: int = 3,
                  warmup_start_epoch: int = 1,
@@ -161,23 +112,6 @@ class SchedulerParams:
         self.importance_regularization_factor = importance_regularization_factor
         self.steps_per_epoch = steps_per_epoch
         self.enable_structured_masking = enable_structured_masking
-
-
-class TransformerBlockInfo:
-    def __init__(self, num_hidden_layers: int = 1,
-                 hidden_size: int = 4,
-                 intermediate_size: int = 3,
-                 dim_per_head: int = 2) -> None:
-        self.num_hidden_layers = num_hidden_layers
-        self.hidden_size = hidden_size
-        self.intermediate_size = intermediate_size
-        self.dim_per_head = dim_per_head
-
-
-class TransformerBlockModuleOrderedDict(OrderedDict):
-    def __init__(self, mhsa_q, mhsa_k, mhsa_v, mhsa_o, ffn_i, ffn_o) -> None:
-        super().__init__(mhsa_q=mhsa_q, mhsa_k=mhsa_k, mhsa_v=mhsa_v,
-                         mhsa_o=mhsa_o, ffn_i=ffn_i, ffn_o=ffn_o)
 
 
 class NNCFAlgoConfig:
@@ -198,6 +132,23 @@ class NNCFAlgoConfig:
             "sparse_structure_by_scopes": self.sparse_structure_by_scopes,
             "ignored_scopes": self.ignored_scopes,
         }
+
+
+class TransformerBlockInfo:
+    def __init__(self, num_hidden_layers: int = 1,
+                 hidden_size: int = 4,
+                 intermediate_size: int = 3,
+                 dim_per_head: int = 2) -> None:
+        self.num_hidden_layers = num_hidden_layers
+        self.hidden_size = hidden_size
+        self.intermediate_size = intermediate_size
+        self.dim_per_head = dim_per_head
+
+
+class TransformerBlockModuleOrderedDict(OrderedDict):
+    def __init__(self, mhsa_q, mhsa_k, mhsa_v, mhsa_o, ffn_i, ffn_o) -> None:
+        super().__init__(mhsa_q=mhsa_q, mhsa_k=mhsa_k, mhsa_v=mhsa_v,
+                         mhsa_o=mhsa_o, ffn_i=ffn_i, ffn_o=ffn_o)
 
 
 class BaseMockRunRecipe:
@@ -325,7 +276,7 @@ class Wav2Vec2RunRecipe(BaseMockRunRecipe):
         hidden_size=4,
         num_hidden_layers=1,
         num_attention_heads=2,
-        intermediate_size=6,
+        intermediate_size=3,
         conv_dim=(4, 4),
         conv_stride=(1, 1),
         conv_kernel=(3, 3),
@@ -384,12 +335,15 @@ class BertRunRecipe(BaseMockRunRecipe):
     supports_structured_masking = True
     default_model_config = BertConfig(
         hidden_size=4,
-        intermediate_size=6,
+        intermediate_size=3,
         max_position_embeddings=128,
         num_attention_heads=2,
         num_hidden_layers=1,
         vocab_size=10,
         num_labels=2,
+        mhsa_qkv_bias=True,
+        mhsa_o_bias=True,
+        ffn_bias=True
     )
     default_algo_config = NNCFAlgoConfig(
         sparse_structure_by_scopes=[
@@ -401,8 +355,27 @@ class BertRunRecipe(BaseMockRunRecipe):
         scheduler_params=SchedulerParams(),
     )
 
+    def __init__(self, model_config: BertConfig, algo_config: NNCFAlgoConfig, log_dir=None) -> None:
+        super().__init__(model_config, algo_config, log_dir)
+        extra_model_keys = {'mhsa_qkv_bias', 'mhsa_o_bias', 'ffn_bias'}
+        self.model_keys = self.model_keys.union(extra_model_keys)
+        for key in extra_model_keys:
+            value = getattr(self.model_config, key, True)
+            setattr(self.model_config, key, value)
+
     def _create_model(self):
-        return AutoModelForSequenceClassification.from_config(self.model_config)
+        model = AutoModelForSequenceClassification.from_config(self.model_config)
+        for block in model.bert.encoder.layer:
+            if not self.model_config.mhsa_qkv_bias:
+                block.attention.self.query.bias = None
+                block.attention.self.key.bias = None
+                block.attention.self.value.bias = None
+            if not self.model_config.mhsa_o_bias:
+                block.attention.output.dense.bias = None
+            if not self.model_config.ffn_bias:
+                block.intermediate.dense.bias = None
+                block.output.dense.bias = None
+        return model
 
     @property
     def model_input_info(self) -> List[dict]:
@@ -447,11 +420,12 @@ class SwinRunRecipe(BaseMockRunRecipe):
         patch_size=1,
         num_channels=3,
         embed_dim=4,
-        depths=[1, 1],
-        num_heads=[2, 4],
+        depths=[1],
+        num_heads=[2],
         window_size=2,
-        mlp_ratio=6 / 4,
-        num_labels=2
+        mlp_ratio=3 / 4,
+        num_labels=2,
+        qkv_bias=True,
     )
     default_algo_config = NNCFAlgoConfig(
         sparse_structure_by_scopes=[
@@ -576,64 +550,6 @@ class Conv2dRunRecipe(BaseMockRunRecipe):
                  "keyword": "tensor"}]
 
 
-class ConfigBuilder:
-    def __init__(self, **overrides):
-        self._current_args = {
-            "power": 3,
-            "warmup_start_epoch": 1,
-            "warmup_end_epoch": 3,
-            "init_importance_threshold": -0.1,
-            "final_importance_threshold": 0.0,
-            "importance_regularization_factor": 0.2,
-            "steps_per_epoch": 4,
-            "enable_structured_masking": True,
-            "sparse_structure_by_scopes": [
-                {"mode": "block", "sparse_factors": [16, 16], "target_scopes": "{re}attention"},
-                {"mode": "per_dim", "axis": 0, "target_scopes": "{re}BertIntermediate"},
-                {"mode": "per_dim", "axis": 1, "target_scopes": "{re}BertOutput"},
-            ],
-            "ignored_scopes": ["{re}embedding", "{re}pooler", "{re}classifier"],
-        }
-        assert len(set(overrides.keys()) - set(self._current_args.keys())) == 0
-        self.update(**overrides)
-
-    def build(self, **tmp_overrides):
-        args = deepcopy(self._current_args)
-        sparse_structure_by_scopes = args.pop('sparse_structure_by_scopes', [])
-        ignored_scopes = args.pop('ignored_scopes', [])
-        config_dict = {
-            "input_info": [
-                {"sample_size": [1, 256], "type": "long", "keyword": "input_ids"},
-                {"sample_size": [1, 256], "type": "long", "keyword": "token_type_ids"},
-                {"sample_size": [1, 256], "type": "long", "keyword": "position_ids"},
-                {"sample_size": [1, 256], "type": "long", "keyword": "attention_mask"},
-            ],
-            "compression": {
-                "algorithm": "movement_sparsity",
-                "params": dict(**args),
-                "sparse_structure_by_scopes": sparse_structure_by_scopes,
-                "ignored_scopes": ignored_scopes,
-            },
-        }
-        nncf_config = NNCFConfig.from_dict(config_dict)
-        nncf_config.update(tmp_overrides)
-        return nncf_config
-
-    def update(self, **overrides):
-        self._current_args.update(overrides)
-        return self
-
-    def get(self, key):
-        return deepcopy(self._current_args.get(key, None))
-
-    def __getitem__(self, key):
-        return self.get(key)
-
-    def __call__(self, **overrides):
-        self.update(**overrides)
-        return self
-
-
 class CompressionTrainer(Trainer):
     def __init__(self,
                  compression_ctrl: Optional[CompressionAlgorithmController],
@@ -735,22 +651,3 @@ def build_compression_trainer(tmp_path, compression_ctrl, compressed_model,
         compute_metrics=compute_metrics,
     )
     return trainer
-
-
-def initialize_sparsifer_parameters_by_normal(operand: MovementSparsifier, mean: float = 0., std: float = 3.):
-    with torch.no_grad():
-        nn.init.normal_(operand.weight_importance.data, mean, std)
-        if operand.prune_bias:
-            nn.init.normal_(operand.bias_importance.data, mean, std)
-
-
-def initialize_sparsifer_parameters(operand: MovementSparsifier):
-    with torch.no_grad():
-        device = operand.weight_importance.device
-        weight_init_tensor = torch.linspace(-1, 1, steps=operand.weight_importance.numel(), device=device)\
-            .reshape_as(operand.weight_importance)
-        operand.weight_importance.copy_(weight_init_tensor)
-        if operand.prune_bias:
-            bias_init_tensor = torch.linspace(-1, 1, steps=operand.bias_importance.numel(), device=device)\
-                .reshape_as(operand.bias_importance)
-            operand.bias_importance.copy_(bias_init_tensor)

@@ -41,9 +41,8 @@ from tests.torch.sparsity.movement.helpers import LinearRunRecipe
 from tests.torch.sparsity.movement.helpers import NNCFAlgoConfig
 from tests.torch.sparsity.movement.helpers import SwinRunRecipe
 from tests.torch.sparsity.movement.helpers import Wav2Vec2RunRecipe
-from tests.torch.sparsity.movement.helpers import bert_tiny_torch_model, is_roughly_non_decreasing, is_roughly_of_same_value
-from tests.torch.sparsity.movement.helpers import bert_tiny_unpretrained
-from tests.torch.sparsity.movement.helpers import initialize_sparsifer_parameters_by_normal, initialize_sparsifer_parameters
+from tests.torch.sparsity.movement.helpers import is_roughly_non_decreasing, is_roughly_of_same_value
+from tests.torch.sparsity.movement.helpers import initialize_sparsifer_parameters
 from tests.torch.sparsity.movement.helpers import build_compression_trainer
 from tests.torch.test_algo_common import BasicLinearTestModel
 
@@ -133,8 +132,11 @@ def check_sparsified_layer_mode(sparsifier: MovementSparsifier, module: NNCFLine
 
 @pytest.mark.parametrize('sparse_structure_by_scopes', desc_sparse_structures.values(),
                          ids=desc_sparse_structures.keys())
-@pytest.mark.parametrize('recipe', [BertRunRecipe.from_default(), SwinRunRecipe.from_default(qkv_bias=False)],
-                         ids=['bert_with_bias', 'swin_no_qkv_bias'])
+@pytest.mark.parametrize('recipe', [
+    BertRunRecipe.from_default(hidden_size=4, intermediate_size=6),
+    BertRunRecipe.from_default(hidden_size=4, intermediate_size=6, ffn_bias=False),
+    SwinRunRecipe.from_default(depths=[1, 1], num_heads=[2, 4], mlp_ratio=1.5, qkv_bias=False)
+], ids=['bert', 'bert_no_ffn_bias', 'swin_no_qkv_bias'])
 def test_can_create_movement_sparsity_layers(sparse_structure_by_scopes, recipe: BaseMockRunRecipe):
     recipe.set('sparse_structure_by_scopes', sparse_structure_by_scopes)
     compression_ctrl, compressed_model = create_compressed_model(recipe.model,
@@ -247,7 +249,7 @@ def test_layer_actual_behavior_matches_sparsifer_mask(sparse_structure_by_scopes
 
 
 @pytest.mark.parametrize('desc', [
-    # TODO: check fill operation cases
+    # TODO(yujie): check fill operation cases
     dict(
         unstructured_binary_mask=TransformerBlockModuleOrderedDict(
             mhsa_q=ParamDict(weight=[[1, 0, 0, 0], [1, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], bias=[0, 0, 0, 0]),
@@ -268,9 +270,12 @@ def test_layer_actual_behavior_matches_sparsifer_mask(sparse_structure_by_scopes
     ),
 ])
 def test_controller_structured_mask_filling(tmp_path: Path, desc: dict):
-    recipe = BertRunRecipe.from_default(hidden_size=4,
-                                        intermediate_size=3,
-                                        sparse_structure_by_scopes=[],
+    qkv_bias = (desc['unstructured_binary_mask']['mhsa_q'].bias is not None)
+    recipe = SwinRunRecipe.from_default(embed_dim=4,
+                                        mlp_ratio=0.75,
+                                        depths=[1],
+                                        num_heads=[2],
+                                        qkv_bias=qkv_bias,
                                         log_dir=tmp_path)
     compression_ctrl, compressed_model = create_compressed_model(recipe.model,
                                                                  recipe.nncf_config,
@@ -438,8 +443,10 @@ def test_binary_mask_update(tmp_path, recipe: BaseMockRunRecipe):
 
 @pytest.mark.parametrize('enable_structured_masking', [True, False])
 def test_increasing_sparsity_stats_before_warmup_ends(tmp_path, enable_structured_masking: bool):
-    recipe = BertRunRecipe.from_default(log_dir=tmp_path,
-                                        enable_structured_masking=enable_structured_masking)
+    recipe = BertRunRecipe.from_default(hidden_size=4,
+                                        intermediate_size=6,
+                                        enable_structured_masking=enable_structured_masking,
+                                        log_dir=tmp_path)
     recipe.scheduler_params.steps_per_epoch = 5
     compression_ctrl, compressed_model = create_compressed_model(recipe.model,
                                                                  recipe.nncf_config,
@@ -464,8 +471,10 @@ def test_increasing_sparsity_stats_before_warmup_ends(tmp_path, enable_structure
 
 @pytest.mark.parametrize('enable_structured_masking', [True, False])
 def test_fixed_sparsity_stats_after_warmup_ends(tmp_path, enable_structured_masking):
-    recipe = BertRunRecipe.from_default(log_dir=tmp_path,
-                                        enable_structured_masking=enable_structured_masking)
+    recipe = BertRunRecipe.from_default(hidden_size=4,
+                                        intermediate_size=6,
+                                        enable_structured_masking=enable_structured_masking,
+                                        log_dir=tmp_path)
     recipe.scheduler_params.steps_per_epoch = 5
     compression_ctrl, compressed_model = create_compressed_model(recipe.model,
                                                                  recipe.nncf_config,
@@ -528,3 +537,5 @@ def test_export_onnx_has_sparsified_param(tmp_path: Path, recipe: BaseMockRunRec
             minfo.operand.importance_threshold = threshold
         onnx_path = tmp_path / f'model_thres{threshold}.onnx'
         check_onnx_has_sparsified_param(compressed_model, compression_ctrl, onnx_path)
+
+# TODO(yujie):compression_state api
