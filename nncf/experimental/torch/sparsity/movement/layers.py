@@ -13,14 +13,12 @@
 from copy import deepcopy
 from enum import Enum
 import math
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple
 
-import numpy as np
 import torch
 from torch import nn
 
 from nncf.common.graph import NNCFNode
-from nncf.common.utils.debug import is_debug
 from nncf.experimental.torch.sparsity.movement.functions import binary_mask_by_threshold
 from nncf.torch.layer_utils import COMPRESSION_MODULES
 from nncf.torch.layer_utils import CompressionParameter

@@ -1,6 +1,4 @@
 from collections import defaultdict
-from typing import List, Optional, Union
-from unittest.mock import patch
 from unittest.mock import MagicMock
 from unittest.mock import Mock
 import logging
@@ -9,7 +7,6 @@ import numpy as np
 import pytest
 from pytest import approx
 
-import nncf
 from nncf.experimental.torch.sparsity.movement.scheduler import MovementPolynomialThresholdScheduler
 from tests.torch.sparsity.movement.helpers import SchedulerParams
 
@@ -43,9 +40,9 @@ desc_test_decayed_importance_threshold_and_regularization_factor = {
 def test_scheduler_decayed_importance_threshold_and_regularization_factor(desc):
     scheduler = MovementPolynomialThresholdScheduler(controller=MagicMock(), params=desc['params'].__dict__)
     threshold, factor = [], []
-    for epoch in range(5):
+    for _ in range(5):
         scheduler.epoch_step()
-        for batch in range(desc['params'].steps_per_epoch):
+        for _ in range(desc['params'].steps_per_epoch):
             scheduler.step()
             threshold.append(scheduler.current_importance_threshold)
             factor.append(scheduler.current_importance_lambda)
@@ -62,9 +59,9 @@ def test_scheduler_update_operand_importance_threshold(desc):
     scheduler = MovementPolynomialThresholdScheduler(controller=Mock(sparsified_module_info=minfo_list),
                                                      params=desc['params'].__dict__)
     threshold_dict = defaultdict(list)
-    for epoch in range(5):
+    for _ in range(5):
         scheduler.epoch_step()
-        for batch in range(desc['params'].steps_per_epoch):
+        for _ in range(desc['params'].steps_per_epoch):
             scheduler.step()
             for i, minfo in enumerate(minfo_list):
                 threshold_dict[f'threshold{i}'].append(minfo.operand.importance_threshold)
@@ -134,13 +131,14 @@ def test_scheduler_get_state():
 ])
 def test_scheduler_load_state(params):
     reload_step = 6
-    steps_per_epoch = params.steps_per_epoch or 8  # check if we can resume 1st epoch even with `steps_per_epoch` not specified
+    # check if we can resume 1st epoch even with `steps_per_epoch` not specified
+    steps_per_epoch = params.steps_per_epoch or 8
 
     ref_scheduler = MovementPolynomialThresholdScheduler(controller=MagicMock(), params=params.__dict__)
     ref_threshold, ref_factor = [], []
-    for epoch in range(5):
+    for _ in range(5):
         ref_scheduler.epoch_step()
-        for batch in range(steps_per_epoch):
+        for _ in range(steps_per_epoch):
             ref_scheduler.step()
             if ref_scheduler.current_step > reload_step:
                 ref_threshold.append(ref_scheduler.current_importance_threshold)
@@ -154,18 +152,18 @@ def test_scheduler_load_state(params):
     scheduler.load_state(ref_state)
     assert scheduler.current_epoch == ref_state['current_epoch']
     assert scheduler.current_step == ref_state['current_step']
-    assert scheduler._steps_per_epoch == ref_state['_steps_per_epoch']
+    assert scheduler._steps_per_epoch == ref_state['_steps_per_epoch']  # pylint: disable=protected-access
 
     # check can resume and continue
     # TODO: after resume, the threshold value before the very first `.step()` call is incorrect
     threshold, factor = [], []
-    for rest_batch in range(steps_per_epoch - (reload_step + 1) % steps_per_epoch):
+    for _ in range(steps_per_epoch - (reload_step + 1) % steps_per_epoch):  # rest batch
         scheduler.step()
         threshold.append(scheduler.current_importance_threshold)
         factor.append(scheduler.current_importance_lambda)
-    for epoch in range(ref_state['current_epoch'] + 1, 5):
+    for _ in range(ref_state['current_epoch'] + 1, 5):
         scheduler.epoch_step()
-        for batch in range(steps_per_epoch):
+        for _ in range(steps_per_epoch):
             scheduler.step()
             threshold.append(scheduler.current_importance_threshold)
             factor.append(scheduler.current_importance_lambda)
@@ -173,6 +171,7 @@ def test_scheduler_load_state(params):
     assert np.allclose(factor, ref_factor)
 
 
+# pylint: disable=protected-access
 def test_scheduler_can_infer_steps_per_epoch():
     params = SchedulerParams(2, 1, 3, -1, 0, 0.1, steps_per_epoch=None)
     threshold_after_6_step_calls = approx(-0.7656, abs=1e-4)

@@ -1,14 +1,11 @@
 from collections import OrderedDict
 from copy import deepcopy
 from pathlib import Path
-from typing import List, Literal, Optional, Sequence, Tuple, Union
-from dataclasses import dataclass
+from typing import List, Optional
 from unittest.mock import Mock
 
-import datasets
-from datasets import load_dataset
+from datasets.arrow_dataset import Dataset
 import numpy as np
-import pytest
 from pytest import approx
 import torch
 import torch.nn as nn
@@ -17,7 +14,6 @@ import torch.utils.data
 from transformers import AutoModelForAudioClassification
 from transformers import AutoModelForImageClassification
 from transformers import AutoModelForSequenceClassification
-from transformers import AutoTokenizer
 from transformers import BertConfig
 from transformers import PreTrainedModel
 from transformers import PretrainedConfig
@@ -32,16 +28,10 @@ from transformers.trainer_callback import TrainerState
 from nncf import NNCFConfig
 from nncf.api.compression import CompressionAlgorithmController
 from nncf.common.graph.graph import NNCFGraph
-from nncf.common.graph.graph import NNCFNode
-from nncf.common.graph.operator_metatypes import OperatorMetatype
 from nncf.common.graph.layer_attributes import LinearLayerAttributes
 from nncf.common.utils.tensorboard import prepare_for_tensorboard
 from nncf.experimental.torch.sparsity.movement.algo import MovementSparsifier
 from nncf.torch.nncf_network import NNCFNetwork
-from tests.torch.test_algo_common import BasicLinearTestModel
-from nncf.common.sparsity.statistics import (MovementSparsityStatistics,
-                                             SparsifiedLayerSummary,
-                                             SparsifiedModelStatistics)
 
 
 def mock_linear_nncf_node(in_features: int = 1, out_features: int = 1,
@@ -53,14 +43,12 @@ def mock_linear_nncf_node(in_features: int = 1, out_features: int = 1,
     return linear
 
 
-
 def ensure_tensor(data, dtype=torch.float, device=torch.device('cpu')):
     if isinstance(data, np.ndarray):
         return torch.from_numpy(data).to(dtype=dtype, device=device)
-    elif isinstance(data, torch.Tensor):
+    if isinstance(data, torch.Tensor):
         return data.to(dtype=dtype, device=device)
-    else:
-        return torch.tensor(data, dtype=dtype, device=device)
+    return torch.tensor(data, dtype=dtype, device=device)
 
 
 def initialize_sparsifer_parameters(operand: MovementSparsifier,
@@ -124,15 +112,15 @@ class SchedulerParams:
 
 
 class NNCFAlgoConfig:
-    def __init__(self, sparse_structure_by_scopes=[],
-                 ignored_scopes=[],
+    def __init__(self, sparse_structure_by_scopes=(),
+                 ignored_scopes=(),
                  scheduler_params=None, **scheduler_overrides):
         self.scheduler_params = scheduler_params or SchedulerParams()
         for k, v in scheduler_overrides.items():
             assert hasattr(self.scheduler_params, k)
             setattr(self.scheduler_params, k, v)
-        self.sparse_structure_by_scopes = sparse_structure_by_scopes
-        self.ignored_scopes = ignored_scopes
+        self.sparse_structure_by_scopes = list(sparse_structure_by_scopes)
+        self.ignored_scopes = list(ignored_scopes)
 
     def to_dict(self):
         return {
@@ -231,7 +219,7 @@ class BaseMockRunRecipe:
         g = torch.Generator()
         g.manual_seed(42)
         with torch.no_grad():
-            for name, parameter in torch_model.named_parameters():
+            for _, parameter in torch_model.named_parameters():
                 parameter.normal_(generator=g)
         return torch_model
 
@@ -261,7 +249,7 @@ class BaseMockRunRecipe:
         print(config_dict)
         return NNCFConfig.from_dict(config_dict)
 
-    def generate_mock_dataset(self, num_samples: int = 16, seed: int = 42) -> datasets.Dataset:
+    def generate_mock_dataset(self, num_samples: int = 16, seed: int = 42) -> Dataset:
         g = torch.Generator()
         g.manual_seed(seed)
         input_dict = {}
@@ -275,7 +263,7 @@ class BaseMockRunRecipe:
             input_dict[keyword] = tensor
         input_dict['labels'] = torch.arange(self.model_config.num_labels).repeat(
             num_samples // self.model_config.num_labels + 1)[:num_samples]
-        return datasets.Dataset.from_dict(input_dict)
+        return Dataset.from_dict(input_dict)
 
 
 class Wav2Vec2RunRecipe(BaseMockRunRecipe):
@@ -651,8 +639,8 @@ class CompressionCallback(TrainerCallback):
 
 
 def build_compression_trainer(tmp_path, compression_ctrl, compressed_model,
-                              train_dataset: datasets.Dataset,
-                              eval_dataset: Optional[datasets.Dataset] = None,
+                              train_dataset: Dataset,
+                              eval_dataset: Optional[Dataset] = None,
                               callback: Optional[CompressionCallback] = None,
                               batch_size: int = 1,
                               **training_kwargs):

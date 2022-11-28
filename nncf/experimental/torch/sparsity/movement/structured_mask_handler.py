@@ -1,8 +1,6 @@
 import itertools
 import logging
-from copy import deepcopy
 from functools import reduce
-from collections import OrderedDict
 from typing import Iterable, List, Tuple, Union, Optional, Dict
 from pathlib import Path
 
@@ -12,13 +10,12 @@ import torch.nn.functional as F
 from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlockType
 from nncf.torch.sparsity.base_algo import SparseModuleInfo
 from nncf.experimental.torch.sparsity.movement.layers import MovementSparsifier
-from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import STRUCTURED_MASK_STRATEGY
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import StructuredMaskRule
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import BaseStructuredMaskStrategy
 from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlockType
-from nncf.common.utils.debug import is_debug
-from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlock, get_building_blocks, BuildingBlockType, BlockFilteringStrategy
-from nncf.torch.layers import NNCF_MODULES_OP_NAMES, NNCFLinear
+from nncf.experimental.torch.search_building_blocks.search_blocks import BlockFilteringStrategy
+from nncf.experimental.torch.search_building_blocks.search_blocks import get_building_blocks
+from nncf.torch.layers import NNCFLinear
 from nncf.torch.nncf_network import NNCFNetwork
 from nncf.common.graph.layer_attributes import LinearLayerAttributes
 import pandas as pd
@@ -122,11 +119,13 @@ class StructuredMaskContext:
     def update_independent_structured_mask(self):
         # TODO: Logic here will change later.
         grain_size = self.grid_size
-        structured_mask_shape = [dim // grain_size[axes] for axes, dim in enumerate(list(self.sparsifier_operand.weight_ctx.binary_mask.shape))]
+        structured_mask_shape = [dim // grain_size[axes]
+                                 for axes, dim in enumerate(list(self.sparsifier_operand.weight_ctx.binary_mask.shape))]
         temp_shape = list(itertools.chain(*zip(list(structured_mask_shape), list(grain_size))))
         structured_mask = self.sparsifier_operand.weight_ctx.binary_mask.detach().clone()
         structured_mask = structured_mask.reshape(temp_shape)
-        structured_mask = structured_mask.amax(dim=(tuple((np.arange(len(self.sparsifier_operand.weight_ctx.binary_mask.shape)) * 2 + 1))))
+        structured_mask = structured_mask.amax(
+            dim=(tuple((np.arange(len(self.sparsifier_operand.weight_ctx.binary_mask.shape)) * 2 + 1))))
         if self.sparsifier_operand.prune_bias is True:
             structured_bias_mask_shape = structured_mask_shape[0]
             structured_bias_mask = self.sparsifier_operand.bias_ctx.binary_mask.detach().clone()
@@ -134,7 +133,8 @@ class StructuredMaskContext:
             structured_bias_mask = structured_bias_mask.amax(dim=1)
             # dim_aligned = structured_bias_mask.repeat(structured_mask.shape[1]).reshape(-1, structured_mask.shape[1])
             # structured_mask = structured_mask.logical_or(dim_aligned).to(torch.float32)
-            prunable_rows = structured_bias_mask.logical_or(structured_mask.amax(dim=1))  # preserve a row when either bias mask is 1 or weight mask row amax is 1
+            # preserve a row when either bias mask is 1 or weight mask row amax is 1
+            prunable_rows = structured_bias_mask.logical_or(structured_mask.amax(dim=1))
             prunable_cols = structured_mask.amax(dim=0)
             structured_mask = prunable_rows.unsqueeze(1) * prunable_cols.unsqueeze(0)
         self.independent_structured_mask = structured_mask
@@ -158,7 +158,8 @@ class StructuredMaskContext:
         node = self.sparsifier_operand.target_module_node
         assert isinstance(node.layer_attributes, tuple(EXPECTED_NODE_LAYER_ATTRS))
         weight_shape: Tuple[int, int] = tuple(list(node.layer_attributes.get_weight_shape()))
-        bias_shape: Tuple[int] = (node.layer_attributes.get_bias_shape(),) if self.sparsifier_operand.prune_bias else (0,)
+        bias_shape: Tuple[int] = (node.layer_attributes.get_bias_shape(),
+                                  ) if self.sparsifier_operand.prune_bias else (0,)
 
         pruned_weight_shape = list(weight_shape)
         head_id_to_keep = []
@@ -224,8 +225,8 @@ class StructuredMaskHandler:
         self.compressed_model = compressed_model
         self.sparsified_module_info_list = sparsified_module_info_list
 
-        self._sparsified_module_info_groups = self._get_prunable_sparsified_module_info_group(compressed_model,
-                                                                                              sparsified_module_info_list)
+        self._sparsified_module_info_groups = self._get_prunable_sparsified_module_info_group(
+            compressed_model, sparsified_module_info_list)
         self._structured_mask_ctx_groups = self._create_structured_mask_context_groups(
             self._sparsified_module_info_groups,
             self.strategy_by_group_type)

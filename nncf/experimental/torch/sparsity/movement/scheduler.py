@@ -15,7 +15,6 @@ from typing import Optional, Dict, Any
 
 from nncf.common.utils.logger import logger
 from nncf.common.schedulers import PolynomialDecaySchedule
-from nncf.common.sparsity.controller import SparsityController
 from nncf.common.schedulers import BaseCompressionScheduler
 
 
@@ -24,10 +23,10 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
     Movement Sparsity scheduler with a polynomial decay schedule.
 
     The scheduler will update importance threshold and importance regularization
-    factor per optimizer step. Parameter `steps_per_epoch` should be provided 
-    in config for the per step calculation. If not provided, the scheduler will 
+    factor per optimizer step. Parameter `steps_per_epoch` should be provided
+    in config for the per step calculation. If not provided, the scheduler will
     use the first epoch to calculate `steps_per_epoch` parameter. In this case,
-    parameter `warmup_start_epoch` must be equal to or larger than 1, and the 
+    parameter `warmup_start_epoch` must be equal to or larger than 1, and the
     scheduler will start calculation only after `steps_per_epoch` is calculated.
     """
 

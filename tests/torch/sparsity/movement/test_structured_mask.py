@@ -7,7 +7,6 @@ import pandas as pd
 import pytest
 import torch
 
-import nncf
 from nncf.config import NNCFConfig
 from nncf.torch import create_compressed_model
 from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlockType
@@ -300,23 +299,22 @@ desc_test_resolve_dependent_structured = {
 
 
 class TestStructuredMaskHandler:
-    def create_handler(self, run_recipe: BaseMockRunRecipe):
-        compression_ctrl, compressed_model = create_compressed_model(run_recipe.model,
-                                                                     run_recipe.nncf_config,
-                                                                     dump_graphs=False)
-        strategy = STRUCTURED_MASK_STRATEGY.get(run_recipe.model_family).from_compressed_model(compressed_model)
-        handler = StructuredMaskHandler(compressed_model,
-                                        compression_ctrl.sparsified_module_info,
-                                        strategy)
+    # pylint: disable=protected-access
+    def get_handler_from_ctrl(self, compression_ctrl):
+        handler = getattr(compression_ctrl, '_structured_mask_handler')
         all_ctxes = []
         for group in handler._structured_mask_ctx_groups:
             all_ctxes.extend(group.structured_mask_context_list)
-        return compression_ctrl, compressed_model, handler, all_ctxes
+        return handler, all_ctxes
 
+    # pylint: disable=protected-access
     @pytest.mark.parametrize('run_recipe', STRUCTURED_MASK_SUPPORTED_RECIPES,
                              ids=[r.model_family for r in STRUCTURED_MASK_SUPPORTED_RECIPES])
     def test_create_ctx_groups(self, run_recipe):
-        compression_ctrl, compressed_model, handler, all_ctxes = self.create_handler(run_recipe)
+        compression_ctrl, _ = create_compressed_model(run_recipe.model,
+                                                      run_recipe.nncf_config,
+                                                      dump_graphs=False)
+        handler, _ = self.get_handler_from_ctrl(compression_ctrl)
         num_transformer_blocks = sum(tbinfo.num_hidden_layers for tbinfo in run_recipe.transformer_block_info)
         assert len(handler._structured_mask_ctx_groups) == num_transformer_blocks * 2
         handler._structured_mask_ctx_groups.sort(key=lambda group: group.group_type.value)
@@ -332,8 +330,11 @@ class TestStructuredMaskHandler:
             assert len(group_mhsa.structured_mask_context_list) == 4
 
     def test_update_independent_structured_mask(self, mocker):
-        recipe = STRUCTURED_MASK_SUPPORTED_RECIPES[0]
-        compression_ctrl, compressed_model, handler, all_ctxes = self.create_handler(recipe)
+        run_recipe = STRUCTURED_MASK_SUPPORTED_RECIPES[0]
+        compression_ctrl, _ = create_compressed_model(run_recipe.model,
+                                                      run_recipe.nncf_config,
+                                                      dump_graphs=False)
+        handler, all_ctxes = self.get_handler_from_ctrl(compression_ctrl)
         mock_methods = [mocker.patch.object(ctx, 'update_independent_structured_mask')
                         for ctx in all_ctxes]
         handler.update_independent_structured_mask()
@@ -344,7 +345,10 @@ class TestStructuredMaskHandler:
                              ids=desc_test_resolve_dependent_structured.keys())
     def test_resolve_dependent_structured_mask(self, desc):
         run_recipe = STRUCTURED_MASK_SUPPORTED_RECIPES[0]
-        compression_ctrl, compressed_model, handler, all_ctxes = self.create_handler(run_recipe)
+        compression_ctrl, compressed_model = create_compressed_model(run_recipe.model,
+                                                                     run_recipe.nncf_config,
+                                                                     dump_graphs=False)
+        handler, all_ctxes = self.get_handler_from_ctrl(compression_ctrl)
         module_dict = run_recipe.get_nncf_modules_in_transformer_block_order(compressed_model)[0]
         module_2_node_name = {minfo.module: minfo.module_node_name
                               for minfo in compression_ctrl.sparsified_module_info}
@@ -358,8 +362,11 @@ class TestStructuredMaskHandler:
             assert torch.allclose(ctx.dependent_structured_mask, ref_param)
 
     def test_populate_dependent_structured_mask_to_operand(self, mocker):
-        recipe = STRUCTURED_MASK_SUPPORTED_RECIPES[0]
-        compression_ctrl, compressed_model, handler, all_ctxes = self.create_handler(recipe)
+        run_recipe = STRUCTURED_MASK_SUPPORTED_RECIPES[0]
+        compression_ctrl, _ = create_compressed_model(run_recipe.model,
+                                                      run_recipe.nncf_config,
+                                                      dump_graphs=False)
+        handler, all_ctxes = self.get_handler_from_ctrl(compression_ctrl)
         mock_methods = [mocker.patch.object(ctx, 'populate_dependent_structured_mask_to_operand')
                         for ctx in all_ctxes]
         handler.populate_dependent_structured_mask_to_operand()
@@ -369,8 +376,11 @@ class TestStructuredMaskHandler:
     @pytest.mark.parametrize('max_num_of_kept_heads_to_report', [1, 20])
     def test_report_structured_sparsity(self, tmp_path, mocker, max_num_of_kept_heads_to_report):
         file_name = 'structured_report'
-        recipe = STRUCTURED_MASK_SUPPORTED_RECIPES[0]
-        compression_ctrl, compressed_model, handler, all_ctxes = self.create_handler(recipe)
+        run_recipe = STRUCTURED_MASK_SUPPORTED_RECIPES[0]
+        compression_ctrl, _ = create_compressed_model(run_recipe.model,
+                                                      run_recipe.nncf_config,
+                                                      dump_graphs=False)
+        handler, _ = self.get_handler_from_ctrl(compression_ctrl)
         df = handler.report_structured_sparsity(
             tmp_path, file_name=file_name, to_csv=True, to_markdown=True,
             max_num_of_kept_heads_to_report=max_num_of_kept_heads_to_report)
@@ -379,7 +389,7 @@ class TestStructuredMaskHandler:
         mock_stat = StructuredMaskContextStatistics(*([mocker.Mock()] * 6))
         ref_columns = ["group_id", "type", "torch_module", *mock_stat.__dict__.keys()]
         assert sorted(columns) == sorted(ref_columns)
-        assert len(df) == 6 * sum(tbinfo.num_hidden_layers for tbinfo in recipe.transformer_block_info)
+        assert len(df) == 6 * sum(tbinfo.num_hidden_layers for tbinfo in run_recipe.transformer_block_info)
         for item in df['head_or_channel_id_to_keep']:
             if isinstance(item, list):
                 assert len(item) <= max_num_of_kept_heads_to_report
@@ -429,4 +439,4 @@ class TestStructuredMaskStrategy:
                                                       dump_graphs=False)
         strategy_cls = STRUCTURED_MASK_STRATEGY.get(run_recipe.model_family)
         with pytest.raises(NotImplementedError, match='the same dimension'):
-            strategy = strategy_cls.from_compressed_model(compressed_model)
+            strategy_cls.from_compressed_model(compressed_model)

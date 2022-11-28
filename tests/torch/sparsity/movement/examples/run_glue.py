@@ -2,24 +2,10 @@ import argparse
 import logging
 from typing import Optional, List
 from pathlib import Path
-from collections import OrderedDict
-from itertools import chain
-from pprint import pformat
 
-import torch
-import torch.cuda
 import numpy as np
-from nncf import NNCFConfig
-from nncf.torch import create_compressed_model
-from nncf.torch.utils import is_main_process
-from nncf.api.compression import CompressionAlgorithmController
-from nncf.common.utils.tensorboard import prepare_for_tensorboard
-import jstyleson as json
-
-from datasets import load_dataset
-from datasets import DatasetDict
+from datasets.load import load_dataset
 import evaluate
-import transformers
 from transformers import AutoConfig
 from transformers import AutoModelForSequenceClassification
 from transformers import AutoTokenizer
@@ -32,6 +18,11 @@ from transformers.trainer import TrainerCallback
 from transformers.trainer import TrainerState
 from transformers.trainer import TrainerControl
 
+from nncf import NNCFConfig
+from nncf.torch import create_compressed_model
+from nncf.api.compression import CompressionAlgorithmController
+from nncf.common.utils.tensorboard import prepare_for_tensorboard
+
 quick_check_num = 10
 task_to_sample_keys = {
     "mrpc": ("sentence1", "sentence2"),
@@ -43,20 +34,23 @@ nncf_logger = logging.getLogger('nncf')
 
 def parse_args():
     parser = argparse.ArgumentParser('GLUE')
-    parser.add_argument('--task_name', type=str, default='mrpc', help=f'Task name for GLUE. Supported tasks: {list(task_to_sample_keys)}.')
+    parser.add_argument(
+        '--task_name', type=str, default='mrpc',
+        help=f'Task name for GLUE. Supported tasks: {list(task_to_sample_keys)}.')
     parser.add_argument('--model_name_or_path', type=str, default='bert-base-uncased',
                         help="Path to pretrained model or model identifier from huggingface.co/models.")
     parser.add_argument('--max_seq_length', type=int, default=128, help='Maximum length for model input sequences.')
     parser.add_argument('--nncf_config', type=str, default=None, help='Path to NNCF configuration json file.')
     parser.add_argument('--no_cuda', action='store_true', help='Whether to disable cuda devices.')
-    parser.add_argument('--quick_check', action='store_true',
-                        help=f'If set, we will train the model without pretrained weights on only {quick_check_num} samples.')
+    parser.add_argument(
+        '--quick_check', action='store_true',
+        help=f'If set, we will train the model without pretrained weights on only {quick_check_num} samples.')
 
     args, other_args = parser.parse_known_args()
     training_args, = HfArgumentParser(TrainingArguments).parse_args_into_dataclasses(other_args)
 
     # post parser checks and overrides
-    assert args.task_name in task_to_sample_keys.keys(), f'Task name should be in {list(task_to_sample_keys)}.'
+    assert args.task_name in task_to_sample_keys, f'Task name should be in {list(task_to_sample_keys)}.'
     training_args.no_cuda = args.no_cuda
     training_args.label_names = ["labels"]
     training_args.remove_unused_columns = False

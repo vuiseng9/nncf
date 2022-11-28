@@ -11,7 +11,7 @@
  limitations under the License.
 """
 from copy import deepcopy
-from typing import DefaultDict, List, OrderedDict, Optional
+from typing import List, OrderedDict
 from collections import OrderedDict
 import torch
 import torch.distributed as dist
@@ -33,24 +33,15 @@ from nncf.experimental.torch.sparsity.movement.layers import MovementSparsifier,
 from nncf.experimental.torch.sparsity.movement.layers import SparseConfigByScope
 from nncf.experimental.torch.sparsity.movement.loss import ImportanceLoss
 from nncf.experimental.torch.sparsity.movement.scheduler import MovementPolynomialThresholdScheduler
-from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskHandler, SparsifiedModuleInfoGroup
+from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskHandler
 from nncf.torch.module_operations import UpdateWeightAndBias
 from nncf.torch.utils import get_world_size, get_model_device
 from nncf.common.utils.helpers import matches_any
 from nncf.common.accuracy_aware_training.training_loop import ADAPTIVE_COMPRESSION_CONTROLLERS
 from nncf.torch.sparsity.collector import PTSparseModelStatisticsCollector
-from nncf.common.sparsity.schedulers import SPARSITY_SCHEDULERS
-from nncf.common.schedulers import StubCompressionScheduler
 from nncf.common.sparsity.statistics import MovementSparsityStatistics
 from nncf.common.statistics import NNCFStatistics
-from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlock, get_building_blocks, BuildingBlockType, BlockFilteringStrategy
-from collections import defaultdict, namedtuple
-from nncf.torch.dynamic_graph.operation_address import OperationAddress
-import networkx as nx
-from nncf.torch.layers import NNCF_MODULES_OP_NAMES, NNCFLinear
-import os
-import numpy as np
-import pandas as pd
+from nncf.torch.layers import NNCFLinear
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import STRUCTURED_MASK_STRATEGY, detect_supported_model_family
 
 SUPPORTED_NNCF_MODULES = [NNCFLinear]

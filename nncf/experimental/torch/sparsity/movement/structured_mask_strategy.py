@@ -1,5 +1,5 @@
 import inspect
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from typing import Dict, List, Tuple, Union
 
 from nncf.common.utils.registry import Registry
 from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlockType

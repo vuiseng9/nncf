@@ -1,8 +1,5 @@
-from collections import defaultdict
 from functools import partial
-import itertools
 from pathlib import Path
-from typing import DefaultDict, List
 from unittest.mock import patch
 
 import numpy as np
@@ -19,7 +16,6 @@ from nncf.api.compression import CompressionStage
 from nncf.common.sparsity.statistics import MovementSparsityStatistics
 from nncf.common.utils.helpers import matches_any
 from nncf.common.utils.helpers import should_consider_scope
-from nncf.common.utils.registry import Registry
 from nncf.experimental.torch.sparsity.movement.algo import ImportanceLoss
 from nncf.experimental.torch.sparsity.movement.algo import MovementSparsifier
 from nncf.experimental.torch.sparsity.movement.algo import MovementSparsityController
@@ -28,28 +24,24 @@ from nncf.experimental.torch.sparsity.movement.algo import SparseStructure
 from nncf.experimental.torch.sparsity.movement.layers import SparseConfig
 from nncf.experimental.torch.sparsity.movement.layers import SparseConfigByScope
 from nncf.experimental.torch.sparsity.movement.scheduler import MovementPolynomialThresholdScheduler
-from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskContext
 from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskHandler
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import STRUCTURED_MASK_STRATEGY
 from nncf.torch import create_compressed_model
 from nncf.torch.layer_utils import CompressionParameter
 from nncf.torch.layers import NNCFLinear
 from nncf.torch.module_operations import UpdateWeightAndBias
-from tests.torch.sparsity.movement.helpers import BertRunRecipe, BaseMockRunRecipe, ParamDict, SchedulerParams
-from tests.torch.sparsity.movement.helpers import CompressionCallback, TransformerBlockModuleOrderedDict, Conv2dPlusLinearRunrecipe
+from tests.torch.sparsity.movement.helpers import BaseMockRunRecipe, BertRunRecipe, ParamDict
+from tests.torch.sparsity.movement.helpers import CompressionCallback
+from tests.torch.sparsity.movement.helpers import TransformerBlockModuleOrderedDict
+from tests.torch.sparsity.movement.helpers import Conv2dPlusLinearRunrecipe
 from tests.torch.sparsity.movement.helpers import Conv2dRunRecipe
 from tests.torch.sparsity.movement.helpers import LinearRunRecipe
-from tests.torch.sparsity.movement.helpers import NNCFAlgoConfig
 from tests.torch.sparsity.movement.helpers import SwinRunRecipe
 from tests.torch.sparsity.movement.helpers import Wav2Vec2RunRecipe
 from tests.torch.sparsity.movement.helpers import is_roughly_non_decreasing, is_roughly_of_same_value
 from tests.torch.sparsity.movement.helpers import initialize_sparsifer_parameters
 from tests.torch.sparsity.movement.helpers import build_compression_trainer
-from tests.torch.test_algo_common import BasicLinearTestModel
 from nncf.common.statistics import NNCFStatistics
-from nncf.common.sparsity.statistics import (MovementSparsityStatistics,
-                                             SparsifiedLayerSummary,
-                                             SparsifiedModelStatistics)
 
 FACTOR_NAME_IN_MOVEMENT_STAT = 'movement_sparsity/importance_regularization_factor'
 THRESHOLD_NAME_IN_MOVEMENT_STAT = 'movement_sparsity/importance_threshold'
@@ -197,9 +189,9 @@ def test_can_create_structured_mask_handler_if_supported(enable_structured_maski
     recipe = run_recipe_cls.from_default(enable_structured_masking=enable_structured_masking)
     if enable_structured_masking is True:
         if recipe.supports_structured_masking:
-            compression_ctrl, compressed_model = create_compressed_model(recipe.model,
-                                                                         recipe.nncf_config,
-                                                                         dump_graphs=False)
+            compression_ctrl, _ = create_compressed_model(recipe.model,
+                                                          recipe.nncf_config,
+                                                          dump_graphs=False)
             assert hasattr(compression_ctrl, '_structured_mask_handler')
             handler = getattr(compression_ctrl, '_structured_mask_handler')
             assert isinstance(handler, StructuredMaskHandler)
@@ -208,9 +200,9 @@ def test_can_create_structured_mask_handler_if_supported(enable_structured_maski
             with pytest.raises(RuntimeError, match=r'no supported model'):
                 create_compressed_model(recipe.model, recipe.nncf_config, dump_graphs=False)
     else:
-        compression_ctrl, compressed_model = create_compressed_model(recipe.model,
-                                                                     recipe.nncf_config,
-                                                                     dump_graphs=False)
+        compression_ctrl, _ = create_compressed_model(recipe.model,
+                                                      recipe.nncf_config,
+                                                      dump_graphs=False)
         assert (not hasattr(compression_ctrl, '_structured_mask_handler')
                 ) or getattr(compression_ctrl, '_structured_mask_handler') is None
 
@@ -235,9 +227,9 @@ def calc_linear_layer_equiv_weight_bias(module: NNCFLinear):
 def test_layer_actual_behavior_matches_sparsifer_mask(sparse_structure_by_scopes, model_bias: bool):
     recipe = LinearRunRecipe.from_default(bias=model_bias,
                                           sparse_structure_by_scopes=sparse_structure_by_scopes)
-    compression_ctrl, compressed_model = create_compressed_model(recipe.model,
-                                                                 recipe.nncf_config,
-                                                                 dump_graphs=False)
+    compression_ctrl, _ = create_compressed_model(recipe.model,
+                                                  recipe.nncf_config,
+                                                  dump_graphs=False)
     module_info = compression_ctrl.sparsified_module_info[0]
     operand = module_info.operand
     initialize_sparsifer_parameters(operand)
@@ -441,7 +433,7 @@ def test_compression_loss_update(tmp_path):
         def on_step_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
             super().on_step_end(args, state, control, **kwargs)
             assert isinstance(self.compression_ctrl.loss, ImportanceLoss)
-            for layer in self.compression_ctrl.loss._sparse_layers:
+            for layer in self.compression_ctrl.loss.sparse_layers:
                 assert isinstance(layer, MovementSparsifier)
             # check gradient
             loss_compress = self.compression_ctrl.loss()
@@ -603,9 +595,9 @@ def test_controller_compression_stage():
     recipe = LinearRunRecipe.from_default(warmup_start_epoch=1,
                                           warmup_end_epoch=2,
                                           steps_per_epoch=None)
-    compression_ctrl, compressed_model = create_compressed_model(recipe.model,
-                                                                 recipe.nncf_config,
-                                                                 dump_graphs=False)
+    compression_ctrl, _ = create_compressed_model(recipe.model,
+                                                  recipe.nncf_config,
+                                                  dump_graphs=False)
     assert compression_ctrl.compression_stage() is CompressionStage.UNCOMPRESSED
     # epoch 0
     compression_ctrl.scheduler.epoch_step()
@@ -618,7 +610,7 @@ def test_controller_compression_stage():
     compression_ctrl.scheduler.step()
     assert compression_ctrl.compression_stage() is CompressionStage.PARTIALLY_COMPRESSED
     # epoch 2 & 3
-    for epoch in range(2, 4):
+    for _ in range(2, 4):
         compression_ctrl.scheduler.epoch_step()
         assert compression_ctrl.compression_stage() is CompressionStage.FULLY_COMPRESSED
         compression_ctrl.scheduler.step()
@@ -631,9 +623,9 @@ def test_controller_calculate_movement_stat():
     for p in model.parameters():
         torch.nn.init.constant_(p, 1.)
     conv_numel, linear_numel = 56, 6
-    compression_ctrl, compressed_model = create_compressed_model(model,
-                                                                 recipe.nncf_config,
-                                                                 dump_graphs=False)
+    compression_ctrl, _ = create_compressed_model(model,
+                                                  recipe.nncf_config,
+                                                  dump_graphs=False)
     minfo = compression_ctrl.sparsified_module_info[0]
     initialize_sparsifer_parameters(minfo.operand, -1, 1)
     # initialized importance score for weight: [-1, -0.33, 0.33, 1], bias: [-1, 1]
@@ -647,9 +639,9 @@ def test_controller_calculate_movement_stat():
 
 def test_controller_compression_ratio(mocker):
     recipe = LinearRunRecipe.from_default()
-    compression_ctrl, compressed_model = create_compressed_model(recipe.model,
-                                                                 recipe.nncf_config,
-                                                                 dump_graphs=False)
+    compression_ctrl, _ = create_compressed_model(recipe.model,
+                                                  recipe.nncf_config,
+                                                  dump_graphs=False)
     mock_stat = NNCFStatistics()
     mock_stat.register('movement_sparsity',
                        MovementSparsityStatistics(mocker.Mock(sparsity_level=0.6), 1, 1))
