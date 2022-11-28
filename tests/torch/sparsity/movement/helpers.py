@@ -8,7 +8,7 @@ from datasets.arrow_dataset import Dataset
 import numpy as np
 from pytest import approx
 import torch
-import torch.nn as nn
+import torch.nn
 import torch.nn.functional as F
 import torch.utils.data
 from transformers import AutoModelForAudioClassification
@@ -214,7 +214,7 @@ class BaseMockRunRecipe:
             raise KeyError(f'"{key}" not found.')
 
     @property
-    def model(self) -> nn.Module:
+    def model(self) -> torch.nn.Module:
         torch_model = self._create_model()
         g = torch.Generator()
         g.manual_seed(42)
@@ -223,8 +223,8 @@ class BaseMockRunRecipe:
                 parameter.normal_(generator=g)
         return torch_model
 
-    def _create_model(self) -> nn.Module:
-        pass
+    def _create_model(self) -> torch.nn.Module:
+        return torch.nn.Identity()
 
     @property
     def model_input_info(self) -> List[dict]:
@@ -479,7 +479,7 @@ class LinearForClassification(PreTrainedModel):
 
     def __init__(self, input_size: int = 4, bias: bool = True, num_classes: int = 2):
         super().__init__(PretrainedConfig())
-        self.model = nn.Linear(input_size, num_classes, bias=bias)
+        self.model = torch.nn.Linear(input_size, num_classes, bias=bias)
 
     def forward(self, tensor, labels=None):
         logits = self.model(tensor)
@@ -493,10 +493,10 @@ class Conv2dForClassification(LinearForClassification):
 
     def __init__(self, input_size: int = 4, bias: bool = True, num_classes: int = 2):
         super().__init__(input_size, bias, num_classes)
-        self.model = nn.Sequential(
-            nn.Conv2d(3, num_classes, kernel_size=3, stride=1, padding=1, bias=bias),
-            nn.AdaptiveAvgPool2d(1),
-            nn.Flatten(),
+        self.model = torch.nn.Sequential(
+            torch.nn.Conv2d(3, num_classes, kernel_size=3, stride=1, padding=1, bias=bias),
+            torch.nn.AdaptiveAvgPool2d(1),
+            torch.nn.Flatten(),
         )
 
 
@@ -504,11 +504,11 @@ class Conv2dPlusLinearForClassification(LinearForClassification):
 
     def __init__(self, input_size: int = 4, bias: bool = True, num_classes: int = 2):
         super().__init__(input_size, bias, num_classes)
-        self.model = nn.Sequential(
-            nn.Conv2d(3, num_classes, kernel_size=3, stride=1, padding=1, bias=bias),
-            nn.AdaptiveAvgPool2d(1),
-            nn.Flatten(),
-            nn.Linear(num_classes, num_classes, bias=bias)
+        self.model = torch.nn.Sequential(
+            torch.nn.Conv2d(3, num_classes, kernel_size=3, stride=1, padding=1, bias=bias),
+            torch.nn.AdaptiveAvgPool2d(1),
+            torch.nn.Flatten(),
+            torch.nn.Linear(num_classes, num_classes, bias=bias)
         )
 
 
@@ -586,8 +586,9 @@ class Conv2dPlusLinearRunrecipe(BaseMockRunRecipe):
 class CompressionTrainer(Trainer):
     def __init__(self,
                  compression_ctrl: Optional[CompressionAlgorithmController],
+                 *args,
                  callbacks: Optional[List[TrainerCallback]] = None,
-                 *args, **kwargs):
+                 **kwargs):
         self.compression_ctrl = compression_ctrl
         if compression_ctrl is not None:
             if not callbacks:

@@ -11,7 +11,6 @@ from nncf.config import NNCFConfig
 from nncf.torch import create_compressed_model
 from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlockType
 from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskContextGroup
-from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskHandler
 from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskContext
 from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskContextStatistics
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import detect_supported_model_family
@@ -301,7 +300,7 @@ desc_test_resolve_dependent_structured = {
 class TestStructuredMaskHandler:
     # pylint: disable=protected-access
     def get_handler_from_ctrl(self, compression_ctrl):
-        handler = getattr(compression_ctrl, '_structured_mask_handler')
+        handler = compression_ctrl._structured_mask_handler
         all_ctxes = []
         for group in handler._structured_mask_ctx_groups:
             all_ctxes.extend(group.structured_mask_context_list)

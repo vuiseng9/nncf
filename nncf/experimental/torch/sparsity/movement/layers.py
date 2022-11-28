@@ -220,6 +220,8 @@ class MovementSparsifier(nn.Module):
                 assert dim % factor == 0, '{} is not a factor of axes {} with dim size {}'.format(factor, axes, dim)
                 score_shape.append(dim // factor)
             return tuple(score_shape)
+        
+        raise RuntimeError('Unknown sparse structure.')
 
     def _expand_importance(self, importance: torch.Tensor, isbias=False) -> torch.Tensor:
         if not self._bool_expand_importance:

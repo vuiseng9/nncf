@@ -42,7 +42,8 @@ from nncf.torch.sparsity.collector import PTSparseModelStatisticsCollector
 from nncf.common.sparsity.statistics import MovementSparsityStatistics
 from nncf.common.statistics import NNCFStatistics
 from nncf.torch.layers import NNCFLinear
-from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import STRUCTURED_MASK_STRATEGY, detect_supported_model_family
+from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import STRUCTURED_MASK_STRATEGY
+from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import detect_supported_model_family
 
 SUPPORTED_NNCF_MODULES = [NNCFLinear]
 

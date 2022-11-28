@@ -32,7 +32,7 @@ class MovementGlueHandler:
     def get_metric_value_from_checkpoint(self, checkpoint_save_dir: str) -> Dict[str, Union[float, int]]:
         checkpoint_path = self.get_checkpoint_path(checkpoint_save_dir)
         state_path = checkpoint_path / "trainer_state.json"
-        with open(state_path, "r") as f:
+        with open(state_path, "r", encoding='utf-8') as f:
             state_dict = json.load(f)
         max_step = max(log["step"] for log in state_dict["log_history"])
 
