@@ -36,7 +36,7 @@ from nncf.torch.layer_utils import CompressionParameter
 from nncf.torch.layers import NNCFLinear
 from nncf.torch.module_operations import UpdateWeightAndBias
 from tests.torch.sparsity.movement.helpers import BertRunRecipe, BaseMockRunRecipe, ParamDict, SchedulerParams
-from tests.torch.sparsity.movement.helpers import CompressionCallback, TransformerBlockModuleOrderedDict
+from tests.torch.sparsity.movement.helpers import CompressionCallback, TransformerBlockModuleOrderedDict, Conv2dPlusLinearRunrecipe
 from tests.torch.sparsity.movement.helpers import Conv2dRunRecipe
 from tests.torch.sparsity.movement.helpers import LinearRunRecipe
 from tests.torch.sparsity.movement.helpers import NNCFAlgoConfig
@@ -46,6 +46,10 @@ from tests.torch.sparsity.movement.helpers import is_roughly_non_decreasing, is_
 from tests.torch.sparsity.movement.helpers import initialize_sparsifer_parameters
 from tests.torch.sparsity.movement.helpers import build_compression_trainer
 from tests.torch.test_algo_common import BasicLinearTestModel
+from nncf.common.statistics import NNCFStatistics
+from nncf.common.sparsity.statistics import (MovementSparsityStatistics,
+                                             SparsifiedLayerSummary,
+                                             SparsifiedModelStatistics)
 
 FACTOR_NAME_IN_MOVEMENT_STAT = 'movement_sparsity/importance_regularization_factor'
 THRESHOLD_NAME_IN_MOVEMENT_STAT = 'movement_sparsity/importance_threshold'
@@ -602,20 +606,53 @@ def test_controller_compression_stage():
     compression_ctrl, compressed_model = create_compressed_model(recipe.model,
                                                                  recipe.nncf_config,
                                                                  dump_graphs=False)
-    assert compression_ctrl.compression_rate() is CompressionStage.UNCOMPRESSED
+    assert compression_ctrl.compression_stage() is CompressionStage.UNCOMPRESSED
     # epoch 0
     compression_ctrl.scheduler.epoch_step()
-    assert compression_ctrl.compression_rate() is CompressionStage.UNCOMPRESSED
+    assert compression_ctrl.compression_stage() is CompressionStage.UNCOMPRESSED
     compression_ctrl.scheduler.step()
-    assert compression_ctrl.compression_rate() is CompressionStage.UNCOMPRESSED
+    assert compression_ctrl.compression_stage() is CompressionStage.UNCOMPRESSED
     # epoch 1
     compression_ctrl.scheduler.epoch_step()
-    assert compression_ctrl.compression_rate() is CompressionStage.PARTIALLY_COMPRESSED
+    assert compression_ctrl.compression_stage() is CompressionStage.PARTIALLY_COMPRESSED
     compression_ctrl.scheduler.step()
-    assert compression_ctrl.compression_rate() is CompressionStage.PARTIALLY_COMPRESSED
+    assert compression_ctrl.compression_stage() is CompressionStage.PARTIALLY_COMPRESSED
     # epoch 2 & 3
     for epoch in range(2, 4):
         compression_ctrl.scheduler.epoch_step()
-        assert compression_ctrl.compression_rate() is CompressionStage.FULLY_COMPRESSED
+        assert compression_ctrl.compression_stage() is CompressionStage.FULLY_COMPRESSED
         compression_ctrl.scheduler.step()
-        assert compression_ctrl.compression_rate() is CompressionStage.FULLY_COMPRESSED
+        assert compression_ctrl.compression_stage() is CompressionStage.FULLY_COMPRESSED
+
+
+def test_controller_calculate_movement_stat():
+    recipe = Conv2dPlusLinearRunrecipe.from_default()
+    model = recipe.model
+    for p in model.parameters():
+        torch.nn.init.constant_(p, 1.)
+    conv_numel, linear_numel = 56, 6
+    compression_ctrl, compressed_model = create_compressed_model(model,
+                                                                 recipe.nncf_config,
+                                                                 dump_graphs=False)
+    minfo = compression_ctrl.sparsified_module_info[0]
+    initialize_sparsifer_parameters(minfo.operand, -1, 1)
+    # initialized importance score for weight: [-1, -0.33, 0.33, 1], bias: [-1, 1]
+    for threshold, ref_num_zeros in zip([-2, -0.5, 0, 0.5, 2], [0, 2, 3, 4, 4, 6]):
+        minfo.operand.importance_threshold = threshold
+        minfo.operand(minfo.module.weight, minfo.module.bias)  # update binary_mask
+        stat = compression_ctrl.statistics().movement_sparsity.model_statistics
+        assert stat.sparsity_level == ref_num_zeros / (conv_numel + linear_numel)
+        assert stat.sparsity_level_for_layers == ref_num_zeros / linear_numel
+
+
+def test_controller_compression_ratio(mocker):
+    recipe = LinearRunRecipe.from_default()
+    compression_ctrl, compressed_model = create_compressed_model(recipe.model,
+                                                                 recipe.nncf_config,
+                                                                 dump_graphs=False)
+    mock_stat = NNCFStatistics()
+    mock_stat.register('movement_sparsity',
+                       MovementSparsityStatistics(mocker.Mock(sparsity_level=0.6), 1, 1))
+    stat = mocker.patch.object(compression_ctrl, 'statistics', mocker.Mock(return_value=mock_stat))
+    assert stat.is_called_once()
+    assert compression_ctrl.compression_rate == 0.6

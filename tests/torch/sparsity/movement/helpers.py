@@ -39,6 +39,9 @@ from nncf.common.utils.tensorboard import prepare_for_tensorboard
 from nncf.experimental.torch.sparsity.movement.algo import MovementSparsifier
 from nncf.torch.nncf_network import NNCFNetwork
 from tests.torch.test_algo_common import BasicLinearTestModel
+from nncf.common.sparsity.statistics import (MovementSparsityStatistics,
+                                             SparsifiedLayerSummary,
+                                             SparsifiedModelStatistics)
 
 
 def mock_linear_nncf_node(in_features: int = 1, out_features: int = 1,
@@ -50,6 +53,7 @@ def mock_linear_nncf_node(in_features: int = 1, out_features: int = 1,
     return linear
 
 
+
 def ensure_tensor(data, dtype=torch.float, device=torch.device('cpu')):
     if isinstance(data, np.ndarray):
         return torch.from_numpy(data).to(dtype=dtype, device=device)
@@ -59,14 +63,19 @@ def ensure_tensor(data, dtype=torch.float, device=torch.device('cpu')):
         return torch.tensor(data, dtype=dtype, device=device)
 
 
-def initialize_sparsifer_parameters(operand: MovementSparsifier):
+def initialize_sparsifer_parameters(operand: MovementSparsifier,
+                                    linspace_start=-1, linspace_end=1):
     with torch.no_grad():
         device = operand.weight_importance.device
-        weight_init_tensor = torch.linspace(-1, 1, steps=operand.weight_importance.numel(), device=device)\
+        weight_init_tensor = torch.linspace(linspace_start, linspace_end,
+                                            steps=operand.weight_importance.numel(),
+                                            device=device)\
             .reshape_as(operand.weight_importance)
         operand.weight_importance.copy_(weight_init_tensor)
         if operand.prune_bias:
-            bias_init_tensor = torch.linspace(-1, 1, steps=operand.bias_importance.numel(), device=device)\
+            bias_init_tensor = torch.linspace(linspace_start, linspace_end,
+                                              steps=operand.bias_importance.numel(),
+                                              device=device)\
                 .reshape_as(operand.bias_importance)
             operand.bias_importance.copy_(bias_init_tensor)
 
@@ -503,6 +512,18 @@ class Conv2dForClassification(LinearForClassification):
         )
 
 
+class Conv2dPlusLinearForClassification(LinearForClassification):
+
+    def __init__(self, input_size: int = 4, bias: bool = True, num_classes: int = 2):
+        super().__init__(input_size, bias, num_classes)
+        self.model = nn.Sequential(
+            nn.Conv2d(3, num_classes, kernel_size=3, stride=1, padding=1, bias=bias),
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.Linear(num_classes, num_classes, bias=bias)
+        )
+
+
 class LinearRunRecipe(BaseMockRunRecipe):
     model_family = 'linear'
     supports_structured_masking = False
@@ -543,6 +564,30 @@ class Conv2dRunRecipe(BaseMockRunRecipe):
         return Conv2dForClassification(input_size=model_config.input_size,
                                        bias=model_config.bias,
                                        num_classes=model_config.num_classes)
+
+    @property
+    def model_input_info(self) -> List[dict]:
+        return [{"sample_size": [1, 3, self.model_config.input_size, self.model_config.input_size],
+                 "keyword": "tensor"}]
+
+
+class Conv2dPlusLinearRunrecipe(BaseMockRunRecipe):
+    model_family = 'conv2d+linear'
+    supports_structured_masking = False
+    default_model_config = PretrainedConfig(
+        num_classes=2,
+        input_size=4,
+        bias=True
+    )
+    default_algo_config = NNCFAlgoConfig(
+        enable_structured_masking=False
+    )
+
+    def _create_model(self):
+        model_config = self.model_config
+        return Conv2dPlusLinearForClassification(input_size=model_config.input_size,
+                                                 bias=model_config.bias,
+                                                 num_classes=model_config.num_classes)
 
     @property
     def model_input_info(self) -> List[dict]:

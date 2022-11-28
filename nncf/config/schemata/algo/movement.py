@@ -20,6 +20,8 @@ from nncf.config.schemata.basic import with_attributes
 from nncf.config.schemata.common.sparsity import COMMON_SPARSITY_PARAM_PROPERTIES
 from nncf.config.schemata.common.targeting import SCOPING_PROPERTIES
 
+NULL = {'type': 'null'}
+
 SPARSE_STRUCTURE_MODE = ['fine', 'block', 'per_dim']
 
 SPARSE_STRUCTURE_BY_SCOPES_SCHEMA = {
@@ -69,7 +71,7 @@ MOVEMENT_SPARSITY_SCHEMA = {
                     "enable_structured_masking": with_attributes(BOOLEAN,
                                                                  default=True,
                                                                  description="Whether to enable structured masking after warmup stage."),
-                    "steps_per_epoch": with_attributes(NUMBER,
+                    "steps_per_epoch": with_attributes({"oneOf": [NUMBER, NULL]},
                                                        description="Number of optimizer steps in one epoch. Required to start proper "
                                                        " scheduling in the first training epoch if "
                                                        "'update_per_optimizer_step' is true"),
