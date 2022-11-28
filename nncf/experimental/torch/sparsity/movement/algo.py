@@ -143,10 +143,9 @@ class MovementSparsityController(BaseSparsityAlgoController):
                                                                   strategy)
 
     def compression_stage(self) -> CompressionStage:
-        # TODO(yujie): add test
         if self.scheduler.current_epoch < self.scheduler.warmup_start_epoch:
             return CompressionStage.UNCOMPRESSED
-        if self.scheduler.current_sparsity_level >= self.scheduler.warmup_end_epoch:
+        if self.scheduler.current_epoch >= self.scheduler.warmup_end_epoch:
             return CompressionStage.FULLY_COMPRESSED
         return CompressionStage.PARTIALLY_COMPRESSED
 
@@ -168,7 +167,7 @@ class MovementSparsityController(BaseSparsityAlgoController):
 
         self._distributed = True
 
-    def _check_distributed_masks(self):
+    def __delete_check_distributed_masks(self):
         if not self._distributed or get_world_size() == 1:
             return 1
 

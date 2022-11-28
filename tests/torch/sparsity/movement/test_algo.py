@@ -15,6 +15,7 @@ from transformers import TrainingArguments
 from transformers.trainer_callback import TrainerControl
 from transformers.trainer_callback import TrainerState
 
+from nncf.api.compression import CompressionStage
 from nncf.common.sparsity.statistics import MovementSparsityStatistics
 from nncf.common.utils.helpers import matches_any
 from nncf.common.utils.helpers import should_consider_scope
@@ -593,4 +594,28 @@ def test_export_onnx_has_sparsified_param(tmp_path: Path, recipe: BaseMockRunRec
         onnx_path = tmp_path / f'model_thres{threshold}.onnx'
         check_onnx_has_sparsified_param(compressed_model, compression_ctrl, onnx_path)
 
-# TODO(yujie):compression_state api
+
+def test_controller_compression_stage():
+    recipe = LinearRunRecipe.from_default(warmup_start_epoch=1,
+                                          warmup_end_epoch=2,
+                                          steps_per_epoch=None)
+    compression_ctrl, compressed_model = create_compressed_model(recipe.model,
+                                                                 recipe.nncf_config,
+                                                                 dump_graphs=False)
+    assert compression_ctrl.compression_rate() is CompressionStage.UNCOMPRESSED
+    # epoch 0
+    compression_ctrl.scheduler.epoch_step()
+    assert compression_ctrl.compression_rate() is CompressionStage.UNCOMPRESSED
+    compression_ctrl.scheduler.step()
+    assert compression_ctrl.compression_rate() is CompressionStage.UNCOMPRESSED
+    # epoch 1
+    compression_ctrl.scheduler.epoch_step()
+    assert compression_ctrl.compression_rate() is CompressionStage.PARTIALLY_COMPRESSED
+    compression_ctrl.scheduler.step()
+    assert compression_ctrl.compression_rate() is CompressionStage.PARTIALLY_COMPRESSED
+    # epoch 2 & 3
+    for epoch in range(2, 4):
+        compression_ctrl.scheduler.epoch_step()
+        assert compression_ctrl.compression_rate() is CompressionStage.FULLY_COMPRESSED
+        compression_ctrl.scheduler.step()
+        assert compression_ctrl.compression_rate() is CompressionStage.FULLY_COMPRESSED
