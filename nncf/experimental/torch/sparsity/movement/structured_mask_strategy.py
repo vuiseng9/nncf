@@ -51,14 +51,14 @@ class StructuredMaskRule:
 
 
 class BaseStructuredMaskStrategy(ABC):
-    @property
-    @abstractmethod
-    def strategy_by_group_type(self) -> Dict[BuildingBlockType, List[StructuredMaskRule]]:
-        pass
-
     @classmethod
     @abstractmethod
     def from_compressed_model(cls, compressed_model: NNCFNetwork):
+        pass
+
+    @property
+    @abstractmethod
+    def rules_by_group_type(self) -> Dict[BuildingBlockType, List[StructuredMaskRule]]:
         pass
 
 
@@ -75,7 +75,7 @@ class BaseTransformerStructuredMaskStrategy(BaseStructuredMaskStrategy, ABC):
         self.dim_per_head = dim_per_head
 
     @property
-    def strategy_by_group_type(self) -> Dict[BuildingBlockType, List[StructuredMaskRule]]:
+    def rules_by_group_type(self) -> Dict[BuildingBlockType, List[StructuredMaskRule]]:
         config = {
             BuildingBlockType.MSHA: [
                 StructuredMaskRule(

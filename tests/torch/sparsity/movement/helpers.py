@@ -3,7 +3,7 @@ from abc import abstractmethod
 from collections import OrderedDict
 from copy import deepcopy
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from unittest.mock import Mock
 
 from datasets import Dataset  # pylint: disable=no-name-in-module
@@ -146,8 +146,9 @@ class TransformerBlockInfo:
         self.dim_per_head = dim_per_head
 
 
-class TransformerBlockModuleOrderedDict(OrderedDict):
-    def __init__(self, mhsa_q, mhsa_k, mhsa_v, mhsa_o, ffn_i, ffn_o) -> None:
+class TransformerBlockItemOrderedDict(OrderedDict):
+    def __init__(self, mhsa_q: Any, mhsa_k: Any, mhsa_v: Any,
+                 mhsa_o: Any, ffn_i: Any, ffn_o: Any) -> None:
         super().__init__(mhsa_q=mhsa_q, mhsa_k=mhsa_k, mhsa_v=mhsa_v,
                          mhsa_o=mhsa_o, ffn_i=ffn_i, ffn_o=ffn_o)
 
@@ -223,7 +224,7 @@ class BaseMockRunRecipe(ABC):
     @staticmethod
     @abstractmethod
     def get_nncf_modules_in_transformer_block_order(
-            compressed_model: NNCFNetwork) -> List[TransformerBlockModuleOrderedDict]:
+            compressed_model: NNCFNetwork) -> List[TransformerBlockItemOrderedDict]:
         pass
 
     @abstractmethod
@@ -322,10 +323,10 @@ class Wav2Vec2RunRecipe(BaseMockRunRecipe):
 
     @staticmethod
     def get_nncf_modules_in_transformer_block_order(
-            compressed_model: NNCFNetwork) -> List[TransformerBlockModuleOrderedDict]:
+            compressed_model: NNCFNetwork) -> List[TransformerBlockItemOrderedDict]:
         modules = []
         for block in compressed_model.nncf_module.wav2vec2.encoder.layers:
-            modules.append(TransformerBlockModuleOrderedDict(
+            modules.append(TransformerBlockItemOrderedDict(
                 block.attention.q_proj,
                 block.attention.k_proj,
                 block.attention.v_proj,
@@ -407,10 +408,10 @@ class BertRunRecipe(BaseMockRunRecipe):
 
     @staticmethod
     def get_nncf_modules_in_transformer_block_order(
-            compressed_model: NNCFNetwork) -> List[TransformerBlockModuleOrderedDict]:
+            compressed_model: NNCFNetwork) -> List[TransformerBlockItemOrderedDict]:
         modules = []
         for block in compressed_model.nncf_module.bert.encoder.layer:
-            modules.append(TransformerBlockModuleOrderedDict(
+            modules.append(TransformerBlockItemOrderedDict(
                 block.attention.self.query,
                 block.attention.self.key,
                 block.attention.self.value,
@@ -473,11 +474,11 @@ class SwinRunRecipe(BaseMockRunRecipe):
 
     @staticmethod
     def get_nncf_modules_in_transformer_block_order(
-            compressed_model: NNCFNetwork) -> List[TransformerBlockModuleOrderedDict]:
+            compressed_model: NNCFNetwork) -> List[TransformerBlockItemOrderedDict]:
         modules = []
         for layer in compressed_model.nncf_module.swin.encoder.layers:
             for block in layer.blocks:
-                modules.append(TransformerBlockModuleOrderedDict(
+                modules.append(TransformerBlockItemOrderedDict(
                     block.attention.self.query,
                     block.attention.self.key,
                     block.attention.self.value,
@@ -553,7 +554,7 @@ class LinearRunRecipe(BaseMockRunRecipe):
 
     @staticmethod
     def get_nncf_modules_in_transformer_block_order(
-            compressed_model: NNCFNetwork) -> List[TransformerBlockModuleOrderedDict]:
+            compressed_model: NNCFNetwork) -> List[TransformerBlockItemOrderedDict]:
         return []
 
 

@@ -22,7 +22,7 @@ from nncf.experimental.torch.search_building_blocks.search_blocks import Buildin
 from tests.torch.sparsity.movement.helpers import BaseMockRunRecipe
 from tests.torch.sparsity.movement.helpers import BertRunRecipe
 from tests.torch.sparsity.movement.helpers import SwinRunRecipe
-from tests.torch.sparsity.movement.helpers import TransformerBlockModuleOrderedDict
+from tests.torch.sparsity.movement.helpers import TransformerBlockItemOrderedDict
 from tests.torch.sparsity.movement.helpers import Wav2Vec2RunRecipe
 from tests.torch.sparsity.movement.helpers import ensure_tensor
 from tests.torch.sparsity.movement.helpers import mock_linear_nncf_node
@@ -261,7 +261,7 @@ class TestStructuredMaskRule:
 
 desc_test_resolve_dependent_structured = {
     "prune_1head_1channel": dict(
-        independent_structured=TransformerBlockModuleOrderedDict(
+        independent_structured=TransformerBlockItemOrderedDict(
             mhsa_q=ensure_tensor([[1], [0]]),
             mhsa_k=ensure_tensor([[1], [0]]),
             mhsa_v=ensure_tensor([[1], [0]]),
@@ -269,7 +269,7 @@ desc_test_resolve_dependent_structured = {
             ffn_i=ensure_tensor([[1], [1], [0]]),
             ffn_o=ensure_tensor([[1, 1, 0]]),
         ),
-        dependent_structured=TransformerBlockModuleOrderedDict(
+        dependent_structured=TransformerBlockItemOrderedDict(
             mhsa_q=ensure_tensor([[1], [0]]),
             mhsa_k=ensure_tensor([[1], [0]]),
             mhsa_v=ensure_tensor([[1], [0]]),
@@ -279,7 +279,7 @@ desc_test_resolve_dependent_structured = {
         ),
     ),
     "prune_0head_0channel": dict(
-        independent_structured=TransformerBlockModuleOrderedDict(
+        independent_structured=TransformerBlockItemOrderedDict(
             mhsa_q=ensure_tensor([[1], [0]]),
             mhsa_k=ensure_tensor([[1], [0]]),
             mhsa_v=ensure_tensor([[0], [1]]),
@@ -287,7 +287,7 @@ desc_test_resolve_dependent_structured = {
             ffn_i=ensure_tensor([[1], [1], [0]]),
             ffn_o=ensure_tensor([[1, 0, 1]]),
         ),
-        dependent_structured=TransformerBlockModuleOrderedDict(
+        dependent_structured=TransformerBlockItemOrderedDict(
             mhsa_q=ensure_tensor([[1], [1]]),
             mhsa_k=ensure_tensor([[1], [1]]),
             mhsa_v=ensure_tensor([[1], [1]]),
@@ -425,7 +425,7 @@ class TestStructuredMaskStrategy:
         strategy = strategy_cls.from_compressed_model(compressed_model)
         ref_dim_per_head = run_recipe.transformer_block_info[0].dim_per_head
         assert strategy.dim_per_head == ref_dim_per_head
-        rules_by_group_type = strategy.strategy_by_group_type
+        rules_by_group_type = strategy.rules_by_group_type
         for group_type, rule_list in rules_by_group_type.items():
             assert group_type in [BuildingBlockType.MSHA, BuildingBlockType.FF]
             assert isinstance(rule_list, list)

@@ -39,7 +39,7 @@ from tests.torch.sparsity.movement.helpers import Conv2dRunRecipe
 from tests.torch.sparsity.movement.helpers import LinearRunRecipe
 from tests.torch.sparsity.movement.helpers import ParamDict
 from tests.torch.sparsity.movement.helpers import SwinRunRecipe
-from tests.torch.sparsity.movement.helpers import TransformerBlockModuleOrderedDict
+from tests.torch.sparsity.movement.helpers import TransformerBlockItemOrderedDict
 from tests.torch.sparsity.movement.helpers import Wav2Vec2RunRecipe
 from tests.torch.sparsity.movement.helpers import build_compression_trainer
 from tests.torch.sparsity.movement.helpers import initialize_sparsifer_parameters
@@ -257,7 +257,7 @@ def test_layer_actual_behavior_matches_sparsifer_mask(sparse_structure_by_scopes
 
 desc_test_controller_structured_mask_filling = {
     "prune_1head_1channel": dict(
-        unstructured_binary_mask=TransformerBlockModuleOrderedDict(
+        unstructured_binary_mask=TransformerBlockItemOrderedDict(
             mhsa_q=ParamDict(weight=[[1, 0, 0, 0], [1, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], bias=[0, 0, 0, 0]),
             mhsa_k=ParamDict(weight=[[0, 1, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], bias=[1, 0, 0, 0]),
             mhsa_v=ParamDict(weight=[[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], bias=[0, 1, 0, 0]),
@@ -265,7 +265,7 @@ desc_test_controller_structured_mask_filling = {
             ffn_i=ParamDict(weight=[[1, 1, 0, 1], [1, 1, 0, 1], [0, 0, 0, 0]], bias=[1, 0, 0]),
             ffn_o=ParamDict(weight=[[0, 1, 0], [1, 1, 0], [1, 1, 0], [1, 1, 0]], bias=[0, 0, 0, 0])
         ),
-        ref_structured_binary_mask=TransformerBlockModuleOrderedDict(
+        ref_structured_binary_mask=TransformerBlockItemOrderedDict(
             mhsa_q=ParamDict(weight=[[1, 1, 1, 1], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]], bias=[1, 1, 0, 0]),
             mhsa_k=ParamDict(weight=[[1, 1, 1, 1], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]], bias=[1, 1, 0, 0]),
             mhsa_v=ParamDict(weight=[[1, 1, 1, 1], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]], bias=[1, 1, 0, 0]),
@@ -275,7 +275,7 @@ desc_test_controller_structured_mask_filling = {
         )
     ),
     "prune_1head_1channel_no_mhsa_qkv_bias": dict(
-        unstructured_binary_mask=TransformerBlockModuleOrderedDict(
+        unstructured_binary_mask=TransformerBlockItemOrderedDict(
             mhsa_q=ParamDict(weight=[[0, 0, 0, 0], [0, 0, 0, 0], [1, 0, 0, 0], [1, 0, 0, 0]], bias=None),
             mhsa_k=ParamDict(weight=[[0, 0, 0, 0], [0, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 0]], bias=None),
             mhsa_v=ParamDict(weight=[[0, 0, 0, 0], [0, 0, 0, 0], [1, 0, 0, 0], [0, 1, 0, 0]], bias=None),
@@ -283,7 +283,7 @@ desc_test_controller_structured_mask_filling = {
             ffn_i=ParamDict(weight=[[1, 1, 0, 1], [1, 1, 0, 1], [0, 0, 0, 0]], bias=[1, 0, 0]),
             ffn_o=ParamDict(weight=[[0, 1, 0], [1, 1, 0], [1, 1, 0], [1, 1, 0]], bias=[0, 0, 0, 0])
         ),
-        ref_structured_binary_mask=TransformerBlockModuleOrderedDict(
+        ref_structured_binary_mask=TransformerBlockItemOrderedDict(
             mhsa_q=ParamDict(weight=[[0, 0, 0, 0], [0, 0, 0, 0], [1, 1, 1, 1], [1, 1, 1, 1]], bias=None),
             mhsa_k=ParamDict(weight=[[0, 0, 0, 0], [0, 0, 0, 0], [1, 1, 1, 1], [1, 1, 1, 1]], bias=None),
             mhsa_v=ParamDict(weight=[[0, 0, 0, 0], [0, 0, 0, 0], [1, 1, 1, 1], [1, 1, 1, 1]], bias=None),
@@ -293,7 +293,7 @@ desc_test_controller_structured_mask_filling = {
         )
     ),
     "prune_1channel_no_mhsa_o_bias": dict(
-        unstructured_binary_mask=TransformerBlockModuleOrderedDict(
+        unstructured_binary_mask=TransformerBlockItemOrderedDict(
             mhsa_q=ParamDict(weight=[[0, 0, 0, 0], [0, 0, 0, 0], [1, 0, 0, 0], [1, 0, 0, 0]], bias=[1, 0, 0, 0]),
             mhsa_k=ParamDict(weight=[[0, 0, 0, 0], [0, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 0]], bias=[0, 0, 0, 0]),
             mhsa_v=ParamDict(weight=[[0, 0, 0, 0], [0, 0, 0, 0], [1, 0, 0, 0], [0, 1, 0, 0]], bias=[0, 0, 0, 0]),
@@ -301,7 +301,7 @@ desc_test_controller_structured_mask_filling = {
             ffn_i=ParamDict(weight=[[1, 1, 0, 1], [1, 1, 0, 1], [0, 0, 0, 0]], bias=[1, 0, 0]),
             ffn_o=ParamDict(weight=[[0, 1, 0], [1, 1, 0], [1, 1, 0], [1, 1, 0]], bias=[0, 0, 0, 0])
         ),
-        ref_structured_binary_mask=TransformerBlockModuleOrderedDict(
+        ref_structured_binary_mask=TransformerBlockItemOrderedDict(
             mhsa_q=ParamDict(weight=torch.ones((4, 4)), bias=torch.ones(4)),
             mhsa_k=ParamDict(weight=torch.ones((4, 4)), bias=torch.ones(4)),
             mhsa_v=ParamDict(weight=torch.ones((4, 4)), bias=torch.ones(4)),
@@ -311,7 +311,7 @@ desc_test_controller_structured_mask_filling = {
         )
     ),
     "prune_none_no_ffn_bias": dict(
-        unstructured_binary_mask=TransformerBlockModuleOrderedDict(
+        unstructured_binary_mask=TransformerBlockItemOrderedDict(
             mhsa_q=ParamDict(weight=[[1, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [1, 0, 0, 0]], bias=[1, 0, 0, 0]),
             mhsa_k=ParamDict(weight=[[0, 0, 0, 0], [0, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 0]], bias=[0, 0, 0, 0]),
             mhsa_v=ParamDict(weight=[[0, 0, 0, 0], [0, 0, 0, 0], [1, 0, 0, 0], [0, 1, 0, 0]], bias=[0, 0, 0, 0]),
@@ -319,7 +319,7 @@ desc_test_controller_structured_mask_filling = {
             ffn_i=ParamDict(weight=[[1, 1, 0, 1], [1, 1, 0, 1], [0, 0, 0, 0]], bias=None),
             ffn_o=ParamDict(weight=[[0, 1, 0], [1, 0, 1], [1, 1, 0], [1, 1, 0]], bias=None)
         ),
-        ref_structured_binary_mask=TransformerBlockModuleOrderedDict(
+        ref_structured_binary_mask=TransformerBlockItemOrderedDict(
             mhsa_q=ParamDict(weight=torch.ones((4, 4)), bias=torch.ones(4)),
             mhsa_k=ParamDict(weight=torch.ones((4, 4)), bias=torch.ones(4)),
             mhsa_v=ParamDict(weight=torch.ones((4, 4)), bias=torch.ones(4)),

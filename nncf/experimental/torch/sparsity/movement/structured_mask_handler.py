@@ -223,7 +223,7 @@ class StructuredMaskHandler:
                  sparsified_module_info_list: List[SparseModuleInfo],
                  strategy: BaseStructuredMaskStrategy):
         self.strategy = strategy
-        self.strategy_by_group_type = strategy.strategy_by_group_type
+        self.rules_by_group_type = strategy.rules_by_group_type
         self.compressed_model = compressed_model
         self.sparsified_module_info_list = sparsified_module_info_list
 
@@ -231,7 +231,7 @@ class StructuredMaskHandler:
             compressed_model, sparsified_module_info_list)
         self._structured_mask_ctx_groups = self._create_structured_mask_context_groups(
             self._sparsified_module_info_groups,
-            self.strategy_by_group_type)
+            self.rules_by_group_type)
 
         logging_str_l = ['Structured mask contexts by group:']
         for group in self._structured_mask_ctx_groups:
@@ -246,7 +246,7 @@ class StructuredMaskHandler:
     def resolve_dependent_structured_mask(self):
         for group in self._structured_mask_ctx_groups:
             group_type = group.group_type
-            if group_type not in self.strategy_by_group_type:
+            if group_type not in self.rules_by_group_type:
                 raise ValueError(f"No strucrtured mask strategy for group_type=\"{group_type}\"")
             ctxes = group.structured_mask_context_list
             row_prune_ctxes = list(filter(lambda ctx: ctx.prune_by_row, ctxes))
@@ -324,7 +324,7 @@ class StructuredMaskHandler:
     @staticmethod
     def _create_structured_mask_context_groups(
         sparsified_module_info_groups: List[SparsifiedModuleInfoGroup],
-        rule_by_group_type: Dict[BuildingBlockType, List[StructuredMaskRule]]
+        rules_by_group_type: Dict[BuildingBlockType, List[StructuredMaskRule]]
     ) -> List[StructuredMaskContextGroup]:
         groups = []
         for group in sparsified_module_info_groups:
@@ -332,7 +332,7 @@ class StructuredMaskHandler:
             group_id = group.group_id
             ctxes = []
             for minfo in group.sparse_module_info:
-                for rule in rule_by_group_type[group_type]:
+                for rule in rules_by_group_type[group_type]:
                     if contains_any(minfo.module_node_name, rule.keywords):
                         ctx = StructuredMaskContext(minfo.operand,
                                                     minfo.module_node_name,
