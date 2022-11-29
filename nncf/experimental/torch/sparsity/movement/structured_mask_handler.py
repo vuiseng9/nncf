@@ -117,26 +117,19 @@ class StructuredMaskContext:
 
     @torch.no_grad()
     def update_independent_structured_mask(self):
-        # TODO: Logic here will change later.
-        grain_size = self.grid_size
-        structured_mask_shape = [dim // grain_size[axes]
-                                 for axes, dim in enumerate(list(self.sparsifier_operand.weight_ctx.binary_mask.shape))]
-        temp_shape = list(itertools.chain(*zip(list(structured_mask_shape), list(grain_size))))
-        structured_mask = self.sparsifier_operand.weight_ctx.binary_mask.detach().clone()
-        structured_mask = structured_mask.reshape(temp_shape)
-        structured_mask = structured_mask.amax(
-            dim=(tuple((np.arange(len(self.sparsifier_operand.weight_ctx.binary_mask.shape)) * 2 + 1))))
+        weight_binary_mask = self.sparsifier_operand.weight_ctx.binary_mask.detach().clone()
+        mask_by_grid = F.max_pool2d(
+            weight_binary_mask.unsqueeze(0), kernel_size=self.grid_size, stride=self.grid_size).squeeze(0)
+        preserved_cols = mask_by_grid.amax(dim=0)
+        preserved_rows = mask_by_grid.amax(dim=1)
+
         if self.sparsifier_operand.prune_bias is True:
-            structured_bias_mask_shape = structured_mask_shape[0]
-            structured_bias_mask = self.sparsifier_operand.bias_ctx.binary_mask.detach().clone()
-            structured_bias_mask = structured_bias_mask.reshape((structured_bias_mask_shape, -1))
-            structured_bias_mask = structured_bias_mask.amax(dim=1)
-            # dim_aligned = structured_bias_mask.repeat(structured_mask.shape[1]).reshape(-1, structured_mask.shape[1])
-            # structured_mask = structured_mask.logical_or(dim_aligned).to(torch.float32)
-            # preserve a row when either bias mask is 1 or weight mask row amax is 1
-            prunable_rows = structured_bias_mask.logical_or(structured_mask.amax(dim=1))
-            prunable_cols = structured_mask.amax(dim=0)
-            structured_mask = prunable_rows.unsqueeze(1) * prunable_cols.unsqueeze(0)
+            bias_binary_mask = self.sparsifier_operand.bias_ctx.binary_mask.detach().clone()
+            bias_preserved_rows = F.max_pool1d(
+                bias_binary_mask.view(1, -1), kernel_size=self.grid_size[0], stride=self.grid_size[0]).squeeze(0)
+            preserved_rows = bias_preserved_rows.logical_or(preserved_rows)
+
+        structured_mask = preserved_rows.unsqueeze(1) * preserved_cols.unsqueeze(0)
         self.independent_structured_mask = structured_mask
         return structured_mask
 
