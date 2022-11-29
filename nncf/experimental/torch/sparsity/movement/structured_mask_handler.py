@@ -1,27 +1,24 @@
-import itertools
-import logging
 from functools import reduce
-from typing import Iterable, List, Tuple, Union, Optional, Dict
+import logging
 from pathlib import Path
+from typing import Dict, Iterable, List, Optional, Tuple, Union
 
-import numpy as np
+import pandas as pd
 import torch
 import torch.nn.functional as F
-from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlockType
-from nncf.torch.sparsity.base_algo import SparseModuleInfo
-from nncf.experimental.torch.sparsity.movement.layers import MovementSparsifier
-from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import StructuredMaskRule
-from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import BaseStructuredMaskStrategy
-from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlockType
+
+from nncf.common.graph.graph import NNCFNodeName
+from nncf.common.graph.layer_attributes import LinearLayerAttributes
+from nncf.common.utils.logger import logger
 from nncf.experimental.torch.search_building_blocks.search_blocks import BlockFilteringStrategy
+from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlockType
 from nncf.experimental.torch.search_building_blocks.search_blocks import get_building_blocks
+from nncf.experimental.torch.sparsity.movement.layers import MovementSparsifier
+from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import BaseStructuredMaskStrategy
+from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import StructuredMaskRule
 from nncf.torch.layers import NNCFLinear
 from nncf.torch.nncf_network import NNCFNetwork
-from nncf.common.graph.layer_attributes import LinearLayerAttributes
-import pandas as pd
-from nncf.common.graph.graph import NNCFNodeName
-
-logger = logging.getLogger('nncf')
+from nncf.torch.sparsity.base_algo import SparseModuleInfo
 
 SUPPORTED_NNCF_MODULES = [NNCFLinear]
 EXPECTED_NODE_LAYER_ATTRS = [LinearLayerAttributes]

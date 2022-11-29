@@ -10,40 +10,45 @@
  See the License for the specific language governing permissions and
  limitations under the License.
 """
-from copy import deepcopy
-from typing import List, OrderedDict
 from collections import OrderedDict
+from copy import deepcopy
+from typing import List
+
 import torch
 import torch.distributed as dist
 
 from nncf import NNCFConfig
-from nncf.config.extractors import extract_algo_specific_config
-from nncf.torch.algo_selector import PT_COMPRESSION_ALGORITHMS
 from nncf.api.compression import CompressionStage
+from nncf.common.accuracy_aware_training.training_loop import ADAPTIVE_COMPRESSION_CONTROLLERS
 from nncf.common.graph import NNCFNode
 from nncf.common.graph.transformations.commands import TargetType
-from nncf.common.utils.logger import logger as nncf_logger
-from nncf.torch.compression_method_api import PTCompressionAlgorithmController
-from nncf.torch.nncf_network import NNCFNetwork
-from nncf.torch.sparsity.base_algo import BaseSparsityAlgoBuilder, BaseSparsityAlgoController, SparseModuleInfo
-from nncf.torch.graph.transformations.commands import PTInsertionCommand
-from nncf.torch.graph.transformations.commands import PTTargetPoint
-from nncf.torch.graph.transformations.commands import TransformationPriority
-from nncf.experimental.torch.sparsity.movement.layers import MovementSparsifier, SparseConfig, SparseStructure
+from nncf.common.sparsity.statistics import MovementSparsityStatistics
+from nncf.common.statistics import NNCFStatistics
+from nncf.common.utils.helpers import matches_any
+from nncf.common.utils.logger import logger
+from nncf.config.extractors import extract_algo_specific_config
+from nncf.experimental.torch.sparsity.movement.layers import MovementSparsifier
+from nncf.experimental.torch.sparsity.movement.layers import SparseConfig
 from nncf.experimental.torch.sparsity.movement.layers import SparseConfigByScope
+from nncf.experimental.torch.sparsity.movement.layers import SparseStructure
 from nncf.experimental.torch.sparsity.movement.loss import ImportanceLoss
 from nncf.experimental.torch.sparsity.movement.scheduler import MovementPolynomialThresholdScheduler
 from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskHandler
-from nncf.torch.module_operations import UpdateWeightAndBias
-from nncf.torch.utils import get_world_size, get_model_device
-from nncf.common.utils.helpers import matches_any
-from nncf.common.accuracy_aware_training.training_loop import ADAPTIVE_COMPRESSION_CONTROLLERS
-from nncf.torch.sparsity.collector import PTSparseModelStatisticsCollector
-from nncf.common.sparsity.statistics import MovementSparsityStatistics
-from nncf.common.statistics import NNCFStatistics
-from nncf.torch.layers import NNCFLinear
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import STRUCTURED_MASK_STRATEGY
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import detect_supported_model_family
+from nncf.torch.algo_selector import PT_COMPRESSION_ALGORITHMS
+from nncf.torch.compression_method_api import PTCompressionAlgorithmController
+from nncf.torch.graph.transformations.commands import PTInsertionCommand
+from nncf.torch.graph.transformations.commands import PTTargetPoint
+from nncf.torch.graph.transformations.commands import TransformationPriority
+from nncf.torch.layers import NNCFLinear
+from nncf.torch.module_operations import UpdateWeightAndBias
+from nncf.torch.nncf_network import NNCFNetwork
+from nncf.torch.sparsity.base_algo import BaseSparsityAlgoBuilder
+from nncf.torch.sparsity.base_algo import BaseSparsityAlgoController
+from nncf.torch.sparsity.base_algo import SparseModuleInfo
+from nncf.torch.sparsity.collector import PTSparseModelStatisticsCollector
+from nncf.torch.utils import get_model_device
 
 SUPPORTED_NNCF_MODULES = [NNCFLinear]
 
@@ -80,10 +85,10 @@ class MovementSparsityBuilder(BaseSparsityAlgoBuilder):
             node_name = module_node.node_name
 
             if not self._should_consider_scope(node_name):
-                nncf_logger.info("Ignored adding Weight Sparsifier in scope: {}".format(node_name))
+                logger.info("Ignored adding Weight Sparsifier in scope: {}".format(node_name))
                 continue
 
-            nncf_logger.info("Adding Weight Sparsifier in scope: {}".format(node_name))
+            logger.info("Adding Weight Sparsifier in scope: {}".format(node_name))
             compression_lr_multiplier = \
                 self.config.get_redefinable_global_param_value_for_algo('compression_lr_multiplier',
                                                                         self.name)

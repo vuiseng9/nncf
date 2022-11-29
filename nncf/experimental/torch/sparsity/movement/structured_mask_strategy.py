@@ -1,6 +1,7 @@
+from abc import ABC
+from abc import abstractmethod
 import inspect
 from typing import Dict, List, Tuple, Union
-from abc import ABC, abstractmethod
 
 from nncf.common.utils.registry import Registry
 from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlockType

@@ -10,11 +10,11 @@
  See the License for the specific language governing permissions and
  limitations under the License.
 """
-from typing import Optional, List, Union
+from typing import List, Optional
 
-import torch
-from nncf.torch.compression_method_api import PTCompressionLoss
+
 from nncf.common.schedulers import BaseCompressionScheduler
+from nncf.torch.compression_method_api import PTCompressionLoss
 
 
 class ImportanceLoss(PTCompressionLoss):

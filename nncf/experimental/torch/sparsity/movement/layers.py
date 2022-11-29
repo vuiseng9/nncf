@@ -120,7 +120,7 @@ class MovementSparsifier(nn.Module):
         self.prune_bias = (target_module_node.layer_attributes.bias not in (False, None))
         self.frozen = frozen
         self.layer_loss_lambda = layer_loss_lambda
-        self.importance_threshold = -math.inf
+        self._importance_threshold = -math.inf
 
         weight_shape = target_module_node.layer_attributes.get_weight_shape()
         self.weight_ctx = BinaryMask(weight_shape)
@@ -149,6 +149,14 @@ class MovementSparsifier(nn.Module):
             self.bias_ctx.binary_mask = self._calc_training_binary_mask(isbias=True)
 
         self.mask_calculation_hook = MaskCalculationHook(self)
+
+    @property
+    def importance_threshold(self):
+        return self._importance_threshold
+
+    @importance_threshold.setter
+    def importance_threshold(self, value: float):
+        self._importance_threshold = value
 
     def forward(self, weight: torch.Tensor, bias: Optional[torch.Tensor] = None
                 ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
