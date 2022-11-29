@@ -35,12 +35,13 @@ SPARSE_STRUCTURE_BY_SCOPES_SCHEMA = {
         "target_scopes": with_attributes(STRING,
                                          description="TBD")
     },
-    "additionalProperties": False
+    "additionalProperties": False,
+    "required": ['target_scopes'],
 }
 
 MOVEMENT_SPARSITY_SCHEMA = {
     **BASIC_COMPRESSION_ALGO_SCHEMA,
-    #TODO: fill in description
+    # TODO: fill in description
     "description": f"to-do."
                    f"placeholder. ",
     "properties": {

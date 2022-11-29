@@ -1,3 +1,4 @@
+from typing import Any, Dict
 from unittest.mock import Mock
 from unittest.mock import call
 
@@ -12,6 +13,8 @@ from nncf.common.sparsity.statistics import SparsifiedModelStatistics
 from nncf.common.statistics import NNCFStatistics
 from nncf.common.utils.helpers import create_table
 from nncf.experimental.torch.sparsity.movement.functions import binary_mask_by_threshold
+from nncf.experimental.torch.sparsity.movement.layers import SparseConfigByScope
+from nncf.experimental.torch.sparsity.movement.layers import SparseStructure
 from nncf.experimental.torch.sparsity.movement.loss import ImportanceLoss
 from tests.torch.sparsity.movement.helpers import LinearRunRecipe
 from tests.torch.sparsity.movement.helpers import ensure_tensor
@@ -180,3 +183,55 @@ class TestMovementSparsityStatistics:
         nncf_stats.register('movement_sparsity', movement_stats)
         assert hasattr(nncf_stats, 'movement_sparsity')
         assert nncf_stats.movement_sparsity == movement_stats
+
+
+class TestSparseConfigByScope:
+    @pytest.mark.parametrize('config', [
+        {
+            "target_scopes": "{re}fine"
+        },
+        {
+            "mode": "fine",
+            "target_scopes": "{re}fine"
+        },
+        {
+            "mode": "fine",
+            "sparse_factors": [1, 1],
+            "target_scopes": "{re}fine"
+        },
+        {
+            "mode": "block",
+            "sparse_factors": [32, 32],
+            "target_scopes": "{re}block"
+        },
+        {
+            "mode": "per_dim",
+            "axis": 0,
+            "target_scopes": "{re}prune_row"
+        },
+        {
+            "mode": "per_dim",
+            "axis": 1,
+            "target_scopes": "prune_column"
+        }
+    ])
+    def test_create_sparse_config_by_scope(self, config: Dict[str, Any]):
+        sparse_config_by_scope = SparseConfigByScope.from_config(config)
+        assert isinstance(sparse_config_by_scope, SparseConfigByScope)
+        ref_target_scopes = config.pop('target_scopes')
+        assert sorted(sparse_config_by_scope.target_scopes) == sorted(ref_target_scopes)
+        sparse_config = sparse_config_by_scope.sparse_config
+        ref_mode = config.pop('mode', 'fine')
+        if ref_mode == 'fine':
+            ref_sparse_config = dict(mode=SparseStructure.FINE,
+                                     sparse_factors=(1, 1),
+                                     sparse_axis=None)
+        elif ref_mode == 'block':
+            ref_sparse_config = dict(mode=SparseStructure.BLOCK,
+                                     sparse_factors=tuple(config['sparse_factors']),
+                                     sparse_axis=None)
+        else:
+            ref_sparse_config = dict(mode=SparseStructure.PER_DIM,
+                                     sparse_factors=None,
+                                     sparse_axis=int(config['axis']))
+        assert sparse_config.__dict__ == ref_sparse_config
