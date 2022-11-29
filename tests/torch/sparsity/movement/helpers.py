@@ -1,9 +1,10 @@
 from collections import OrderedDict
 from copy import deepcopy
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict
 from unittest.mock import Mock
 from abc import ABC, abstractmethod
+import os
 
 from datasets import Dataset  # pylint: disable=no-name-in-module
 import numpy as np
@@ -29,6 +30,7 @@ from transformers.trainer_callback import TrainerState
 from nncf import NNCFConfig
 from nncf.api.compression import CompressionAlgorithmController
 from nncf.common.graph.graph import NNCFGraph
+from nncf.common.graph.graph import NNCFNode
 from nncf.common.graph.layer_attributes import LinearLayerAttributes
 from nncf.common.utils.tensorboard import prepare_for_tensorboard
 from nncf.experimental.torch.sparsity.movement.algo import MovementSparsifier
@@ -36,7 +38,7 @@ from nncf.torch.nncf_network import NNCFNetwork
 
 
 def mock_linear_nncf_node(in_features: int = 1, out_features: int = 1,
-                          bias: bool = True, node_name='linear'):
+                          bias: bool = True, node_name: str = 'linear') -> NNCFNode:
     graph = NNCFGraph()
     linear = graph.add_nncf_node(
         node_name, 'linear', Mock(),
@@ -44,7 +46,7 @@ def mock_linear_nncf_node(in_features: int = 1, out_features: int = 1,
     return linear
 
 
-def ensure_tensor(data, dtype=torch.float, device=torch.device('cpu')):
+def ensure_tensor(data, dtype=torch.float, device=torch.device('cpu')) -> torch.Tensor:
     if isinstance(data, np.ndarray):
         return torch.from_numpy(data).to(dtype=dtype, device=device)
     if isinstance(data, torch.Tensor):
@@ -53,7 +55,7 @@ def ensure_tensor(data, dtype=torch.float, device=torch.device('cpu')):
 
 
 def initialize_sparsifer_parameters(operand: MovementSparsifier,
-                                    linspace_start=-1, linspace_end=1):
+                                    linspace_start: float = -1, linspace_end: float = 1):
     with torch.no_grad():
         device = operand.weight_importance.device
         weight_init_tensor = torch.linspace(linspace_start, linspace_end,
@@ -69,13 +71,13 @@ def initialize_sparsifer_parameters(operand: MovementSparsifier,
             operand.bias_importance.copy_(bias_init_tensor)
 
 
-def is_roughly_non_decreasing(x_list, atol=0.01):
+def is_roughly_non_decreasing(x_list, atol: float = 0.01) -> bool:
     x_list = list(x_list)
     assert atol >= 0
     return all(a <= b + atol for a, b in zip(x_list[:-1], x_list[1:]))
 
 
-def is_roughly_of_same_value(x_list, atol=1e-6):
+def is_roughly_of_same_value(x_list, atol: float = 1e-6) -> bool:
     x_list = list(x_list)
     assert atol >= 0
     return all(x == approx(x_list[0], abs=atol) for x in x_list[1:])
@@ -88,7 +90,7 @@ class ParamDict:
             setattr(self, name, ensure_tensor(value, dtype, device) if
                     value is not None else None)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key) -> Optional[torch.Tensor]:
         assert key in self.keys
         return getattr(self, key)
 
@@ -113,15 +115,16 @@ class SchedulerParams:
 
 
 class NNCFAlgoConfig:
-    def __init__(self, sparse_structure_by_scopes=(),
-                 ignored_scopes=(),
-                 scheduler_params=None, **scheduler_overrides):
+    def __init__(self, sparse_structure_by_scopes: Optional[List[Dict]] = None,
+                 ignored_scopes: Optional[List[str]] = None,
+                 scheduler_params: Optional[SchedulerParams] = None,
+                 **scheduler_overrides):
         self.scheduler_params = scheduler_params or SchedulerParams()
         for k, v in scheduler_overrides.items():
             assert hasattr(self.scheduler_params, k)
             setattr(self.scheduler_params, k, v)
-        self.sparse_structure_by_scopes = list(sparse_structure_by_scopes)
-        self.ignored_scopes = list(ignored_scopes)
+        self.sparse_structure_by_scopes = sparse_structure_by_scopes or []
+        self.ignored_scopes = ignored_scopes or []
 
     def to_dict(self):
         return {
@@ -136,7 +139,7 @@ class TransformerBlockInfo:
     def __init__(self, num_hidden_layers: int = 1,
                  hidden_size: int = 4,
                  intermediate_size: int = 3,
-                 dim_per_head: int = 2) -> None:
+                 dim_per_head: int = 2):
         self.num_hidden_layers = num_hidden_layers
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size
@@ -155,7 +158,9 @@ class BaseMockRunRecipe(ABC):
     default_model_config = PretrainedConfig()
     default_algo_config = NNCFAlgoConfig()
 
-    def __init__(self, model_config, algo_config: NNCFAlgoConfig, log_dir=None) -> None:
+    def __init__(self, model_config: PretrainedConfig,
+                 algo_config: NNCFAlgoConfig,
+                 log_dir=None) -> None:
         self.model_config = model_config
         self.algo_config = algo_config
         self.model_keys = set(self.model_config.__dict__.keys())
@@ -168,7 +173,7 @@ class BaseMockRunRecipe(ABC):
         return self.algo_config.scheduler_params
 
     def set_log_dir(self, log_dir=None):
-        self.log_dir = log_dir
+        self.log_dir = str(log_dir)
         if log_dir is not None:
             Path(log_dir).mkdir(exist_ok=True, parents=True)
 
@@ -299,7 +304,7 @@ class Wav2Vec2RunRecipe(BaseMockRunRecipe):
         scheduler_params=SchedulerParams(),
     )
 
-    def _create_model(self):
+    def _create_model(self) -> torch.nn.Module:
         return AutoModelForAudioClassification.from_config(self.model_config)
 
     @property
@@ -307,7 +312,7 @@ class Wav2Vec2RunRecipe(BaseMockRunRecipe):
         return [{"sample_size": [1, 32], "keyword": "input_values"}]
 
     @property
-    def transformer_block_info(self):
+    def transformer_block_info(self) -> List[TransformerBlockInfo]:
         model_config = self.model_config
         return [TransformerBlockInfo(
             num_hidden_layers=model_config.num_hidden_layers,
@@ -357,7 +362,9 @@ class BertRunRecipe(BaseMockRunRecipe):
         scheduler_params=SchedulerParams(),
     )
 
-    def __init__(self, model_config: BertConfig, algo_config: NNCFAlgoConfig, log_dir=None) -> None:
+    def __init__(self, model_config: BertConfig,
+                 algo_config: NNCFAlgoConfig,
+                 log_dir=None) -> None:
         super().__init__(model_config, algo_config, log_dir)
         extra_model_keys = {'mhsa_qkv_bias', 'mhsa_o_bias', 'ffn_bias'}
         self.model_keys = self.model_keys.union(extra_model_keys)
@@ -365,7 +372,7 @@ class BertRunRecipe(BaseMockRunRecipe):
             value = getattr(self.model_config, key, True)
             setattr(self.model_config, key, value)
 
-    def _create_model(self):
+    def _create_model(self) -> torch.nn.Module:
         model = AutoModelForSequenceClassification.from_config(self.model_config)
         for block in model.bert.encoder.layer:
             if not self.model_config.mhsa_qkv_bias:
@@ -390,7 +397,7 @@ class BertRunRecipe(BaseMockRunRecipe):
         ]
 
     @property
-    def transformer_block_info(self):
+    def transformer_block_info(self) -> List[TransformerBlockInfo]:
         model_config = self.model_config
         return [TransformerBlockInfo(
             num_hidden_layers=model_config.num_hidden_layers,
@@ -400,7 +407,8 @@ class BertRunRecipe(BaseMockRunRecipe):
         )]
 
     @staticmethod
-    def get_nncf_modules_in_transformer_block_order(compressed_model) -> List[TransformerBlockModuleOrderedDict]:
+    def get_nncf_modules_in_transformer_block_order(
+            compressed_model: NNCFNetwork) -> List[TransformerBlockModuleOrderedDict]:
         modules = []
         for block in compressed_model.nncf_module.bert.encoder.layer:
             modules.append(TransformerBlockModuleOrderedDict(
@@ -439,7 +447,7 @@ class SwinRunRecipe(BaseMockRunRecipe):
         scheduler_params=SchedulerParams(),
     )
 
-    def _create_model(self):
+    def _create_model(self) -> torch.nn.Module:
         return AutoModelForImageClassification.from_config(self.model_config)
 
     @property
@@ -465,7 +473,8 @@ class SwinRunRecipe(BaseMockRunRecipe):
         return info_list
 
     @staticmethod
-    def get_nncf_modules_in_transformer_block_order(compressed_model) -> List[TransformerBlockModuleOrderedDict]:
+    def get_nncf_modules_in_transformer_block_order(
+            compressed_model: NNCFNetwork) -> List[TransformerBlockModuleOrderedDict]:
         modules = []
         for layer in compressed_model.nncf_module.swin.encoder.layers:
             for block in layer.blocks:
@@ -529,7 +538,7 @@ class LinearRunRecipe(BaseMockRunRecipe):
         enable_structured_masking=False
     )
 
-    def _create_model(self):
+    def _create_model(self) -> torch.nn.Module:
         model_config = self.model_config
         return LinearForClassification(input_size=model_config.input_size,
                                        bias=model_config.bias,
@@ -561,7 +570,7 @@ class Conv2dRunRecipe(LinearRunRecipe):
         enable_structured_masking=False
     )
 
-    def _create_model(self):
+    def _create_model(self) -> torch.nn.Module:
         model_config = self.model_config
         return Conv2dForClassification(input_size=model_config.input_size,
                                        bias=model_config.bias,
@@ -585,7 +594,7 @@ class Conv2dPlusLinearRunrecipe(LinearRunRecipe):
         enable_structured_masking=False
     )
 
-    def _create_model(self):
+    def _create_model(self) -> torch.nn.Module:
         model_config = self.model_config
         return Conv2dPlusLinearForClassification(input_size=model_config.input_size,
                                                  bias=model_config.bias,
@@ -653,14 +662,16 @@ class CompressionCallback(TrainerCallback):
         return self._training_log
 
 
-def build_compression_trainer(tmp_path, compression_ctrl, compressed_model,
+def build_compression_trainer(output_dir,
+                              compression_ctrl: CompressionAlgorithmController,
+                              compressed_model: NNCFNetwork,
                               train_dataset: Dataset,
                               eval_dataset: Optional[Dataset] = None,
                               callback: Optional[CompressionCallback] = None,
                               batch_size: int = 1,
-                              **training_kwargs):
+                              **training_kwargs) -> CompressionTrainer:
     training_args = dict(
-        output_dir=Path(tmp_path),
+        output_dir=Path(output_dir),
         label_names=["labels"],
         evaluation_strategy="epoch",
         logging_steps=1,

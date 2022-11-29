@@ -88,7 +88,8 @@ class MovementSparsityBuilder(BaseSparsityAlgoBuilder):
             raise RuntimeError('No sparsifiable layer found for movement sparisty algorithm.')
         return insertion_commands
 
-    def create_weight_sparsifying_operation(self, target_module_node: NNCFNode, compression_lr_multiplier: float):
+    def create_weight_sparsifying_operation(self, target_module_node: NNCFNode,
+                                            compression_lr_multiplier: float) -> MovementSparsifier:
         sparse_cfg = SparseConfig(SparseStructure.FINE)
         node_name = target_module_node.node_name
         matched_scopes = []
@@ -109,7 +110,8 @@ class MovementSparsityBuilder(BaseSparsityAlgoBuilder):
 
 @ADAPTIVE_COMPRESSION_CONTROLLERS.register('pt_movement_sparsity')
 class MovementSparsityController(BaseSparsityAlgoController):
-    def __init__(self, target_model: NNCFNetwork, sparsified_module_info: List[SparseModuleInfo],
+    def __init__(self, target_model: NNCFNetwork,
+                 sparsified_module_info: List[SparseModuleInfo],
                  config: NNCFConfig):
         super().__init__(target_model, sparsified_module_info)
         algo_config = extract_algo_specific_config(config, 'movement_sparsity')
@@ -207,7 +209,7 @@ class MovementSparsityController(BaseSparsityAlgoController):
         self._structured_mask_handler.report_structured_sparsity(self.config.get('log_dir', '.'))
 
     @property
-    def compression_rate(self):
+    def compression_rate(self) -> float:
         return self.statistics().movement_sparsity.model_statistics.sparsity_level
 
     def prepare_for_export(self):

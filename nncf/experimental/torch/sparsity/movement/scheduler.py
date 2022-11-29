@@ -74,7 +74,7 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
         self._should_skip = False
 
     @property
-    def current_importance_lambda(self):
+    def current_importance_lambda(self) -> float:
         return self.importance_target_lambda * (self.current_importance_threshold - self.init_importance_threshold) / (
             self.final_importance_threshold - self.init_importance_threshold)
 

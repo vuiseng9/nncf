@@ -83,7 +83,7 @@ class SparseConfig:
         axis = config.get('axis')
         return cls(mode, sparse_factors, axis)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f'{self.mode.value, self.sparse_factors}'
 
 
@@ -154,11 +154,11 @@ class MovementSparsifier(nn.Module):
         super().requires_grad_(requires_grad)
         self.frozen = not requires_grad
 
-    def extra_repr(self):
+    def extra_repr(self) -> str:
         return 'sparse_structure: {} {}'.format(self.sparse_structure.value, self.sparse_factors)
 
-    def forward(self, weight: torch.Tensor, bias: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor,
-                                                                                          Optional[torch.Tensor]]:
+    def forward(self, weight: torch.Tensor, bias: Optional[torch.Tensor] = None
+                ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         if is_tracing_state():
             with no_jit_trace():
                 masked_weight = weight.mul_(self.weight_ctx.binary_mask)
@@ -182,7 +182,7 @@ class MovementSparsifier(nn.Module):
         ctx.binary_mask = mask
         return mask
 
-    def apply_binary_mask(self, param_tensor, is_bias=False):
+    def apply_binary_mask(self, param_tensor: torch.Tensor, is_bias=False) -> torch.Tensor:
         ctx = self.bias_ctx if is_bias else self.weight_ctx
         return ctx.apply_binary_mask(param_tensor)
 
@@ -231,7 +231,7 @@ class MovementSparsifier(nn.Module):
         return importance.repeat_interleave(self.sparse_factors[0], dim=0)\
                          .repeat_interleave(self.sparse_factors[1], dim=1)
 
-    def loss(self):
+    def loss(self) -> torch.Tensor:
         layer_loss = torch.mean(torch.sigmoid(self.weight_importance)) * \
             self.layer_loss_lambda * math.prod(self.sparse_factors)
         if self.prune_bias:

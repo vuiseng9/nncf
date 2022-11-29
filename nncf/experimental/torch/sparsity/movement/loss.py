@@ -10,18 +10,21 @@
  See the License for the specific language governing permissions and
  limitations under the License.
 """
+from typing import Optional, List, Union
 
 import torch
 from nncf.torch.compression_method_api import PTCompressionLoss
+from nncf.common.schedulers import BaseCompressionScheduler
 
 
 class ImportanceLoss(PTCompressionLoss):
-    def __init__(self, sparse_layers=None, penalty_scheduler=None):
+    def __init__(self, sparse_layers: Optional[List] = None,
+                 penalty_scheduler: Optional[BaseCompressionScheduler] = None):
         super().__init__()
         self.sparse_layers = sparse_layers
         self.penalty_scheduler = penalty_scheduler
 
-    def calculate(self) -> torch.Tensor:
+    def calculate(self):
         if not self.sparse_layers:
             return 0.
         loss = self.sparse_layers[0].loss()

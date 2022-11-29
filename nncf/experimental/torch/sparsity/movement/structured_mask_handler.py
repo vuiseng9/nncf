@@ -311,7 +311,7 @@ class StructuredMaskHandler:
             for ctx in group.structured_mask_context_list:
                 ctx.populate_dependent_structured_mask_to_operand()
 
-    def _gather_statistics_dataframe(self, max_num_of_kept_heads_to_report=20) -> pd.DataFrame:
+    def _gather_statistics_dataframe(self, max_num_of_kept_heads_to_report: int = 20) -> pd.DataFrame:
         module_2_name = {module: name for name, module in self.compressed_model.named_modules()}
         entry_list = []
         for group in self._structured_mask_ctx_groups:
@@ -333,7 +333,7 @@ class StructuredMaskHandler:
 
     def report_structured_sparsity(self,
                                    save_dir,
-                                   file_name='structured_sparsity',
+                                   file_name: str = 'structured_sparsity',
                                    to_csv: bool = False,
                                    to_markdown: bool = True,
                                    max_num_of_kept_heads_to_report: int = 20) -> pd.DataFrame:

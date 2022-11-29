@@ -9,8 +9,7 @@ from nncf.torch.nncf_network import NNCFNetwork
 STRUCTURED_MASK_STRATEGY = Registry("structured_mask_strategy")
 
 
-def detect_supported_model_family(model):
-    # TODO: review and discuss
+def detect_supported_model_family(model: NNCFNetwork):
     model_pymodules = inspect.getmodule(model.get_nncf_wrapped_model()).__name__.split(".")
     if len(model_pymodules) >= 3 and model_pymodules[:2] == ['transformers', 'models']:
         # the case of input model defined by HuggingFace's transformers
