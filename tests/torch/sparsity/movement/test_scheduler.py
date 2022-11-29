@@ -8,6 +8,7 @@ import pytest
 from pytest import approx
 
 from nncf.experimental.torch.sparsity.movement.scheduler import MovementPolynomialThresholdScheduler
+from nncf.experimental.torch.sparsity.movement.scheduler import MovementSchedulerStage
 from tests.torch.sparsity.movement.helpers import SchedulerParams
 
 desc_test_decayed_importance_threshold_and_regularization_factor = {
@@ -32,6 +33,27 @@ desc_test_decayed_importance_threshold_and_regularization_factor = {
         ref_factor=[0., 0., 0., 0., 0., 0., 0., 2.0438, 3.7570, 5.1775, 6.3405, 7.2793, 8.0247, 8.6053, 9.0474]
     )
 }
+
+
+@pytest.mark.parametrize('params', [
+    SchedulerParams(steps_per_epoch=None),
+    SchedulerParams(steps_per_epoch=2)
+])
+def test_scheduler_current_stage(params: SchedulerParams):
+    params.warmup_start_epoch = 1
+    params.warmup_end_epoch = 3
+    scheduler = MovementPolynomialThresholdScheduler(controller=MagicMock(), params=params.__dict__)
+    for epoch in range(5):
+        if epoch < 1:
+            ref_stage = MovementSchedulerStage.PRE_WARMUP
+        elif epoch < 3:
+            ref_stage = MovementSchedulerStage.IN_WARMUP
+        else:
+            ref_stage = MovementSchedulerStage.POST_WARMUP
+        scheduler.epoch_step()
+        for _ in range(2):
+            scheduler.step()
+            assert scheduler.current_stage == ref_stage
 
 
 @pytest.mark.parametrize('desc',
@@ -74,14 +96,14 @@ def test_scheduler_enable_structured_masking(enable_structured_masking: bool):
     num_minfo = 2
     controller = Mock(sparsified_module_info=[Mock() for _ in range(num_minfo)])
 
-    def assert_controller_structured_masking_calls(is_called: bool):
-        assert_fn = 'assert_called_once' if is_called else 'assert_not_called'
+    def assert_controller_structured_masking_calls(is_called_once: bool):
+        assert_fn = 'assert_called_once' if is_called_once else 'assert_not_called'
         getattr(controller.reset_independent_structured_mask, assert_fn)()
         getattr(controller.resolve_structured_mask, assert_fn)()
         getattr(controller.populate_structured_mask, assert_fn)()
 
-    def assert_controller_requires_grad_calls(is_called: bool):
-        assert_fn = 'assert_called_once' if is_called else 'assert_not_called'
+    def assert_controller_requires_grad_calls(is_called_once: bool):
+        assert_fn = 'assert_called_once' if is_called_once else 'assert_not_called'
         for minfo in controller.sparsified_module_info:
             getattr(minfo.operand.requires_grad_, assert_fn)()
 
@@ -92,17 +114,17 @@ def test_scheduler_enable_structured_masking(enable_structured_masking: bool):
     scheduler.step()
     scheduler.step()
     scheduler.epoch_step()
-    assert_controller_structured_masking_calls(is_called=False)
-    assert_controller_requires_grad_calls(is_called=False)
+    assert_controller_structured_masking_calls(is_called_once=False)
+    assert_controller_requires_grad_calls(is_called_once=False)
     scheduler.step()
-    assert_controller_structured_masking_calls(is_called=enable_structured_masking)  # check called at this step
-    assert_controller_requires_grad_calls(is_called=True)
+    assert_controller_structured_masking_calls(is_called_once=enable_structured_masking)  # check called at this step
+    assert_controller_requires_grad_calls(is_called_once=True)
     scheduler.step()
     scheduler.epoch_step()
     scheduler.step()
     scheduler.step()
-    assert_controller_structured_masking_calls(is_called=enable_structured_masking)  # check only called once
-    assert_controller_requires_grad_calls(is_called=True)
+    assert_controller_structured_masking_calls(is_called_once=enable_structured_masking)  # check only called once
+    assert_controller_requires_grad_calls(is_called_once=True)
 
 
 def test_scheduler_get_state():
@@ -130,6 +152,7 @@ def test_scheduler_get_state():
     SchedulerParams(steps_per_epoch=None),
 ])
 def test_scheduler_load_state(params):
+    # TODO(yujie): clearer explanation here
     reload_step = 6
     # check if we can resume 1st epoch even with `steps_per_epoch` not specified
     steps_per_epoch = params.steps_per_epoch or 8
