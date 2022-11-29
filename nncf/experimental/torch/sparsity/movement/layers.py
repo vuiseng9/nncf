@@ -150,13 +150,6 @@ class MovementSparsifier(nn.Module):
 
         self.mask_calculation_hook = MaskCalculationHook(self)
 
-    def requires_grad_(self, requires_grad: bool = True):
-        super().requires_grad_(requires_grad)
-        self.frozen = not requires_grad
-
-    def extra_repr(self) -> str:
-        return 'sparse_structure: {} {}'.format(self.sparse_structure.value, self.sparse_factors)
-
     def forward(self, weight: torch.Tensor, bias: Optional[torch.Tensor] = None
                 ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         if is_tracing_state():
@@ -172,6 +165,25 @@ class MovementSparsifier(nn.Module):
                 masked_bias = apply_binary_mask_impl(bias_mask, bias)
         return masked_weight, masked_bias
 
+    def apply_binary_mask(self, param_tensor: torch.Tensor, is_bias=False) -> torch.Tensor:
+        ctx = self.bias_ctx if is_bias else self.weight_ctx
+        return ctx.apply_binary_mask(param_tensor)
+
+    def loss(self) -> torch.Tensor:
+        layer_loss = torch.mean(torch.sigmoid(self.weight_importance)) * \
+            self.layer_loss_lambda * math.prod(self.sparse_factors)
+        if self.prune_bias:
+            layer_loss += torch.mean(torch.sigmoid(self.bias_importance)) * \
+                self.layer_loss_lambda * float(self.sparse_factors[0])
+        return layer_loss
+
+    def requires_grad_(self, requires_grad: bool = True):
+        super().requires_grad_(requires_grad)
+        self.frozen = not requires_grad
+
+    def extra_repr(self) -> str:
+        return 'sparse_structure: {} {}'.format(self.sparse_structure.value, self.sparse_factors)
+
     def _calc_training_binary_mask(self, isbias: bool = False):
         ctx = self.bias_ctx if isbias else self.weight_ctx
         if (not self.training) or self.frozen:
@@ -182,27 +194,13 @@ class MovementSparsifier(nn.Module):
         ctx.binary_mask = mask
         return mask
 
-    def apply_binary_mask(self, param_tensor: torch.Tensor, is_bias=False) -> torch.Tensor:
-        ctx = self.bias_ctx if is_bias else self.weight_ctx
-        return ctx.apply_binary_mask(param_tensor)
-
-    @staticmethod
-    def _get_sparse_factors(weight_shape, sparse_config: SparseConfig) -> Tuple[int, int]:
-        sparse_factors = sparse_config.sparse_factors
-        if sparse_config.mode == SparseStructure.BLOCK:
-            r, c = sparse_factors
-            assert weight_shape[0] % r == 0, "r: {} is not a factor of dim axis 0".format(r)
-            assert weight_shape[1] % c == 0, "c: {} is not a factor of dim axis 1".format(c)
-
-        if sparse_config.mode == SparseStructure.PER_DIM:
-            if sparse_config.sparse_axis < 0 or sparse_config.sparse_axis >= len(weight_shape):
-                raise ValueError("Invalid axis id {}, axes range {}".format(
-                    sparse_config.sparse_axis,
-                    list(range(len(weight_shape)))))
-            sparse_factors = deepcopy(weight_shape)
-            sparse_factors[sparse_config.sparse_axis] = 1
-            sparse_factors = tuple(sparse_factors)
-        return sparse_factors
+    def _expand_importance(self, importance: torch.Tensor, isbias=False) -> torch.Tensor:
+        if not self._bool_expand_importance:
+            return importance
+        if isbias:
+            return importance.repeat_interleave(self.sparse_factors[0], dim=0)
+        return importance.repeat_interleave(self.sparse_factors[0], dim=0)\
+                         .repeat_interleave(self.sparse_factors[1], dim=1)
 
     @staticmethod
     def _get_weight_importance_shape(weight_shape, sparse_factors: Tuple[int, int],
@@ -223,21 +221,23 @@ class MovementSparsifier(nn.Module):
 
         raise RuntimeError('Unknown sparse structure.')
 
-    def _expand_importance(self, importance: torch.Tensor, isbias=False) -> torch.Tensor:
-        if not self._bool_expand_importance:
-            return importance
-        if isbias:
-            return importance.repeat_interleave(self.sparse_factors[0], dim=0)
-        return importance.repeat_interleave(self.sparse_factors[0], dim=0)\
-                         .repeat_interleave(self.sparse_factors[1], dim=1)
+    @staticmethod
+    def _get_sparse_factors(weight_shape, sparse_config: SparseConfig) -> Tuple[int, int]:
+        sparse_factors = sparse_config.sparse_factors
+        if sparse_config.mode == SparseStructure.BLOCK:
+            r, c = sparse_factors
+            assert weight_shape[0] % r == 0, "r: {} is not a factor of dim axis 0".format(r)
+            assert weight_shape[1] % c == 0, "c: {} is not a factor of dim axis 1".format(c)
 
-    def loss(self) -> torch.Tensor:
-        layer_loss = torch.mean(torch.sigmoid(self.weight_importance)) * \
-            self.layer_loss_lambda * math.prod(self.sparse_factors)
-        if self.prune_bias:
-            layer_loss += torch.mean(torch.sigmoid(self.bias_importance)) * \
-                self.layer_loss_lambda * float(self.sparse_factors[0])
-        return layer_loss
+        if sparse_config.mode == SparseStructure.PER_DIM:
+            if sparse_config.sparse_axis < 0 or sparse_config.sparse_axis >= len(weight_shape):
+                raise ValueError("Invalid axis id {}, axes range {}".format(
+                    sparse_config.sparse_axis,
+                    list(range(len(weight_shape)))))
+            sparse_factors = deepcopy(weight_shape)
+            sparse_factors[sparse_config.sparse_axis] = 1
+            sparse_factors = tuple(sparse_factors)
+        return sparse_factors
 
 
 class MaskCalculationHook():

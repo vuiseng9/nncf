@@ -168,15 +168,6 @@ class BaseMockRunRecipe(ABC):
         self.algo_keys = set(self.algo_config.__dict__.keys())
         self.set_log_dir(log_dir)
 
-    @property
-    def scheduler_params(self):
-        return self.algo_config.scheduler_params
-
-    def set_log_dir(self, log_dir=None):
-        self.log_dir = str(log_dir)
-        if log_dir is not None:
-            Path(log_dir).mkdir(exist_ok=True, parents=True)
-
     @classmethod
     def from_default(cls, log_dir=None, **override_kwargs):
         model_config = deepcopy(cls.default_model_config)
@@ -195,6 +186,54 @@ class BaseMockRunRecipe(ABC):
             else:
                 raise ValueError(f'Unknown config: {key}')
         return cls(model_config, algo_config, log_dir)
+
+    @property
+    @abstractmethod
+    def model_input_info(self) -> List[dict]:
+        pass
+
+    @property
+    @abstractmethod
+    def transformer_block_info(self) -> List[TransformerBlockInfo]:
+        pass
+
+    @property
+    def model(self) -> torch.nn.Module:
+        torch_model = self._create_model()
+        g = torch.Generator()
+        g.manual_seed(42)
+        with torch.no_grad():
+            for _, parameter in torch_model.named_parameters():
+                parameter.normal_(generator=g)
+        return torch_model
+
+    @property
+    def nncf_config(self) -> NNCFConfig:
+        config_dict = {
+            "input_info": self.model_input_info,
+            "compression": self.algo_config.to_dict()}
+        if self.log_dir is not None:
+            config_dict['log_dir'] = str(self.log_dir)
+        return NNCFConfig.from_dict(config_dict)
+
+    @property
+    def scheduler_params(self):
+        return self.algo_config.scheduler_params
+
+    @staticmethod
+    @abstractmethod
+    def get_nncf_modules_in_transformer_block_order(
+            compressed_model: NNCFNetwork) -> List[TransformerBlockModuleOrderedDict]:
+        pass
+
+    @abstractmethod
+    def _create_model(self) -> torch.nn.Module:
+        pass
+
+    def set_log_dir(self, log_dir=None):
+        self.log_dir = str(log_dir)
+        if log_dir is not None:
+            Path(log_dir).mkdir(exist_ok=True, parents=True)
 
     def get(self, key: str):
         if key == 'log_dir':
@@ -218,46 +257,6 @@ class BaseMockRunRecipe(ABC):
             setattr(self.algo_config.scheduler_params, key, value)
         else:
             raise KeyError(f'"{key}" not found.')
-
-    @property
-    def model(self) -> torch.nn.Module:
-        torch_model = self._create_model()
-        g = torch.Generator()
-        g.manual_seed(42)
-        with torch.no_grad():
-            for _, parameter in torch_model.named_parameters():
-                parameter.normal_(generator=g)
-        return torch_model
-
-    @abstractmethod
-    def _create_model(self) -> torch.nn.Module:
-        pass
-
-    @property
-    @abstractmethod
-    def model_input_info(self) -> List[dict]:
-        pass
-
-    @property
-    @abstractmethod
-    def transformer_block_info(self) -> List[TransformerBlockInfo]:
-        pass
-
-    @staticmethod
-    @abstractmethod
-    def get_nncf_modules_in_transformer_block_order(
-            compressed_model: NNCFNetwork) -> List[TransformerBlockModuleOrderedDict]:
-        pass
-
-    @property
-    def nncf_config(self) -> NNCFConfig:
-        config_dict = {
-            "input_info": self.model_input_info,
-            "compression": self.algo_config.to_dict()}
-        if self.log_dir is not None:
-            config_dict['log_dir'] = str(self.log_dir)
-        print(config_dict)
-        return NNCFConfig.from_dict(config_dict)
 
     def generate_mock_dataset(self, num_samples: int = 16, seed: int = 42) -> Dataset:
         g = torch.Generator()
@@ -653,7 +652,7 @@ class CompressionCallback(TrainerCallback):
     def on_train_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
         self._training_log = state.log_history
 
-    def get_compress_log(self, step_starts_from_1=True):
+    def get_compression_log(self, step_starts_from_1=True):
         if step_starts_from_1:
             return self._compression_log_by_step
         return {(step - 1): log for step, log in self._compression_log_by_step.items()}

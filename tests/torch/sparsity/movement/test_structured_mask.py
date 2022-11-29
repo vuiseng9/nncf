@@ -179,7 +179,7 @@ class TestStructuredMaskContext:
         if sparsifier.prune_bias:
             sparsifier.bias_ctx.binary_mask = desc['bias_binary_mask']
         ctx = StructuredMaskContext(sparsifier, 'linear', desc['prune_grid'], True)
-        ctx.update_independent_structured_mask()
+        ctx.update_independent_structured_mask_from_operand()
         assert torch.equal(ctx.independent_structured_mask,
                            desc['ref_independent_structured_mask'])
 
@@ -334,7 +334,7 @@ class TestStructuredMaskHandler:
                                                       run_recipe.nncf_config,
                                                       dump_graphs=False)
         handler, all_ctxes = self.get_handler_from_ctrl(compression_ctrl)
-        mock_methods = [mocker.patch.object(ctx, 'update_independent_structured_mask')
+        mock_methods = [mocker.patch.object(ctx, 'update_independent_structured_mask_from_operand')
                         for ctx in all_ctxes]
         handler.update_independent_structured_mask()
         for mock_method in mock_methods:

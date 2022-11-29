@@ -55,6 +55,22 @@ class MovementSparsityBuilder(BaseSparsityAlgoBuilder):
         configs = self._algo_config.get('sparse_structure_by_scopes', [])
         self._sparse_configs_by_scopes = [SparseConfigByScope.from_config(c) for c in configs]
 
+    def create_weight_sparsifying_operation(self, target_module_node: NNCFNode,
+                                            compression_lr_multiplier: float) -> MovementSparsifier:
+        sparse_cfg = SparseConfig(SparseStructure.FINE)
+        node_name = target_module_node.node_name
+        matched_scopes = []
+        for configs_per_scopes in self._sparse_configs_by_scopes:
+            target_scopes = configs_per_scopes.target_scopes
+            if matches_any(node_name, target_scopes):
+                sparse_cfg = configs_per_scopes.sparse_config
+                matched_scopes.append(target_scopes)
+        if len(matched_scopes) >= 2:
+            raise RuntimeError(f'"{node_name}" is matched by multiple items in `sparse_structure_by_scopes`.')
+
+        return MovementSparsifier(target_module_node, sparse_cfg=sparse_cfg, frozen=False,
+                                  compression_lr_multiplier=compression_lr_multiplier)
+
     def _sparsify_weights(self, target_model: NNCFNetwork) -> List[PTInsertionCommand]:
         device = get_model_device(target_model)
         sparsified_module_nodes = target_model.get_weighted_original_graph_nodes(
@@ -88,22 +104,6 @@ class MovementSparsityBuilder(BaseSparsityAlgoBuilder):
             raise RuntimeError('No sparsifiable layer found for movement sparisty algorithm.')
         return insertion_commands
 
-    def create_weight_sparsifying_operation(self, target_module_node: NNCFNode,
-                                            compression_lr_multiplier: float) -> MovementSparsifier:
-        sparse_cfg = SparseConfig(SparseStructure.FINE)
-        node_name = target_module_node.node_name
-        matched_scopes = []
-        for configs_per_scopes in self._sparse_configs_by_scopes:
-            target_scopes = configs_per_scopes.target_scopes
-            if matches_any(node_name, target_scopes):
-                sparse_cfg = configs_per_scopes.sparse_config
-                matched_scopes.append(target_scopes)
-        if len(matched_scopes) >= 2:
-            raise RuntimeError(f'"{node_name}" is matched by multiple items in `sparse_structure_by_scopes`.')
-
-        return MovementSparsifier(target_module_node, sparse_cfg=sparse_cfg, frozen=False,
-                                  compression_lr_multiplier=compression_lr_multiplier)
-
     def _build_controller(self, model: NNCFNetwork) -> PTCompressionAlgorithmController:
         return MovementSparsityController(model, self._sparsified_module_info, self.config)
 
@@ -115,14 +115,13 @@ class MovementSparsityController(BaseSparsityAlgoController):
                  config: NNCFConfig):
         super().__init__(target_model, sparsified_module_info)
         algo_config = extract_algo_specific_config(config, 'movement_sparsity')
-        self._distributed = False
         sparsify_operations = [m.operand for m in self.sparsified_module_info]
         params = deepcopy(algo_config.get('params', {}))
+        self._distributed = False
         self._scheduler = MovementPolynomialThresholdScheduler(self, params)
         self._loss = ImportanceLoss(sparsify_operations, self.scheduler)
+        self._config = config
 
-        # TODO: review - perhaps not the right place
-        self.config = config
         if self._scheduler.enable_structured_masking:
             model_family = detect_supported_model_family(self.model)
             if model_family not in STRUCTURED_MASK_STRATEGY.registry_dict:
@@ -135,6 +134,23 @@ class MovementSparsityController(BaseSparsityAlgoController):
             self._structured_mask_handler = StructuredMaskHandler(self.model,
                                                                   self.sparsified_module_info,
                                                                   strategy)
+
+    @property
+    def compression_rate(self) -> float:
+        return self.statistics().movement_sparsity.model_statistics.sparsity_level
+
+    def reset_independent_structured_mask(self):
+        assert self._scheduler.enable_structured_masking is True
+        self._structured_mask_handler.update_independent_structured_mask()
+
+    def resolve_structured_mask(self):
+        assert self._scheduler.enable_structured_masking is True
+        self._structured_mask_handler.resolve_dependent_structured_mask()
+
+    def populate_structured_mask(self):
+        assert self._scheduler.enable_structured_masking is True
+        self._structured_mask_handler.populate_dependent_structured_mask_to_operand()
+        self._structured_mask_handler.report_structured_sparsity(self._config.get('log_dir', '.'))
 
     def compression_stage(self) -> CompressionStage:
         if self.scheduler.current_epoch < self.scheduler.warmup_start_epoch:
@@ -161,27 +177,6 @@ class MovementSparsityController(BaseSparsityAlgoController):
 
         self._distributed = True
 
-    def __delete_check_distributed_masks(self):
-        if not self._distributed or get_world_size() == 1:
-            return 1
-
-        nvalues = 0
-        ncor_values = 0
-        eps = 1e-4
-        for minfo in self.sparsified_module_info:
-            mask = minfo.operand.mask
-
-            mask_list = [torch.empty_like(mask) for _ in range(get_world_size())]
-            # nccl does not support gather, send, recv operations
-            dist.all_gather(mask_list, mask)
-
-            for i in range(1, len(mask_list)):
-                rel_error = (mask_list[0] - mask_list[i]) / mask_list[0]
-                ncor_values = ncor_values + (rel_error.abs() < eps).sum(dtype=mask.dtype)
-                nvalues = nvalues + mask_list[i].numel()
-
-        return ncor_values / nvalues
-
     def statistics(self, quickly_collected_only=False) -> NNCFStatistics:
         collector = PTSparseModelStatisticsCollector(self.model, self.sparsified_module_info,
                                                      supports_sparse_bias=True)
@@ -194,23 +189,6 @@ class MovementSparsityController(BaseSparsityAlgoController):
         nncf_stats = NNCFStatistics()
         nncf_stats.register('movement_sparsity', stats)
         return nncf_stats
-
-    def reset_independent_structured_mask(self):
-        assert self._scheduler.enable_structured_masking is True
-        self._structured_mask_handler.update_independent_structured_mask()
-
-    def resolve_structured_mask(self):
-        assert self._scheduler.enable_structured_masking is True
-        self._structured_mask_handler.resolve_dependent_structured_mask()
-
-    def populate_structured_mask(self):
-        assert self._scheduler.enable_structured_masking is True
-        self._structured_mask_handler.populate_dependent_structured_mask_to_operand()
-        self._structured_mask_handler.report_structured_sparsity(self.config.get('log_dir', '.'))
-
-    @property
-    def compression_rate(self) -> float:
-        return self.statistics().movement_sparsity.model_statistics.sparsity_level
 
     def prepare_for_export(self):
         """

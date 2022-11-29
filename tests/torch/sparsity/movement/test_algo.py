@@ -387,7 +387,7 @@ def test_importance_threshold_and_regularization_factor_range(tmp_path,
     importance_regularization_factor = recipe.scheduler_params.importance_regularization_factor
     init_importance_threshold = recipe.scheduler_params.init_importance_threshold
     final_importance_threshold = recipe.scheduler_params.final_importance_threshold
-    for step, log in callback.get_compress_log().items():
+    for step, log in callback.get_compression_log().items():
         # step starts from 1
         if step <= warmup_start_epoch * steps_per_epoch:
             assert log[FACTOR_NAME_IN_MOVEMENT_STAT] == approx(0.0)
@@ -517,7 +517,7 @@ def test_increasing_sparsity_stats_before_warmup_ends(tmp_path, enable_structure
                                         train_dataset=recipe.generate_mock_dataset(20),
                                         learning_rate=0.10)
     trainer.train()
-    log_by_step = trainer.compression_callback.get_compress_log()
+    log_by_step = trainer.compression_callback.get_compression_log()
     warmup_end_step = recipe.scheduler_params.steps_per_epoch * recipe.scheduler_params.warmup_end_epoch
 
     for key in [FACTOR_NAME_IN_MOVEMENT_STAT,
@@ -543,7 +543,7 @@ def test_fixed_sparsity_stats_after_warmup_ends(tmp_path, enable_structured_mask
                                         train_dataset=recipe.generate_mock_dataset(20),
                                         learning_rate=0.10)
     trainer.train()
-    log_by_step = trainer.compression_callback.get_compress_log()
+    log_by_step = trainer.compression_callback.get_compression_log()
     warmup_end_step = recipe.scheduler_params.steps_per_epoch * recipe.scheduler_params.warmup_end_epoch
 
     for key in [RELA_SPARSITY_NAME_IN_MOVEMENT_STAT,

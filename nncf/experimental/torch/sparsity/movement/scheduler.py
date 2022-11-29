@@ -78,16 +78,6 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
         return self.importance_target_lambda * (self.current_importance_threshold - self.init_importance_threshold) / (
             self.final_importance_threshold - self.init_importance_threshold)
 
-    def _freeze_importance(self):
-        for minfo in self._controller.sparsified_module_info:
-            minfo.operand.requires_grad_(False)
-
-    def _update_operand_importance_threshold(self):
-        if self.current_importance_threshold != self._cached_importance_threshold:
-            for minfo in self._controller.sparsified_module_info:
-                minfo.operand.importance_threshold = self.current_importance_threshold
-        self.cached_importance_threshold = self.current_importance_threshold
-
     def epoch_step(self, next_epoch: Optional[int] = None) -> None:
         super().epoch_step(next_epoch)
         self._maybe_should_skip()
@@ -99,6 +89,20 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
         if self._should_skip:
             return
         self.schedule_threshold(self.current_step)
+
+    def get_state(self) -> Dict[str, Any]:
+        state = super().get_state()
+        state['_steps_per_epoch'] = self._steps_per_epoch
+        return state
+
+    def load_state(self, state: Dict[str, Any]) -> None:
+        super().load_state(state)
+        self._steps_per_epoch = state['_steps_per_epoch']
+        if self._steps_per_epoch is None:  # It is the first epoch and `steps_per_epoch` not specified
+            self._steps_in_current_epoch = self._current_step + 1
+            self._should_skip = True
+        else:
+            self._steps_in_current_epoch = self._current_step % self._steps_per_epoch + 1
 
     def schedule_threshold(self, global_step: Optional[int] = None):
         if global_step is None:
@@ -125,19 +129,15 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
         schedule_step = schedule_current_step % self._steps_per_epoch
         return self.schedule(schedule_epoch, schedule_step, self._steps_per_epoch)
 
-    def load_state(self, state: Dict[str, Any]) -> None:
-        super().load_state(state)
-        self._steps_per_epoch = state['_steps_per_epoch']
-        if self._steps_per_epoch is None:  # It is the first epoch and `steps_per_epoch` not specified
-            self._steps_in_current_epoch = self._current_step + 1
-            self._should_skip = True
-        else:
-            self._steps_in_current_epoch = self._current_step % self._steps_per_epoch + 1
+    def _freeze_importance(self):
+        for minfo in self._controller.sparsified_module_info:
+            minfo.operand.requires_grad_(False)
 
-    def get_state(self) -> Dict[str, Any]:
-        state = super().get_state()
-        state['_steps_per_epoch'] = self._steps_per_epoch
-        return state
+    def _update_operand_importance_threshold(self):
+        if self.current_importance_threshold != self._cached_importance_threshold:
+            for minfo in self._controller.sparsified_module_info:
+                minfo.operand.importance_threshold = self.current_importance_threshold
+        self.cached_importance_threshold = self.current_importance_threshold
 
     def _maybe_should_skip(self) -> None:
         """

@@ -110,13 +110,8 @@ class StructuredMaskContext:
                 self._dependent_structured_mask = self._dependent_structured_mask.to(tensor.device)
             self._dependent_structured_mask.copy_(tensor)
 
-    def _resolve_grid_size(self, grid_size) -> Tuple[int, int]:
-        a, b = grid_size
-        return (a if a > 0 else self.operand_mask_shape[0],
-                b if b > 0 else self.operand_mask_shape[1])
-
     @torch.no_grad()
-    def update_independent_structured_mask(self):
+    def update_independent_structured_mask_from_operand(self):
         weight_binary_mask = self.sparsifier_operand.weight_ctx.binary_mask.detach().clone()
         mask_by_grid = F.max_pool2d(
             weight_binary_mask.unsqueeze(0), kernel_size=self.grid_size, stride=self.grid_size).squeeze(0)
@@ -133,13 +128,6 @@ class StructuredMaskContext:
         self.independent_structured_mask = structured_mask
         return structured_mask
 
-    def _inflate_structured_mask(self, structured_mask: torch.Tensor, grid_size: Tuple[int, int]) -> torch.Tensor:
-        assert len(structured_mask.shape) == len(grid_size), "Unmatching dimension"
-        inflated_mask = structured_mask.clone()
-        for axis, repeat_times in enumerate(grid_size):
-            inflated_mask = inflated_mask.repeat_interleave(repeat_times, dim=axis)
-        return inflated_mask
-
     def populate_dependent_structured_mask_to_operand(self):
         structured_mask_inflated = self._inflate_structured_mask(self.dependent_structured_mask, self.grid_size)
         self.sparsifier_operand.weight_ctx.binary_mask = structured_mask_inflated
@@ -147,7 +135,6 @@ class StructuredMaskContext:
             self.sparsifier_operand.bias_ctx.binary_mask = structured_mask_inflated.amax(dim=1)
 
     def gather_statistics_from_operand(self) -> StructuredMaskContextStatistics:
-        # original shape
         node = self.sparsifier_operand.target_module_node
         assert isinstance(node.layer_attributes, tuple(EXPECTED_NODE_LAYER_ATTRS))
         weight_shape: Tuple[int, int] = tuple(list(node.layer_attributes.get_weight_shape()))
@@ -179,6 +166,19 @@ class StructuredMaskContext:
             head_or_channel_id_to_keep=head_id_to_keep,
             module_node_name=self.module_node_name
         )
+
+    def _resolve_grid_size(self, grid_size) -> Tuple[int, int]:
+        a, b = grid_size
+        return (a if a > 0 else self.operand_mask_shape[0],
+                b if b > 0 else self.operand_mask_shape[1])
+
+    @staticmethod
+    def _inflate_structured_mask(structured_mask: torch.Tensor, grid_size: Tuple[int, int]) -> torch.Tensor:
+        assert len(structured_mask.shape) == len(grid_size), "Unmatching dimension"
+        inflated_mask = structured_mask.clone()
+        for axis, repeat_times in enumerate(grid_size):
+            inflated_mask = inflated_mask.repeat_interleave(repeat_times, dim=axis)
+        return inflated_mask
 
 
 class SparsifiedModuleInfoGroup:
@@ -229,12 +229,72 @@ class StructuredMaskHandler:
             logging_str_l.append(str(group))
         logging.info('\n'.join(logging_str_l))
 
+    def update_independent_structured_mask(self):
+        for group in self._structured_mask_ctx_groups:
+            for ctx in group.structured_mask_context_list:
+                ctx.update_independent_structured_mask_from_operand()
+
+    def resolve_dependent_structured_mask(self):
+        for group in self._structured_mask_ctx_groups:
+            group_type = group.group_type
+            if group_type not in self.strategy_by_group_type:
+                raise ValueError(f"No strucrtured mask strategy for group_type=\"{group_type}\"")
+            ctxes = group.structured_mask_context_list
+            row_prune_ctxes = list(filter(lambda ctx: ctx.prune_by_row, ctxes))
+            col_prune_ctxes = list(filter(lambda ctx: not ctx.prune_by_row, ctxes))
+            independent_masks = [ctx.independent_structured_mask for ctx in row_prune_ctxes] + \
+                [ctx.independent_structured_mask.t() for ctx in col_prune_ctxes]
+            coarse_mask = reduce(torch.logical_or, independent_masks).float()
+            with torch.no_grad():
+                for ctx in row_prune_ctxes:
+                    ctx.dependent_structured_mask = coarse_mask
+                for ctx in col_prune_ctxes:
+                    ctx.dependent_structured_mask = coarse_mask.t()
+
+    def populate_dependent_structured_mask_to_operand(self):
+        for group in self._structured_mask_ctx_groups:
+            for ctx in group.structured_mask_context_list:
+                ctx.populate_dependent_structured_mask_to_operand()
+
+    def report_structured_sparsity(self,
+                                   save_dir,
+                                   file_name: str = 'structured_sparsity',
+                                   to_csv: bool = False,
+                                   to_markdown: bool = True,
+                                   max_num_of_kept_heads_to_report: int = 20) -> pd.DataFrame:
+        df = self._gather_statistics_dataframe(max_num_of_kept_heads_to_report)
+        if to_csv:
+            df.to_csv(Path(save_dir, f'{file_name}.csv'))
+        if to_markdown:
+            df.to_markdown(Path(save_dir, f'{file_name}.md'))
+        return df
+
+    def _gather_statistics_dataframe(self, max_num_of_kept_heads_to_report: int = 20) -> pd.DataFrame:
+        module_2_name = {module: name for name, module in self.compressed_model.named_modules()}
+        entry_list = []
+        for group in self._structured_mask_ctx_groups:
+            ctxes = sorted(group.structured_mask_context_list,
+                           key=lambda ctx: ctx.sparsifier_operand.target_module_node.node_id)
+            for ctx in ctxes:
+                stats = ctx.gather_statistics_from_operand()
+                if len(stats.head_or_channel_id_to_keep) > max_num_of_kept_heads_to_report:  # avoid too long display
+                    stats.head_or_channel_id_to_keep = f'[{len(stats.head_or_channel_id_to_keep)} items]'
+                module = self.compressed_model.get_containing_module(stats.module_node_name)
+                torch_module_name = module_2_name[module]
+                entry_list.append(dict(
+                    group_id=group.group_id,
+                    type=group.group_type.value,
+                    torch_module=torch_module_name,
+                    **stats.__dict__
+                ))
+        return pd.DataFrame(entry_list)
+
     @staticmethod
     def _get_prunable_sparsified_module_info_group(
             compressed_model: NNCFNetwork,
             sparsified_module_info_list: List[SparseModuleInfo],
     ) -> List[SparsifiedModuleInfoGroup]:
-        module_2_sparse_module_info_map = {minfo.module: minfo for minfo in sparsified_module_info_list}
+        module_vs_sparse_module_info_map = {minfo.module: minfo for minfo in sparsified_module_info_list}
         building_blocks, _ = get_building_blocks(compressed_model,
                                                  target_block_types=[BuildingBlockType.MSHA, BuildingBlockType.FF],
                                                  block_filter_strategy=BlockFilteringStrategy.KEEP_SMALL,
@@ -245,7 +305,7 @@ class StructuredMaskHandler:
             for op_addr in building_block.op_addresses:
                 if op_addr.operator_name in [m.op_func_name for m in SUPPORTED_NNCF_MODULES]:
                     module = compressed_model.get_module_by_scope(op_addr.scope_in_model)
-                    module_info = module_2_sparse_module_info_map[module]
+                    module_info = module_vs_sparse_module_info_map[module]
                     sparsified_module_info.append(module_info)
             groups.append(SparsifiedModuleInfoGroup(group_id,
                                                     building_block.block_type,
@@ -276,63 +336,3 @@ class StructuredMaskHandler:
                                      f"[{group_type}]{minfo.module_node_name}.")
             groups.append(StructuredMaskContextGroup(group_id, group_type, ctxes))
         return groups
-
-    def update_independent_structured_mask(self):
-        for group in self._structured_mask_ctx_groups:
-            for ctx in group.structured_mask_context_list:
-                ctx.update_independent_structured_mask()
-
-    def resolve_dependent_structured_mask(self):
-        for group in self._structured_mask_ctx_groups:
-            group_type = group.group_type
-            if group_type not in self.strategy_by_group_type:
-                raise ValueError(f"No strucrtured mask strategy for group_type=\"{group_type}\"")
-            ctxes = group.structured_mask_context_list
-            row_prune_ctxes = list(filter(lambda ctx: ctx.prune_by_row, ctxes))
-            col_prune_ctxes = list(filter(lambda ctx: not ctx.prune_by_row, ctxes))
-            independent_masks = [ctx.independent_structured_mask for ctx in row_prune_ctxes] + \
-                [ctx.independent_structured_mask.t() for ctx in col_prune_ctxes]
-            coarse_mask = reduce(torch.logical_or, independent_masks).float()
-            with torch.no_grad():
-                for ctx in row_prune_ctxes:
-                    ctx.dependent_structured_mask = coarse_mask
-                for ctx in col_prune_ctxes:
-                    ctx.dependent_structured_mask = coarse_mask.t()
-
-    def populate_dependent_structured_mask_to_operand(self):
-        for group in self._structured_mask_ctx_groups:
-            for ctx in group.structured_mask_context_list:
-                ctx.populate_dependent_structured_mask_to_operand()
-
-    def _gather_statistics_dataframe(self, max_num_of_kept_heads_to_report: int = 20) -> pd.DataFrame:
-        module_2_name = {module: name for name, module in self.compressed_model.named_modules()}
-        entry_list = []
-        for group in self._structured_mask_ctx_groups:
-            ctxes = sorted(group.structured_mask_context_list,
-                           key=lambda ctx: ctx.sparsifier_operand.target_module_node.node_id)
-            for ctx in ctxes:
-                stats = ctx.gather_statistics_from_operand()
-                if len(stats.head_or_channel_id_to_keep) > max_num_of_kept_heads_to_report:  # avoid too long display
-                    stats.head_or_channel_id_to_keep = f'[{len(stats.head_or_channel_id_to_keep)} items]'
-                module = self.compressed_model.get_containing_module(stats.module_node_name)
-                torch_module_name = module_2_name[module]
-                entry_list.append(dict(
-                    group_id=group.group_id,
-                    type=group.group_type.value,
-                    torch_module=torch_module_name,
-                    **stats.__dict__
-                ))
-        return pd.DataFrame(entry_list)
-
-    def report_structured_sparsity(self,
-                                   save_dir,
-                                   file_name: str = 'structured_sparsity',
-                                   to_csv: bool = False,
-                                   to_markdown: bool = True,
-                                   max_num_of_kept_heads_to_report: int = 20) -> pd.DataFrame:
-        df = self._gather_statistics_dataframe(max_num_of_kept_heads_to_report)
-        if to_csv:
-            df.to_csv(Path(save_dir, f'{file_name}.csv'))
-        if to_markdown:
-            df.to_markdown(Path(save_dir, f'{file_name}.md'))
-        return df
