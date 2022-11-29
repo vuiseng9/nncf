@@ -83,18 +83,6 @@ def is_roughly_of_same_value(x_list, atol: float = 1e-6) -> bool:
     return all(x == approx(x_list[0], abs=atol) for x in x_list[1:])
 
 
-class ParamDict:
-    def __init__(self, dtype=torch.float, device=torch.device('cpu'), **param_kwargs):
-        self.keys = param_kwargs.keys()
-        for name, value in param_kwargs.items():
-            setattr(self, name, ensure_tensor(value, dtype, device) if
-                    value is not None else None)
-
-    def __getitem__(self, key) -> Optional[torch.Tensor]:
-        assert key in self.keys
-        return getattr(self, key)
-
-
 class SchedulerParams:
     def __init__(self, power: int = 3,
                  warmup_start_epoch: int = 1,
@@ -164,9 +152,9 @@ class BaseMockRunRecipe(ABC):
                  log_dir=None) -> None:
         self.model_config = model_config
         self.algo_config = algo_config
-        self.model_keys = set(self.model_config.__dict__.keys())
-        self.scheduler_keys = set(self.algo_config.scheduler_params.__dict__.keys())
-        self.algo_keys = set(self.algo_config.__dict__.keys())
+        self.model_keys = set(self.model_config.__dict__)
+        self.scheduler_keys = set(self.algo_config.scheduler_params.__dict__)
+        self.algo_keys = set(self.algo_config.__dict__)
         self.set_log_dir(log_dir)
 
     @classmethod
@@ -174,9 +162,9 @@ class BaseMockRunRecipe(ABC):
         model_config = deepcopy(cls.default_model_config)
         algo_config = deepcopy(cls.default_algo_config)
         scheduler_config = algo_config.scheduler_params
-        model_keys = set(model_config.__dict__.keys())
-        scheduler_keys = set(scheduler_config.__dict__.keys())
-        algo_keys = set(algo_config.__dict__.keys())
+        model_keys = set(model_config.__dict__)
+        scheduler_keys = set(scheduler_config.__dict__)
+        algo_keys = set(algo_config.__dict__)
         for key, value in override_kwargs.items():
             if key in model_keys:
                 setattr(model_config, key, value)
