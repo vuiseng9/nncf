@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 import pytest
@@ -24,6 +23,7 @@ def temp_folder(tmp_path_factory):
 
 @pytest.mark.usefixtures('temp_folder')
 class TestMovementWithTransformers:
+    # pylint:disable=redefined-outer-name
     @pytest.fixture(autouse=True)
     def setup(self, temp_folder):
         self.temp_folder = temp_folder

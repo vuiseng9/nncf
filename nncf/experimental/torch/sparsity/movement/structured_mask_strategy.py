@@ -1,5 +1,6 @@
 import inspect
 from typing import Dict, List, Tuple, Union
+from abc import ABC, abstractmethod
 
 from nncf.common.utils.registry import Registry
 from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlockType
@@ -37,17 +38,19 @@ class StructuredMaskRule:
         )
 
 
-class BaseStructuredMaskStrategy:
+class BaseStructuredMaskStrategy(ABC):
     @property
-    def strategy_by_group_type(self):
-        return {}
+    @abstractmethod
+    def strategy_by_group_type(self) -> Dict[BuildingBlockType, List[StructuredMaskRule]]:
+        pass
 
     @classmethod
+    @abstractmethod
     def from_compressed_model(cls, compressed_model: NNCFNetwork):
-        raise NotImplementedError()
+        pass
 
 
-class BaseTransformerStructuredMaskStrategy(BaseStructuredMaskStrategy):
+class BaseTransformerStructuredMaskStrategy(BaseStructuredMaskStrategy, ABC):
     MHSA_Q: str = "query"
     MHSA_K: str = "key"
     MHSA_V: str = "value"

@@ -1,11 +1,11 @@
 import argparse
 import logging
-from typing import Optional, List
 from pathlib import Path
+from typing import List, Optional, Tuple
 
-import numpy as np
-from datasets.load import load_dataset
+import datasets
 import evaluate
+import numpy as np
 from transformers import AutoConfig
 from transformers import AutoModelForSequenceClassification
 from transformers import AutoTokenizer
@@ -13,15 +13,15 @@ from transformers import EvalPrediction
 from transformers import HfArgumentParser
 from transformers import set_seed
 from transformers.trainer import Trainer
-from transformers.trainer import TrainingArguments
 from transformers.trainer import TrainerCallback
-from transformers.trainer import TrainerState
 from transformers.trainer import TrainerControl
+from transformers.trainer import TrainerState
+from transformers.trainer import TrainingArguments
 
 from nncf import NNCFConfig
-from nncf.torch import create_compressed_model
 from nncf.api.compression import CompressionAlgorithmController
 from nncf.common.utils.tensorboard import prepare_for_tensorboard
+from nncf.torch import create_compressed_model
 
 quick_check_num = 10
 task_to_sample_keys = {
@@ -32,7 +32,7 @@ dataset_columns = ['labels', 'input_ids', 'token_type_ids', 'attention_mask', 'p
 nncf_logger = logging.getLogger('nncf')
 
 
-def parse_args():
+def parse_args() -> Tuple[argparse.Namespace, TrainingArguments]:
     parser = argparse.ArgumentParser('GLUE')
     parser.add_argument(
         '--task_name', type=str, default='mrpc',
@@ -47,7 +47,8 @@ def parse_args():
         help=f'If set, we will train the model without pretrained weights on only {quick_check_num} samples.')
 
     args, other_args = parser.parse_known_args()
-    training_args, = HfArgumentParser(TrainingArguments).parse_args_into_dataclasses(other_args)
+    retval = HfArgumentParser(TrainingArguments).parse_args_into_dataclasses(other_args)
+    training_args: TrainingArguments = retval[0]
 
     # post parser checks and overrides
     assert args.task_name in task_to_sample_keys, f'Task name should be in {list(task_to_sample_keys)}.'
@@ -85,10 +86,8 @@ class CompressionCallback(TrainerCallback):
 
 
 class CompressionTrainer(Trainer):
-    def __init__(self,
-                 compression_ctrl: Optional[CompressionAlgorithmController],
-                 callbacks: Optional[List[TrainerCallback]] = None,
-                 *args, **kwargs):
+    def __init__(self, compression_ctrl: Optional[CompressionAlgorithmController], *args,
+                 callbacks: Optional[List[TrainerCallback]] = None, **kwargs):
         self.compression_ctrl = compression_ctrl
         if compression_ctrl is not None:
             if callbacks:
@@ -112,7 +111,7 @@ class CompressionTrainer(Trainer):
 
 
 def prepare_dataset(args, training_args):
-    raw_datasets = load_dataset("glue", args.task_name)
+    raw_datasets = datasets.load_dataset("glue", args.task_name)  # pylint: disable=no-member
     num_labels = len(raw_datasets["train"].features["label"].names)
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
 

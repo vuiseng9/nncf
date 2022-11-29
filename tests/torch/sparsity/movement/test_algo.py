@@ -95,9 +95,16 @@ desc_wrong_sparse_structures = {
         error=ValueError,
         match='Invalid axis id'
     ),
-    "duplicate_matches": dict(
+    "duplicate_matches_conflit_config": dict(
         sparse_structure_by_scopes=[
             {"mode": "block", "sparse_factors": [2, 2], "target_scopes": "{re}attention"},
+            {"mode": "per_dim", "axis": 0, "target_scopes": "{re}query"},
+        ],
+        error=RuntimeError,
+        match='matched by multiple'),
+    "duplicate_matches_same_config": dict(
+        sparse_structure_by_scopes=[
+            {"mode": "per_dim", "axis": 0, "target_scopes": "{re}attention"},
             {"mode": "per_dim", "axis": 0, "target_scopes": "{re}query"},
         ],
         error=RuntimeError,
@@ -142,21 +149,21 @@ def test_can_create_movement_sparsity_layers(sparse_structure_by_scopes, recipe:
     assert isinstance(compression_ctrl, MovementSparsityController)
     assert isinstance(compression_ctrl.scheduler, MovementPolynomialThresholdScheduler)
 
+    configs = recipe.get('sparse_structure_by_scopes')
+    sparse_configs_by_scopes = [SparseConfigByScope.from_config(c) for c in configs]
     for scope, module in compressed_model.get_nncf_modules().items():
+        if not hasattr(module, 'pre_ops'):
+            continue
         count_movement_op = 0
-        if hasattr(module, 'pre_ops'):
-            for op in module.pre_ops.values():
-                if isinstance(op, UpdateWeightAndBias) and isinstance(op.operand, MovementSparsifier):
-                    count_movement_op += 1
-                    configs = recipe.get('sparse_structure_by_scopes')
-                    sparse_configs_by_scopes = [SparseConfigByScope.from_config(c) for c in configs]
-                    no_matches = True
-                    for config in sparse_configs_by_scopes:
-                        if matches_any(str(scope), config.target_scopes):
-                            check_sparsified_layer_mode(op.operand, module, config.sparse_config)
-                            no_matches = False  # do not use break, to ensure there is only one match
-                    if no_matches:
-                        check_sparsified_layer_mode(op.operand, module, SparseConfig(SparseStructure.FINE, (1, 1)))
+        for op in module.pre_ops.values():
+            if isinstance(op, UpdateWeightAndBias) and isinstance(op.operand, MovementSparsifier):
+                count_movement_op += 1
+                sparse_config = SparseConfig(SparseStructure.FINE, (1, 1))
+                for sparse_config_by_scope in sparse_configs_by_scopes:
+                    if matches_any(str(scope), sparse_config_by_scope.target_scopes):
+                        sparse_config = sparse_config_by_scope.sparse_config
+                        break
+                check_sparsified_layer_mode(op.operand, module, sparse_config)
         if should_consider_scope(str(scope), recipe.get('ignored_scopes')) and \
                 isinstance(module, tuple(SUPPORTED_NNCF_MODULES)):
             assert count_movement_op == 1

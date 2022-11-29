@@ -3,8 +3,9 @@ from copy import deepcopy
 from pathlib import Path
 from typing import List, Optional
 from unittest.mock import Mock
+from abc import ABC, abstractmethod
 
-from datasets.arrow_dataset import Dataset
+from datasets import Dataset  # pylint: disable=no-name-in-module
 import numpy as np
 from pytest import approx
 import torch
@@ -18,9 +19,9 @@ from transformers import BertConfig
 from transformers import PreTrainedModel
 from transformers import PretrainedConfig
 from transformers import SwinConfig
-from transformers import Trainer
 from transformers import TrainingArguments
 from transformers import Wav2Vec2Config
+from transformers.trainer import Trainer
 from transformers.trainer_callback import TrainerCallback
 from transformers.trainer_callback import TrainerControl
 from transformers.trainer_callback import TrainerState
@@ -148,7 +149,7 @@ class TransformerBlockModuleOrderedDict(OrderedDict):
                          mhsa_o=mhsa_o, ffn_i=ffn_i, ffn_o=ffn_o)
 
 
-class BaseMockRunRecipe:
+class BaseMockRunRecipe(ABC):
     model_family: str
     supports_structured_masking: bool
     default_model_config = PretrainedConfig()
@@ -223,21 +224,25 @@ class BaseMockRunRecipe:
                 parameter.normal_(generator=g)
         return torch_model
 
+    @abstractmethod
     def _create_model(self) -> torch.nn.Module:
-        return torch.nn.Identity()
+        pass
 
     @property
+    @abstractmethod
     def model_input_info(self) -> List[dict]:
-        return []
+        pass
 
     @property
+    @abstractmethod
     def transformer_block_info(self) -> List[TransformerBlockInfo]:
-        return []
+        pass
 
     @staticmethod
+    @abstractmethod
     def get_nncf_modules_in_transformer_block_order(
             compressed_model: NNCFNetwork) -> List[TransformerBlockModuleOrderedDict]:
-        return []
+        pass
 
     @property
     def nncf_config(self) -> NNCFConfig:
@@ -534,8 +539,17 @@ class LinearRunRecipe(BaseMockRunRecipe):
     def model_input_info(self) -> List[dict]:
         return [{"sample_size": [1, self.model_config.input_size], "keyword": "tensor"}]
 
+    @property
+    def transformer_block_info(self) -> List[TransformerBlockInfo]:
+        return []
 
-class Conv2dRunRecipe(BaseMockRunRecipe):
+    @staticmethod
+    def get_nncf_modules_in_transformer_block_order(
+            compressed_model: NNCFNetwork) -> List[TransformerBlockModuleOrderedDict]:
+        return []
+
+
+class Conv2dRunRecipe(LinearRunRecipe):
     model_family = 'conv2d'
     supports_structured_masking = False
     default_model_config = PretrainedConfig(
@@ -559,7 +573,7 @@ class Conv2dRunRecipe(BaseMockRunRecipe):
                  "keyword": "tensor"}]
 
 
-class Conv2dPlusLinearRunrecipe(BaseMockRunRecipe):
+class Conv2dPlusLinearRunrecipe(LinearRunRecipe):
     model_family = 'conv2d+linear'
     supports_structured_masking = False
     default_model_config = PretrainedConfig(
