@@ -10,12 +10,20 @@
  See the License for the specific language governing permissions and
  limitations under the License.
 """
+from enum import Enum
+import math
 from typing import Any, Dict, Optional
 
 from nncf.api.compression import CompressionAlgorithmController
 from nncf.common.schedulers import BaseCompressionScheduler
 from nncf.common.schedulers import PolynomialDecaySchedule
 from nncf.common.utils.logger import logger
+
+
+class MovementSchedulerStage(Enum):
+    PRE_WARMUP = 0
+    IN_WARMUP = 1
+    POST_WARMUP = 2
 
 
 class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
@@ -40,6 +48,7 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
         """
         super().__init__()
         self._controller = controller
+        self.power: float = params.get('power', 3)
         self.init_importance_threshold: float = params.get('init_importance_threshold', -1.)
         self.final_importance_threshold: float = params.get('final_importance_threshold', 0.)
         self.warmup_start_epoch: int = params.get('warmup_start_epoch', 1)
@@ -60,23 +69,43 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
             logger.warning('`init_importance_threshold` is equal to or greater than `final_importance_threshold`. '
                            'Movement sparsity may not work as expected.')
 
-        self.schedule = PolynomialDecaySchedule(
-            self.init_importance_threshold,
-            self.final_importance_threshold,
-            (self.warmup_end_epoch - self.warmup_start_epoch),
-            params.get('power', 3),
+        self._schedule = PolynomialDecaySchedule(
+            initial_value=0., target_value=1.,
+            target_epoch=(self.warmup_end_epoch - self.warmup_start_epoch),
+            power=self.power,
             concave=True
         )
-        self.current_importance_threshold = self.init_importance_threshold
         self._cached_importance_threshold = None
         self._is_importance_frozen = False
         self._steps_in_current_epoch = 0
         self._should_skip = False
 
     @property
+    def current_stage(self):
+        if self._steps_per_epoch is None or self.current_step < self.warmup_start_epoch * self._steps_per_epoch:
+            return MovementSchedulerStage.PRE_WARMUP
+        if self.current_step < self.warmup_end_epoch * self._steps_per_epoch:
+            return MovementSchedulerStage.IN_WARMUP
+        return MovementSchedulerStage.POST_WARMUP
+
+    @property
     def current_importance_lambda(self) -> float:
-        return self.importance_target_lambda * (self.current_importance_threshold - self.init_importance_threshold) / (
-            self.final_importance_threshold - self.init_importance_threshold)
+        current_stage = self.current_stage
+        if current_stage == MovementSchedulerStage.PRE_WARMUP:
+            return 0
+        if current_stage == MovementSchedulerStage.IN_WARMUP:
+            return self._calculate_current_scheduled_value(0, self.importance_target_lambda)
+        return self.importance_target_lambda
+
+    @property
+    def current_importance_threshold(self) -> float:
+        current_stage = self.current_stage
+        if current_stage == MovementSchedulerStage.PRE_WARMUP:
+            return self.init_importance_threshold
+        if current_stage == MovementSchedulerStage.IN_WARMUP:
+            return self._calculate_current_scheduled_value(self.init_importance_threshold,
+                                                           self.final_importance_threshold)
+        return self.final_importance_threshold
 
     def epoch_step(self, next_epoch: Optional[int] = None) -> None:
         super().epoch_step(next_epoch)
@@ -88,7 +117,7 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
         self._steps_in_current_epoch += 1
         if self._should_skip:
             return
-        self.schedule_threshold(self.current_step)
+        self._schedule_operand_threshold()
 
     def get_state(self) -> Dict[str, Any]:
         state = super().get_state()
@@ -104,30 +133,23 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
         else:
             self._steps_in_current_epoch = self._current_step % self._steps_per_epoch + 1
 
-    def schedule_threshold(self, global_step: Optional[int] = None):
-        if global_step is None:
-            global_step = self.current_step
-        if global_step < self.warmup_start_epoch * self._steps_per_epoch:
-            self.current_importance_threshold = self.init_importance_threshold
-        elif global_step < self.warmup_end_epoch * self._steps_per_epoch:
-            self.current_importance_threshold = self._calculate_scheduled_threshold(global_step)
-        else:
-            self.current_importance_threshold = self.final_importance_threshold
-            if not self._is_importance_frozen:
-                self._freeze_importance()
-                if self.enable_structured_masking:
-                    self._controller.reset_independent_structured_mask()
-                    self._controller.resolve_structured_mask()
-                    self._controller.populate_structured_mask()
-                self._is_importance_frozen = True
-
+    def _schedule_operand_threshold(self):
+        if self.current_stage == MovementSchedulerStage.POST_WARMUP and (not self._is_importance_frozen):
+            self._freeze_importance()
+            if self.enable_structured_masking:
+                self._controller.reset_independent_structured_mask()
+                self._controller.resolve_structured_mask()
+                self._controller.populate_structured_mask()
+            self._is_importance_frozen = True
         self._update_operand_importance_threshold()
 
-    def _calculate_scheduled_threshold(self, global_step: int) -> float:
-        schedule_current_step = global_step - self.warmup_start_epoch * self._steps_per_epoch
+    def _calculate_current_scheduled_value(self, start_value: float, end_value: float) -> float:
+        assert self.current_stage == MovementSchedulerStage.IN_WARMUP
+        schedule_current_step = self.current_step - self.warmup_start_epoch * self._steps_per_epoch
         schedule_epoch = schedule_current_step // self._steps_per_epoch
         schedule_step = schedule_current_step % self._steps_per_epoch
-        return self.schedule(schedule_epoch, schedule_step, self._steps_per_epoch)
+        scale = self._schedule(schedule_epoch, schedule_step, self._steps_per_epoch)
+        return start_value + scale * (end_value - start_value)
 
     def _freeze_importance(self):
         for minfo in self._controller.sparsified_module_info:
