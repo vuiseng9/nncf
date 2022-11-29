@@ -12,8 +12,13 @@ from transformers import TrainingArguments
 from transformers.trainer_callback import TrainerControl
 from transformers.trainer_callback import TrainerState
 
+from nncf.torch import create_compressed_model
+from nncf.torch.layer_utils import CompressionParameter
+from nncf.torch.layers import NNCFLinear
+from nncf.torch.module_operations import UpdateWeightAndBias
 from nncf.api.compression import CompressionStage
 from nncf.common.sparsity.statistics import MovementSparsityStatistics
+from nncf.common.statistics import NNCFStatistics
 from nncf.common.utils.helpers import matches_any
 from nncf.common.utils.helpers import should_consider_scope
 from nncf.experimental.torch.sparsity.movement.algo import ImportanceLoss
@@ -26,22 +31,20 @@ from nncf.experimental.torch.sparsity.movement.layers import SparseConfigByScope
 from nncf.experimental.torch.sparsity.movement.scheduler import MovementPolynomialThresholdScheduler
 from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskHandler
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import STRUCTURED_MASK_STRATEGY
-from nncf.torch import create_compressed_model
-from nncf.torch.layer_utils import CompressionParameter
-from nncf.torch.layers import NNCFLinear
-from nncf.torch.module_operations import UpdateWeightAndBias
-from tests.torch.sparsity.movement.helpers import BaseMockRunRecipe, BertRunRecipe, ParamDict
+from tests.torch.sparsity.movement.helpers import BaseMockRunRecipe
+from tests.torch.sparsity.movement.helpers import BertRunRecipe
 from tests.torch.sparsity.movement.helpers import CompressionCallback
-from tests.torch.sparsity.movement.helpers import TransformerBlockModuleOrderedDict
 from tests.torch.sparsity.movement.helpers import Conv2dPlusLinearRunrecipe
 from tests.torch.sparsity.movement.helpers import Conv2dRunRecipe
 from tests.torch.sparsity.movement.helpers import LinearRunRecipe
+from tests.torch.sparsity.movement.helpers import ParamDict
 from tests.torch.sparsity.movement.helpers import SwinRunRecipe
+from tests.torch.sparsity.movement.helpers import TransformerBlockModuleOrderedDict
 from tests.torch.sparsity.movement.helpers import Wav2Vec2RunRecipe
-from tests.torch.sparsity.movement.helpers import is_roughly_non_decreasing, is_roughly_of_same_value
-from tests.torch.sparsity.movement.helpers import initialize_sparsifer_parameters
 from tests.torch.sparsity.movement.helpers import build_compression_trainer
-from nncf.common.statistics import NNCFStatistics
+from tests.torch.sparsity.movement.helpers import initialize_sparsifer_parameters
+from tests.torch.sparsity.movement.helpers import is_roughly_non_decreasing
+from tests.torch.sparsity.movement.helpers import is_roughly_of_same_value
 
 FACTOR_NAME_IN_MOVEMENT_STAT = 'movement_sparsity/importance_regularization_factor'
 THRESHOLD_NAME_IN_MOVEMENT_STAT = 'movement_sparsity/importance_threshold'

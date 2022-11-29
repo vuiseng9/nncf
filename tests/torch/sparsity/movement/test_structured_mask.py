@@ -9,21 +9,23 @@ import torch
 
 from nncf.config import NNCFConfig
 from nncf.torch import create_compressed_model
-from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlockType
-from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskContextGroup
+from nncf.experimental.torch.sparsity.movement.layers import MovementSparsifier
+from nncf.experimental.torch.sparsity.movement.layers import SparseConfig
+from nncf.experimental.torch.sparsity.movement.layers import SparseStructure
 from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskContext
+from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskContextGroup
 from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskContextStatistics
-from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import detect_supported_model_family
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import STRUCTURED_MASK_STRATEGY
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import StructuredMaskRule
-from nncf.experimental.torch.sparsity.movement.layers import MovementSparsifier, SparseConfig, SparseStructure
+from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import detect_supported_model_family
+from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlockType
 from tests.torch.sparsity.movement.helpers import BaseMockRunRecipe
 from tests.torch.sparsity.movement.helpers import BertRunRecipe
-from tests.torch.sparsity.movement.helpers import Wav2Vec2RunRecipe
-from tests.torch.sparsity.movement.helpers import mock_linear_nncf_node
-from tests.torch.sparsity.movement.helpers import ensure_tensor
 from tests.torch.sparsity.movement.helpers import SwinRunRecipe
 from tests.torch.sparsity.movement.helpers import TransformerBlockModuleOrderedDict
+from tests.torch.sparsity.movement.helpers import Wav2Vec2RunRecipe
+from tests.torch.sparsity.movement.helpers import ensure_tensor
+from tests.torch.sparsity.movement.helpers import mock_linear_nncf_node
 
 STRUCTURED_MASK_SUPPORTED_RECIPES = [
     BertRunRecipe.from_default(hidden_size=4, intermediate_size=3),

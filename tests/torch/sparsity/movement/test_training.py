@@ -1,13 +1,14 @@
-import sys
+from copy import deepcopy
 import os
-from typing import Dict, Union
 from pathlib import Path
+import sys
+from typing import Dict, Union
+
+import jstyleson as json
 import pytest
 from pytest import approx
-import jstyleson as json
-from copy import deepcopy
-
 import torch.cuda
+
 from tests.common.helpers import PROJECT_ROOT
 from tests.common.helpers import TEST_ROOT
 from tests.torch.helpers import Command

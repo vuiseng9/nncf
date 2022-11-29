@@ -1,19 +1,20 @@
-from unittest.mock import Mock, call
+from unittest.mock import Mock
+from unittest.mock import call
 
 import pytest
+from pytest import approx
 import torch
-from nncf.common.sparsity.statistics import (MovementSparsityStatistics,
-                                             SparsifiedLayerSummary,
-                                             SparsifiedModelStatistics)
+
+from nncf.torch import create_compressed_model
+from nncf.common.sparsity.statistics import MovementSparsityStatistics
+from nncf.common.sparsity.statistics import SparsifiedLayerSummary
+from nncf.common.sparsity.statistics import SparsifiedModelStatistics
 from nncf.common.statistics import NNCFStatistics
 from nncf.common.utils.helpers import create_table
-from nncf.torch import create_compressed_model
 from nncf.experimental.torch.sparsity.movement.functions import binary_mask_by_threshold
 from nncf.experimental.torch.sparsity.movement.loss import ImportanceLoss
-from pytest import approx
 from tests.torch.sparsity.movement.helpers import LinearRunRecipe
 from tests.torch.sparsity.movement.helpers import ensure_tensor
-
 
 desc_test_sparsifier_forward = {
     "block": dict(

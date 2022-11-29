@@ -1,7 +1,7 @@
 from collections import defaultdict
+import logging
 from unittest.mock import MagicMock
 from unittest.mock import Mock
-import logging
 
 import numpy as np
 import pytest
@@ -155,7 +155,6 @@ def test_scheduler_load_state(params):
     assert scheduler._steps_per_epoch == ref_state['_steps_per_epoch']  # pylint: disable=protected-access
 
     # check can resume and continue
-    # TODO: after resume, the threshold value before the very first `.step()` call is incorrect
     threshold, factor = [], []
     for _ in range(steps_per_epoch - (reload_step + 1) % steps_per_epoch):  # rest batch
         scheduler.step()
