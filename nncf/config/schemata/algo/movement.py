@@ -39,44 +39,46 @@ SPARSE_STRUCTURE_BY_SCOPES_SCHEMA = {
     "required": ['target_scopes'],
 }
 
+SCHEDULER_PARAMS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "power": with_attributes(NUMBER,
+                                 description="For polynomial scheduler - determines the corresponding power value."),
+        "init_importance_threshold": with_attributes(NUMBER,
+                                                     description="importance masking threshold @ warmup_start_epoch"),
+        "warmup_start_epoch": with_attributes(NUMBER,
+                                              description="Index of the starting epoch for importance masking threshold"
+                                                          "warmup at the value of init_importance_threshold"),
+        "final_importance_threshold": with_attributes(NUMBER,
+                                                      description="importance masking threshold @ warmup_end_epoch"),
+        "warmup_end_epoch": with_attributes(NUMBER,
+                                            description="Index of the ending epoch of the importance masking threshold"
+                                            "warmup at the value of final_importance_threshold"),
+        "importance_regularization_factor": with_attributes(NUMBER,
+                                                            description="regularization final lambda"),
+        "enable_structured_masking": with_attributes(BOOLEAN,
+                                                     default=True,
+                                                     description="Whether to enable structured masking"
+                                                     " after warmup stage."),
+        "steps_per_epoch": with_attributes({"oneOf": [NUMBER, NULL]},
+                                           description="Number of optimizer steps in one epoch. "
+                                           "Required to start proper scheduling in the first training epoch if "
+                                           "'update_per_optimizer_step' is true"),
+    },
+    "additionalProperties": False
+}
+
+
 MOVEMENT_SPARSITY_SCHEMA = {
     **BASIC_COMPRESSION_ALGO_SCHEMA,
     # TODO: fill in description
-    "description": f"to-do."
-                   f"placeholder. ",
+    "description": "to-do."
+                   "placeholder. ",
     "properties": {
         "algorithm": {
             "const": MOVEMENT_SPARSITY_ALGO_NAME_IN_CONFIG
         },
-        # TODO: revise config to expose
-        "params":
-            {
-                "type": "object",
-                "properties": {
-                    "power": with_attributes(NUMBER,
-                                             description="For polynomial scheduler - determines the corresponding power value."),
-                    "init_importance_threshold": with_attributes(NUMBER,
-                                                                 description="importance masking threshold @ warmup_start_epoch"),
-                    "warmup_start_epoch": with_attributes(NUMBER,
-                                                          description="Index of the starting epoch of the importance masking threshold"
-                                                          "warmup at the value of init_importance_threshold"),
-                    "final_importance_threshold": with_attributes(NUMBER,
-                                                                  description="importance masking threshold @ warmup_end_epoch"),
-                    "warmup_end_epoch": with_attributes(NUMBER,
-                                                        description="Index of the ending epoch of the importance masking threshold"
-                                                                    "warmup at the value of final_importance_threshold"),
-                    "importance_regularization_factor": with_attributes(NUMBER,
-                                                                        description="regularization final lambda"),
-                    "enable_structured_masking": with_attributes(BOOLEAN,
-                                                                 default=True,
-                                                                 description="Whether to enable structured masking after warmup stage."),
-                    "steps_per_epoch": with_attributes({"oneOf": [NUMBER, NULL]},
-                                                       description="Number of optimizer steps in one epoch. Required to start proper "
-                                                       " scheduling in the first training epoch if "
-                                                       "'update_per_optimizer_step' is true"),
-                },
-                "additionalProperties": False
-        },
+        "params": SCHEDULER_PARAMS_SCHEMA,
         "sparse_structure_by_scopes": {
             "type": "array",
             "items": SPARSE_STRUCTURE_BY_SCOPES_SCHEMA,

@@ -11,7 +11,6 @@
  limitations under the License.
 """
 from enum import Enum
-import math
 from typing import Any, Dict, Optional
 
 from nncf.api.compression import CompressionAlgorithmController

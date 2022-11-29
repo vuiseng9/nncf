@@ -109,7 +109,7 @@ class LinearLayerAttributes(WeightedLayerAttributes):
                  weight_requires_grad: bool,
                  in_features: int,
                  out_features: int,
-                 bias: bool):
+                 bias: bool = True):
         super().__init__(weight_requires_grad)
         self.in_features = in_features
         self.out_features = out_features
