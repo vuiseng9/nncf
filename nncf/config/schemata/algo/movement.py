@@ -36,7 +36,6 @@ SPARSE_STRUCTURE_BY_SCOPES_SCHEMA = {
                                          description="TBD")
     },
     "additionalProperties": False,
-    "required": ['target_scopes'],
 }
 
 SCHEDULER_PARAMS_SCHEMA = {
