@@ -477,7 +477,7 @@ def test_compression_loss_update(tmp_path):
             loss = self.compression_ctrl.loss()
             # check gradient
             if recipe.scheduler_params.warmup_start_epoch < state.epoch <= recipe.scheduler_params.warmup_end_epoch \
-                    and self.compression_ctrl.scheduler.current_importance_lambda > 0:
+                    and self.compression_ctrl.scheduler.current_importance_regularization_factor > 0:
                 assert isinstance(loss, torch.Tensor)
                 assert loss.requires_grad is True
                 assert loss > 0.

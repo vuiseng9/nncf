@@ -74,7 +74,8 @@ class MovementSparsityBuilder(BaseSparsityAlgoBuilder):
             raise RuntimeError(f'"{node_name}" is matched by multiple items in `sparse_structure_by_scopes`.')
 
         return MovementSparsifier(target_module_node, sparse_cfg=sparse_cfg, frozen=False,
-                                  compression_lr_multiplier=compression_lr_multiplier)
+                                  compression_lr_multiplier=compression_lr_multiplier,
+                                  layerwise_loss_lambda=0.5)
 
     def _sparsify_weights(self, target_model: NNCFNetwork) -> List[PTInsertionCommand]:
         device = get_model_device(target_model)
@@ -194,7 +195,7 @@ class MovementSparsityController(BaseSparsityAlgoController):
 
         stats = MovementSparsityStatistics(model_statistics,
                                            self.scheduler.current_importance_threshold,
-                                           self.scheduler.current_importance_lambda)
+                                           self.scheduler.current_importance_regularization_factor)
 
         nncf_stats = NNCFStatistics()
         nncf_stats.register('movement_sparsity', stats)

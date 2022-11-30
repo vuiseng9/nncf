@@ -52,7 +52,7 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
         self.final_importance_threshold: float = params.get('final_importance_threshold', 0.)
         self.warmup_start_epoch: int = params.get('warmup_start_epoch', 1)
         self.warmup_end_epoch: int = params.get('warmup_end_epoch', 2)
-        self.importance_target_lambda: float = params.get('importance_regularization_factor', 0.1)
+        self.final_importance_regularization_factor: float = params.get('importance_regularization_factor', 0.1)
         self.enable_structured_masking: bool = params.get('enable_structured_masking', True)
         self._steps_per_epoch = params.get('steps_per_epoch', None)
 
@@ -88,13 +88,13 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
         return MovementSchedulerStage.POST_WARMUP
 
     @property
-    def current_importance_lambda(self) -> float:
+    def current_importance_regularization_factor(self) -> float:
         current_stage = self.current_stage
         if current_stage == MovementSchedulerStage.PRE_WARMUP:
-            return 0
+            return 0.
         if current_stage == MovementSchedulerStage.IN_WARMUP:
-            return self._calculate_current_scheduled_value(0, self.importance_target_lambda)
-        return self.importance_target_lambda
+            return self._calculate_current_scheduled_value(0., self.final_importance_regularization_factor)
+        return self.final_importance_regularization_factor
 
     @property
     def current_importance_threshold(self) -> float:
@@ -151,11 +151,11 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
         return start_value + scale * (end_value - start_value)
 
     def _update_operand_importance_threshold_lambda(self):
-        current = (self.current_importance_threshold, self.current_importance_lambda)
+        current = (self.current_importance_threshold, self.current_importance_regularization_factor)
         if current != self._cached_importance_threshold_lambda:
             for minfo in self._controller.sparsified_module_info:
                 minfo.operand.importance_threshold = self.current_importance_threshold
-                minfo.operand.importance_lambda = self.current_importance_lambda
+                minfo.operand.importance_regularization_factor = self.current_importance_regularization_factor
         self._cached_importance_threshold_lambda = current
 
     def _maybe_should_skip(self) -> None:

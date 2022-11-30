@@ -67,7 +67,7 @@ def test_scheduler_decayed_importance_threshold_and_regularization_factor(desc):
         for _ in range(desc['params'].steps_per_epoch):
             scheduler.step()
             threshold.append(scheduler.current_importance_threshold)
-            factor.append(scheduler.current_importance_lambda)
+            factor.append(scheduler.current_importance_regularization_factor)
     assert np.allclose(threshold, desc['ref_threshold'], atol=1e-4)
     assert np.allclose(factor, desc['ref_factor'], atol=1e-4)
 
@@ -164,7 +164,7 @@ def test_scheduler_load_state(params):
             ref_scheduler.step()
             if ref_scheduler.current_step > reload_step:
                 ref_threshold.append(ref_scheduler.current_importance_threshold)
-                ref_factor.append(ref_scheduler.current_importance_lambda)
+                ref_factor.append(ref_scheduler.current_importance_regularization_factor)
 
     # check state dict is loaded
     scheduler = MovementPolynomialThresholdScheduler(controller=MagicMock(), params=params.__dict__)
@@ -181,13 +181,13 @@ def test_scheduler_load_state(params):
     for _ in range(steps_per_epoch - (reload_step + 1) % steps_per_epoch):  # rest batch
         scheduler.step()
         threshold.append(scheduler.current_importance_threshold)
-        factor.append(scheduler.current_importance_lambda)
+        factor.append(scheduler.current_importance_regularization_factor)
     for _ in range(ref_state['current_epoch'] + 1, 5):
         scheduler.epoch_step()
         for _ in range(steps_per_epoch):
             scheduler.step()
             threshold.append(scheduler.current_importance_threshold)
-            factor.append(scheduler.current_importance_lambda)
+            factor.append(scheduler.current_importance_regularization_factor)
     assert np.allclose(threshold, ref_threshold)
     assert np.allclose(factor, ref_factor)
 
@@ -204,14 +204,14 @@ def test_scheduler_can_infer_steps_per_epoch():
         scheduler.step()
     assert scheduler._steps_per_epoch is None
     assert scheduler.current_importance_threshold == approx(params.init_importance_threshold)
-    assert scheduler.current_importance_lambda == approx(0.)
+    assert scheduler.current_importance_regularization_factor == approx(0.)
 
     scheduler.epoch_step()
     assert scheduler._steps_per_epoch == 4
     scheduler.step()
     scheduler.step()
     assert scheduler.current_importance_threshold == threshold_after_6_step_calls
-    assert scheduler.current_importance_lambda == factor_after_6_step_calls
+    assert scheduler.current_importance_regularization_factor == factor_after_6_step_calls
 
 
 @pytest.mark.parametrize('desc', [

@@ -121,21 +121,21 @@ class SparseConfigByScope:
 
 @COMPRESSION_MODULES.register()
 class MovementSparsifier(nn.Module):
-    def __init__(
+    def __init__( 
         self,
         target_module_node: NNCFNode,
         sparse_cfg: SparseConfig = SparseConfig(mode=SparseStructure.FINE),
         frozen: bool = True,
         compression_lr_multiplier: Optional[float] = None,
-        layer_loss_lambda: float = 0.5,
+        layerwise_loss_lambda: float = 0.5,
     ):
         super().__init__()
         self.target_module_node = target_module_node
         self.prune_bias = (target_module_node.layer_attributes.bias not in (False, None))
         self.frozen = frozen
-        self.layer_loss_lambda = layer_loss_lambda
+        self.layerwise_loss_lambda = layerwise_loss_lambda
         self._importance_threshold = -math.inf
-        self._importance_lambda = 0.
+        self._importance_regularization_factor = 0.
 
         weight_shape = target_module_node.layer_attributes.get_weight_shape()
         self.weight_ctx = BinaryMask(weight_shape)
@@ -174,12 +174,12 @@ class MovementSparsifier(nn.Module):
         self._importance_threshold = value
 
     @property
-    def importance_lambda(self):
-        return self._importance_lambda
+    def importance_regularization_factor(self):
+        return self._importance_regularization_factor
 
-    @importance_lambda.setter
-    def importance_lambda(self, value: float):
-        self._importance_lambda = value
+    @importance_regularization_factor.setter
+    def importance_regularization_factor(self, value: float):
+        self._importance_regularization_factor = value
 
     def forward(self, weight: torch.Tensor, bias: Optional[torch.Tensor] = None
                 ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
@@ -201,14 +201,14 @@ class MovementSparsifier(nn.Module):
         return ctx.apply_binary_mask(param_tensor)
 
     def loss(self) -> torch.Tensor:
-        if self.importance_lambda == 0.:
+        if self.importance_regularization_factor == 0.:
             return torch.tensor(0., device=self._get_device())
         layer_loss = torch.mean(torch.sigmoid(self.weight_importance)) * \
-            self.layer_loss_lambda * math.prod(self.sparse_factors)
+            self.layerwise_loss_lambda * math.prod(self.sparse_factors)
         if self.prune_bias:
             layer_loss += torch.mean(torch.sigmoid(self.bias_importance)) * \
-                self.layer_loss_lambda * float(self.sparse_factors[0])
-        return layer_loss * self.importance_lambda
+                self.layerwise_loss_lambda * float(self.sparse_factors[0])
+        return layer_loss * self.importance_regularization_factor
 
     def requires_grad_(self, requires_grad: bool = True):
         super().requires_grad_(requires_grad)
