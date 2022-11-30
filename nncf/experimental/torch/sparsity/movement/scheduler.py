@@ -80,7 +80,7 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
         self._should_skip = False
 
     @property
-    def current_stage(self):
+    def current_stage(self) -> MovementSchedulerStage:
         if self._steps_per_epoch is None or self.current_step < self.warmup_start_epoch * self._steps_per_epoch:
             return MovementSchedulerStage.PRE_WARMUP
         if self.current_step < self.warmup_end_epoch * self._steps_per_epoch:

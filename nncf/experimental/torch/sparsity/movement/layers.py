@@ -196,7 +196,7 @@ class MovementSparsifier(nn.Module):
                 masked_bias = apply_binary_mask_impl(bias_mask, bias)
         return masked_weight, masked_bias
 
-    def apply_binary_mask(self, param_tensor: torch.Tensor, is_bias=False) -> torch.Tensor:
+    def apply_binary_mask(self, param_tensor: torch.Tensor, is_bias: bool = False) -> torch.Tensor:
         ctx = self.bias_ctx if is_bias else self.weight_ctx
         return ctx.apply_binary_mask(param_tensor)
 

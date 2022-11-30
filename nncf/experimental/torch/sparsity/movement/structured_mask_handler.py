@@ -101,7 +101,7 @@ class StructuredMaskContext:
             self._independent_structured_mask.copy_(tensor)
 
     @property
-    def dependent_structured_mask(self) -> torch.Tensor:
+    def dependent_structured_mask(self) -> Optional[torch.Tensor]:
         if self._dependent_structured_mask is None:
             logger.warning("Dependent structured mask has not been calculated. Return None.")
         return self._dependent_structured_mask
