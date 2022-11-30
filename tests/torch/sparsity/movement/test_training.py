@@ -297,6 +297,7 @@ def fixture_movement_desc_short(request, dataset_dir, tmp_path_factory, weekly_m
 
 
 class TestMovementTraining:
+    @pytest.mark.weekly
     def test_compression_movement_long_train(self, movement_desc_long: MovementTrainingTestDescriptor, mocker):
         if (not movement_desc_long.cpu_only_) and torch.cuda.device_count() < movement_desc_long.n_process:
             pytest.skip(f"No enough cuda devices to run {movement_desc_long}")
@@ -306,6 +307,7 @@ class TestMovementTraining:
         self._validate_model_is_saved(movement_desc_long)
         self._validate_train_metric(movement_desc_long)
 
+    @pytest.mark.nightly
     def test_compression_movement_short_train(self, movement_desc_short: MovementTrainingTestDescriptor, mocker):
         if (not movement_desc_short.cpu_only_) and torch.cuda.device_count() < movement_desc_short.n_process:
             pytest.skip(f"No enough cuda devices to run {movement_desc_short}")
