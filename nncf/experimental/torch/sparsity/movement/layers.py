@@ -121,7 +121,7 @@ class SparseConfigByScope:
 
 @COMPRESSION_MODULES.register()
 class MovementSparsifier(nn.Module):
-    def __init__( 
+    def __init__(
         self,
         target_module_node: NNCFNode,
         sparse_cfg: SparseConfig = SparseConfig(mode=SparseStructure.FINE),
