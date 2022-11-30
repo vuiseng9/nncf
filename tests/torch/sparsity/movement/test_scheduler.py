@@ -102,10 +102,9 @@ def test_scheduler_enable_structured_masking(enable_structured_masking: bool):
         getattr(controller.resolve_structured_mask, assert_fn)()
         getattr(controller.populate_structured_mask, assert_fn)()
 
-    def assert_controller_requires_grad_calls(is_called_once: bool):
+    def assert_controller_freeze_calls(is_called_once: bool):
         assert_fn = 'assert_called_once' if is_called_once else 'assert_not_called'
-        for minfo in controller.sparsified_module_info:
-            getattr(minfo.operand.requires_grad_, assert_fn)()
+        getattr(controller.freeze, assert_fn)()
 
     params = SchedulerParams(warmup_start_epoch=0, warmup_end_epoch=1, steps_per_epoch=2,
                              enable_structured_masking=enable_structured_masking)
@@ -115,16 +114,16 @@ def test_scheduler_enable_structured_masking(enable_structured_masking: bool):
     scheduler.step()
     scheduler.epoch_step()
     assert_controller_structured_masking_calls(is_called_once=False)
-    assert_controller_requires_grad_calls(is_called_once=False)
+    assert_controller_freeze_calls(is_called_once=False)
     scheduler.step()
     assert_controller_structured_masking_calls(is_called_once=enable_structured_masking)  # check called at this step
-    assert_controller_requires_grad_calls(is_called_once=True)
+    assert_controller_freeze_calls(is_called_once=True)
     scheduler.step()
     scheduler.epoch_step()
     scheduler.step()
     scheduler.step()
     assert_controller_structured_masking_calls(is_called_once=enable_structured_masking)  # check only called once
-    assert_controller_requires_grad_calls(is_called_once=True)
+    assert_controller_freeze_calls(is_called_once=True)
 
 
 def test_scheduler_get_state():

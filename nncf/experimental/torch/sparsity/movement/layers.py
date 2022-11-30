@@ -121,6 +121,7 @@ class MovementSparsifier(nn.Module):
         self.frozen = frozen
         self.layer_loss_lambda = layer_loss_lambda
         self._importance_threshold = -math.inf
+        self._importance_lambda = 0.
 
         weight_shape = target_module_node.layer_attributes.get_weight_shape()
         self.weight_ctx = BinaryMask(weight_shape)
@@ -158,6 +159,14 @@ class MovementSparsifier(nn.Module):
     def importance_threshold(self, value: float):
         self._importance_threshold = value
 
+    @property
+    def importance_lambda(self):
+        return self._importance_lambda
+
+    @importance_lambda.setter
+    def importance_lambda(self, value: float):
+        self._importance_lambda = value
+
     def forward(self, weight: torch.Tensor, bias: Optional[torch.Tensor] = None
                 ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         if is_tracing_state():
@@ -178,12 +187,14 @@ class MovementSparsifier(nn.Module):
         return ctx.apply_binary_mask(param_tensor)
 
     def loss(self) -> torch.Tensor:
+        if self.importance_lambda == 0.:
+            return torch.tensor(0., device=self._get_device())
         layer_loss = torch.mean(torch.sigmoid(self.weight_importance)) * \
             self.layer_loss_lambda * math.prod(self.sparse_factors)
         if self.prune_bias:
             layer_loss += torch.mean(torch.sigmoid(self.bias_importance)) * \
                 self.layer_loss_lambda * float(self.sparse_factors[0])
-        return layer_loss
+        return layer_loss * self.importance_lambda
 
     def requires_grad_(self, requires_grad: bool = True):
         super().requires_grad_(requires_grad)
@@ -191,6 +202,9 @@ class MovementSparsifier(nn.Module):
 
     def extra_repr(self) -> str:
         return 'sparse_structure: {} {}'.format(self.sparse_structure.value, self.sparse_factors)
+
+    def _get_device(self):
+        return self.weight_importance.device
 
     def _calc_training_binary_mask(self, isbias: bool = False):
         ctx = self.bias_ctx if isbias else self.weight_ctx

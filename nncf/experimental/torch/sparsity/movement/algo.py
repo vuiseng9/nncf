@@ -124,7 +124,7 @@ class MovementSparsityController(BaseSparsityAlgoController):
         params = deepcopy(algo_config.get('params', {}))
         self._distributed = False
         self._scheduler = MovementPolynomialThresholdScheduler(self, params)
-        self._loss = ImportanceLoss(sparsify_operations, self.scheduler)
+        self._loss = ImportanceLoss(sparsify_operations)
         self._config = config
 
         if self._scheduler.enable_structured_masking:
@@ -181,6 +181,11 @@ class MovementSparsityController(BaseSparsityAlgoController):
             torch.set_rng_state(state)
 
         self._distributed = True
+
+    def freeze(self):
+        self._loss.disable()
+        for minfo in self.sparsified_module_info:
+            minfo.operand.requires_grad_(False)
 
     def statistics(self, quickly_collected_only=False) -> NNCFStatistics:
         collector = PTSparseModelStatisticsCollector(self.model, self.sparsified_module_info,

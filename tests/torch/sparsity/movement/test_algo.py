@@ -474,14 +474,16 @@ def test_compression_loss_update(tmp_path):
             assert isinstance(self.compression_ctrl.loss, ImportanceLoss)
             for layer in self.compression_ctrl.loss.sparse_layers:
                 assert isinstance(layer, MovementSparsifier)
+            loss = self.compression_ctrl.loss()
             # check gradient
-            loss_compress = self.compression_ctrl.loss()
-            assert loss_compress.requires_grad is (state.epoch <= recipe.scheduler_params.warmup_end_epoch)
-            # check value
-            if state.epoch <= recipe.scheduler_params.warmup_start_epoch:
-                assert not torch.is_nonzero(loss_compress)
-            elif self.compression_ctrl.scheduler.current_importance_lambda > 0.:
-                assert loss_compress > 0.
+            if recipe.scheduler_params.warmup_start_epoch < state.epoch <= recipe.scheduler_params.warmup_end_epoch \
+                    and self.compression_ctrl.scheduler.current_importance_lambda > 0:
+                assert isinstance(loss, torch.Tensor)
+                assert loss.requires_grad is True
+                assert loss > 0.
+            else:
+                assert (isinstance(loss, float) and loss == 0.) or \
+                    (isinstance(loss, torch.Tensor) and not loss.is_nonzero())
 
     trainer = build_compression_trainer(tmp_path, compression_ctrl, compressed_model,
                                         train_dataset=recipe.generate_mock_dataset(steps_per_epoch),

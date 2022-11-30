@@ -108,56 +108,45 @@ def test_binary_mask_by_threshold(input_tensor, threshold, max_percentile, ref_o
     assert output_tensor.requires_grad is requires_grad
 
 
-desc_test_importance_loss = {
-    '3layers_with_penalty_lambda': dict(
-        sparse_layers_loss=(1., 2., 3.),
-        penalty_scheduler_retval=1.5,
-        ref_output=3.),
-    '3layers_no_penalty_lambda': dict(
-        sparse_layers_loss=(1., 2., 3.),
-        penalty_scheduler_retval=None,
-        ref_output=2.),
-    '1layer_with_penalty_lambda': dict(
-        sparse_layers_loss=(1.,),
-        penalty_scheduler_retval=2.,
-        ref_output=2.),
-    'no_layer_with_penalty_lambda': dict(
-        sparse_layers_loss=(),
-        penalty_scheduler_retval=2.,
-        ref_output=0.),
-    'no_layer_no_penalty_lambda': dict(
-        sparse_layers_loss=(),
-        penalty_scheduler_retval=None,
-        ref_output=0.),
-}
-
-
 class TestImportanceLoss:
-    @pytest.mark.parametrize('desc', desc_test_importance_loss.values(), ids=desc_test_importance_loss.keys())
+    @pytest.mark.parametrize('desc', [
+        dict(
+            disable=False,
+            sparse_layers_loss=(1., 2., 3.),
+            ref_output=2.
+        ),
+        dict(
+            disable=True,
+            sparse_layers_loss=(1.,),
+            ref_output=1.
+        ),
+        dict(
+            disable=False,
+            sparse_layers_loss=(),
+            ref_output=0.
+        ),
+    ])
     @pytest.mark.parametrize('requires_grad', [True, False])
     def test_importance_loss_forward(self, desc, requires_grad: bool):
-        sparse_layers_loss = desc['sparse_layers_loss']
-        penalty_scheduler_retval = desc['penalty_scheduler_retval']
-        ref_output = desc['ref_output']
         sparse_layers = [Mock(loss=Mock(return_value=torch.tensor(loss_val, requires_grad=requires_grad)))
-                         for loss_val in sparse_layers_loss]
-        penalty_scheduler = None
-        if penalty_scheduler_retval is not None:
-            penalty_scheduler = Mock(current_importance_lambda=penalty_scheduler_retval)
-        loss = ImportanceLoss(sparse_layers, penalty_scheduler)
+                         for loss_val in desc['sparse_layers_loss']]
+        loss = ImportanceLoss(sparse_layers)
+        if desc['disable']:
+            loss.disable()
         output = loss()
-        for sparse_layer in sparse_layers:
-            assert sparse_layer.method_calls == [call.loss()]
-        if not sparse_layers_loss:
-            assert output == approx(0.)
+
+        if desc['disable'] or not desc['sparse_layers_loss']:
+            assert isinstance(output, float) and output == approx(0.)
         else:
+            for sparse_layer in sparse_layers:
+                assert sparse_layer.method_calls == [call.loss()]
             assert isinstance(output, torch.Tensor)
             assert output.requires_grad is requires_grad
-            assert torch.allclose(output, torch.tensor(ref_output))
+            assert torch.allclose(output, torch.tensor(desc['ref_output']))
 
 
 class TestMovementSparsityStatistics:
-    @pytest.fixture(autouse=True)
+    @ pytest.fixture(autouse=True)
     def setup(self):
         self.importance_threshold = 1.0
         self.importance_regularization_factor = 2.0
@@ -186,7 +175,7 @@ class TestMovementSparsityStatistics:
 
 
 class TestSparseConfigByScope:
-    @pytest.mark.parametrize('config', [
+    @ pytest.mark.parametrize('config', [
         {
             "target_scopes": "{re}fine"
         },
