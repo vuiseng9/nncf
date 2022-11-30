@@ -174,7 +174,7 @@ def test_can_create_movement_sparsity_layers(sparse_structure_by_scopes, recipe:
             assert count_movement_op == 0
 
 
-@ pytest.mark.parametrize('desc', desc_wrong_sparse_structures.values(),
+@pytest.mark.parametrize('desc', desc_wrong_sparse_structures.values(),
                           ids=desc_wrong_sparse_structures.keys())
 def test_error_on_wrong_sparse_structure_by_scopes(desc: dict):
     recipe = BertRunRecipe.from_default(sparse_structure_by_scopes=desc['sparse_structure_by_scopes'])
@@ -393,7 +393,7 @@ def test_controller_structured_mask_filling(tmp_path: Path, desc: dict):
             assert torch.allclose(operand.bias_ctx.binary_mask, ref_structured_binary_mask['bias'])
 
 
-@ pytest.mark.parametrize(('warmup_start_epoch', 'warmup_end_epoch'),
+@pytest.mark.parametrize(('warmup_start_epoch', 'warmup_end_epoch'),
                           [(1, 2), (0, 1), (2, 3), (2, 5)])
 def test_importance_threshold_and_regularization_factor_range(tmp_path,
                                                               warmup_start_epoch: int,

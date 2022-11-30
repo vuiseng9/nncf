@@ -146,7 +146,7 @@ class TestImportanceLoss:
 
 
 class TestMovementSparsityStatistics:
-    @ pytest.fixture(autouse=True)
+    @pytest.fixture(autouse=True)
     def setup(self):
         self.importance_threshold = 1.0
         self.importance_regularization_factor = 2.0
@@ -175,7 +175,7 @@ class TestMovementSparsityStatistics:
 
 
 class TestSparseConfigByScope:
-    @ pytest.mark.parametrize('config', [
+    @pytest.mark.parametrize('config', [
         {
             "target_scopes": "{re}fine"
         },
@@ -224,3 +224,41 @@ class TestSparseConfigByScope:
                                      sparse_factors=None,
                                      sparse_axis=int(config['axis']))
         assert sparse_config.__dict__ == ref_sparse_config
+
+    @pytest.mark.parametrize('desc', [
+        dict(
+            config={'mode': 'fine', 'sparse_factors': [2, 2], 'target_scopes': 'mock'},
+            error_info='\\[1, 1\\] or unspecified'
+        ),
+        dict(
+            config={'mode': 'fine', 'axis': 0, 'target_scopes': 'mock'},
+            error_info='not expect specified `axis`'
+        ),
+        dict(
+            config={'mode': 'block', 'target_scopes': 'mock'},
+            error_info='Missing `sparse_factors`'
+        ),
+        dict(
+            config={'mode': 'block', 'sparse_factors': [2], 'target_scopes': 'mock'},
+            error_info='expects tuple of two'
+        ),
+        dict(
+            config={'mode': 'block', 'sparse_factors': [2, 2], 'axis': 0, 'target_scopes': 'mock'},
+            error_info='not expect specified `axis`'
+        ),
+        dict(
+            config={'mode': 'per_dim', 'target_scopes': 'mock'},
+            error_info='Missing `axis`'
+        ),
+        dict(
+            config={'mode': 'per_dim', 'axis': 0, 'sparse_factors': [1, 1], 'target_scopes': 'mock'},
+            error_info='not expect specified `sparse_factors`'
+        ),
+        dict(
+            config={'mode': 'per_dim', 'axis': 0},
+            error_info='Missing `target_scopes`'
+        )
+    ])
+    def test_error_on_creating_from_wrong_sparse_config_by_scope(self, desc: dict):
+        with pytest.raises(ValueError, match=desc['error_info']):
+            _ = SparseConfigByScope.from_config(desc['config'])

@@ -55,22 +55,36 @@ class SparseConfig:
         self.sparse_axis = None
         self.mode = mode
         if self.mode == SparseStructure.FINE:
+            if not ((isinstance(sparse_factors, (tuple, list)) and tuple(sparse_factors) == (1, 1)) or
+                    sparse_factors is None):
+                raise ValueError(
+                    f'{error_prefix} Fine sparse structure expects `sparse_factors` to be [1, 1] or unspecified.')
+            if sparse_axis is not None:
+                raise ValueError(
+                    f'{error_prefix} Fine sparse structure does not expect specified `axis`.')
             self.sparse_factors = (1, 1)
 
         if self.mode == SparseStructure.BLOCK:
             if sparse_factors is None:
                 raise ValueError(
-                    '{} Missing `sparse_factors`. Block sparsity structure expects it specified.'.format(error_prefix))
+                    f'{error_prefix} Missing `sparse_factors`. Block sparsity structure expects it specified.')
             if not (isinstance(sparse_factors, (tuple, list)) and len(sparse_factors) == 2):
-                raise ValueError('{} Invalid format of `sparse_factors`. '
-                                 'Block sparsity structure expects tuple of two numbers')
+                raise ValueError(
+                    f'{error_prefix} Invalid format of `sparse_factors. '
+                    'Block sparsity structure expects tuple of two numbers.')
+            if sparse_axis is not None:
+                raise ValueError(
+                    f'{error_prefix} Block sparse structure does not expect specified `axis`.')
             self.sparse_factors = tuple(sparse_factors)
 
         if self.mode == SparseStructure.PER_DIM:
             if sparse_axis is None:
                 raise ValueError(
-                    '{} Missing `axis`. Sparsity structure per dimension expects it specified.'.format(error_prefix))
-            self.sparse_axis = sparse_axis
+                    f'{error_prefix} Missing `axis`. Per-dim sparsity structure expects it specified.')
+            if sparse_factors is not None:
+                raise ValueError(
+                    f'{error_prefix} Per-dim sparsity structure does not expect specified `sparse_factors`.')
+            self.sparse_axis = int(sparse_axis)
 
     @classmethod
     def from_config(cls, config: Dict[str, Any]) -> 'SparseConfig':
@@ -222,7 +236,7 @@ class MovementSparsifier(nn.Module):
         if isbias:
             return importance.repeat_interleave(self.sparse_factors[0], dim=0)
         return importance.repeat_interleave(self.sparse_factors[0], dim=0)\
-                         .repeat_interleave(self.sparse_factors[1], dim=1)
+            .repeat_interleave(self.sparse_factors[1], dim=1)
 
     @staticmethod
     def _get_weight_importance_shape(weight_shape, sparse_factors: Tuple[int, int],
