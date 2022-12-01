@@ -14,12 +14,15 @@ from nncf.common.sparsity.statistics import SparsifiedModelStatistics
 from nncf.common.statistics import NNCFStatistics
 from nncf.common.utils.helpers import create_table
 from nncf.experimental.torch.sparsity.movement.functions import binary_mask_by_threshold
+from nncf.experimental.torch.sparsity.movement.layers import MovementSparsifier
+from nncf.experimental.torch.sparsity.movement.layers import SparseConfig
 from nncf.experimental.torch.sparsity.movement.layers import SparseConfigByScope
 from nncf.experimental.torch.sparsity.movement.layers import SparseStructure
 from nncf.experimental.torch.sparsity.movement.loss import ImportanceLoss
 from tests.torch.sparsity.movement.helpers import LinearRunRecipe
 from tests.torch.sparsity.movement.helpers import ensure_tensor
 from tests.torch.sparsity.movement.helpers import initialize_sparsifer_parameters
+from tests.torch.sparsity.movement.helpers import mock_linear_nncf_node
 
 
 class TestSparseConfigByScope:
@@ -153,9 +156,7 @@ class TestSparsifier:
             input_size=4,
             num_classes=4,
             bias=has_bias,
-            sparse_structure_by_scopes=desc['sparse_structure_by_scopes'],
-            enable_structured_masking=False,
-            log_dir=tmp_path)
+            sparse_structure_by_scopes=desc['sparse_structure_by_scopes'])
         model = recipe.model
         compression_ctrl, compressed_model = create_compressed_model(model,
                                                                      recipe.nncf_config,
@@ -196,10 +197,26 @@ class TestSparsifier:
         return weight.T, bias
 
     @pytest.mark.parametrize("sparse_structure_by_scopes", [
-        [{"mode": "block", "sparse_factors": [2, 2], "target_scopes": "{re}model"}],
-        [{"mode": "per_dim", "axis": 0, "target_scopes": "{re}model"}],
-        [{"mode": "per_dim", "axis": 1, "target_scopes": "{re}model"}],
-        [{"mode": "fine", "sparse_factors": [1, 1], "target_scopes": "{re}model"}],
+        [{
+            "mode": "block",
+            "sparse_factors": [2, 2],
+            "target_scopes": "{re}model"
+        }],
+        [{
+            "mode": "per_dim",
+            "axis": 0,
+            "target_scopes": "{re}model"
+        }],
+        [{
+            "mode": "per_dim",
+            "axis": 1,
+            "target_scopes": "{re}model"
+        }],
+        [{
+            "mode": "fine",
+            "sparse_factors": [1, 1],
+            "target_scopes": "{re}model"
+        }],
     ])
     @pytest.mark.parametrize('model_bias', [True, False])
     def test_layer_actual_behavior_matches_sparsifer_mask(self, sparse_structure_by_scopes, model_bias: bool):
@@ -221,6 +238,82 @@ class TestSparsifier:
         else:
             assert masked_bias is None
             assert torch.allclose(equiv_bias, torch.zeros_like(equiv_bias))
+
+    def test_apply_binary_mask(self):
+        operand = MovementSparsifier(mock_linear_nncf_node(2, 2, bias=True))
+        operand.weight_ctx.binary_mask = torch.Tensor([[0., 1], [0, 1]])
+        operand.bias_ctx.binary_mask = torch.Tensor([0., 1])
+        weight = torch.Tensor([[1., 2], [3, 4]])
+        masked_weight = operand.apply_binary_mask(weight, is_bias=False)
+        ref_masked_weight = torch.Tensor([[0., 2], [0, 4]])
+        assert torch.allclose(masked_weight, ref_masked_weight)
+        bias = torch.Tensor([1., 2])
+        mssked_bias = operand.apply_binary_mask(bias, is_bias=True)
+        ref_masked_bias = torch.Tensor([0., 2])
+        assert torch.allclose(mssked_bias, ref_masked_bias)
+
+    @pytest.mark.parametrize('layerwise_loss_lambda', [0.5, 2.0])
+    @pytest.mark.parametrize('importance_regularization_factor', [0., 1.])
+    @pytest.mark.parametrize('frozen', [True, False])
+    @pytest.mark.parametrize('desc', [
+        dict(
+            sparse_cfg=SparseConfig(mode=SparseStructure.FINE),
+            weight_importance=ensure_tensor([[0, 1], [1, -1]]),
+            bias_importance=ensure_tensor([-2, 2]),
+            raw_loss=1.0578
+        ),
+        dict(
+            sparse_cfg=SparseConfig(mode=SparseStructure.BLOCK, sparse_factors=(2, 2)),
+            weight_importance=ensure_tensor([1]),
+            bias_importance=ensure_tensor([-2]),
+            raw_loss=3.1626
+        ),
+        dict(
+            sparse_cfg=SparseConfig(mode=SparseStructure.PER_DIM, sparse_axis=0),
+            weight_importance=ensure_tensor([[2], [3]]),
+            bias_importance=ensure_tensor([1, 4]),
+            raw_loss=2.6899
+        ),
+        dict(
+            sparse_cfg=SparseConfig(mode=SparseStructure.PER_DIM, sparse_axis=1),
+            weight_importance=ensure_tensor([[2, 3]]),
+            bias_importance=None,
+            raw_loss=1.8334
+        )
+    ])
+    def test_calculate_sparsifier_loss(self, layerwise_loss_lambda: float,
+                                       importance_regularization_factor: float,
+                                       frozen: bool, desc: dict):
+        has_bias = desc['bias_importance'] is not None
+        operand = MovementSparsifier(mock_linear_nncf_node(2, 2, bias=has_bias),
+                                     sparse_cfg=desc['sparse_cfg'],
+                                     frozen=frozen,
+                                     layerwise_loss_lambda=layerwise_loss_lambda)
+        with torch.no_grad():
+            operand.weight_importance.copy_(desc['weight_importance'])
+            if has_bias:
+                operand.bias_importance.copy_(desc['bias_importance'])
+        loss = operand.loss()
+        assert torch.allclose(loss, torch.zeros(1))
+
+        operand.importance_regularization_factor = importance_regularization_factor
+        loss = operand.loss()
+        ref_loss = torch.zeros(1) if frozen \
+            else torch.tensor(desc['raw_loss'] * importance_regularization_factor * layerwise_loss_lambda)
+        assert torch.allclose(loss, ref_loss, atol=2e-4)
+
+        ref_requires_grad = (not frozen and importance_regularization_factor != 0)
+        assert loss.requires_grad is ref_requires_grad
+
+    def test_requires_grad(self):
+        operand = MovementSparsifier(mock_linear_nncf_node(2, 2, bias=True), frozen=False)
+        operand.importance_regularization_factor = 1.
+        for set_grad in [False, True]:
+            operand.requires_grad_(set_grad)
+            assert operand.weight_importance.requires_grad is set_grad
+            assert operand.bias_importance.requires_grad is set_grad
+            assert operand.frozen is (not set_grad)
+            assert operand.loss().requires_grad is set_grad
 
 
 class TestFunctions:
