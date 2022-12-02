@@ -46,14 +46,6 @@ def mock_linear_nncf_node(in_features: int = 1, out_features: int = 1,
     return linear
 
 
-def ensure_tensor(data, dtype=torch.float, device=torch.device('cpu')) -> torch.Tensor:
-    if isinstance(data, np.ndarray):
-        return torch.from_numpy(data).to(dtype=dtype, device=device)
-    if isinstance(data, torch.Tensor):
-        return data.to(dtype=dtype, device=device)
-    return torch.tensor(data, dtype=dtype, device=device)
-
-
 def initialize_sparsifer_parameters(operand: MovementSparsifier,
                                     linspace_start: float = -1, linspace_end: float = 1):
     with torch.no_grad():
