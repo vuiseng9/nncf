@@ -36,7 +36,7 @@ class TestSchedulerCreation:
     ])
     def test_warn_on_improper_config(self, desc: dict, mocker, caplog):
         with caplog.at_level(logging.WARNING, logger='nncf'):
-            mocker.patch.object(logging.getLogger('nncf'), 'propagate', return_value=True)
+            mocker.patch.object(logging.getLogger('nncf'), 'propagate', True)
             _ = MovementPolynomialThresholdScheduler(controller=MagicMock(), params=desc['params'].__dict__)
         assert desc['match'] in caplog.text
 

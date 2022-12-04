@@ -3,8 +3,9 @@ from abc import abstractmethod
 from collections import OrderedDict
 from copy import deepcopy
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 from unittest.mock import Mock
+from unittest.mock import patch
 
 from datasets import Dataset  # pylint: disable=no-name-in-module
 import numpy as np
@@ -46,21 +47,37 @@ def mock_linear_nncf_node(in_features: int = 1, out_features: int = 1,
     return linear
 
 
-def initialize_sparsifer_parameters(operand: MovementSparsifier,
-                                    linspace_start: float = -1, linspace_end: float = 1):
+def initialize_sparsifier_parameters_by_linspace(operand: MovementSparsifier,
+                                                 linspace_start: float = -1, linspace_end: float = 1,
+                                                 seed: int = 42):
+    device = operand.weight_importance.device
+    g = torch.Generator(device=device)
+    g.manual_seed(seed)
     with torch.no_grad():
-        device = operand.weight_importance.device
+        weight_rand_idx = torch.randperm(operand.weight_importance.numel(), generator=g, device=device)
         weight_init_tensor = torch.linspace(linspace_start, linspace_end,
                                             steps=operand.weight_importance.numel(),
-                                            device=device)\
+                                            device=device)[weight_rand_idx]\
             .reshape_as(operand.weight_importance)
         operand.weight_importance.copy_(weight_init_tensor)
         if operand.prune_bias:
+            bias_rand_idx = torch.randperm(operand.bias_importance.numel(), generator=g, device=device)
             bias_init_tensor = torch.linspace(linspace_start, linspace_end,
                                               steps=operand.bias_importance.numel(),
-                                              device=device)\
+                                              device=device)[bias_rand_idx]\
                 .reshape_as(operand.bias_importance)
             operand.bias_importance.copy_(bias_init_tensor)
+
+
+# pylint: disable=protected-access
+def force_update_sparsifer_binary_masks_by_threshold(operand: MovementSparsifier,
+                                                     threshold: float):
+    operand.importance_threshold = threshold
+    with patch.object(operand, 'training', True),\
+            patch.object(operand, 'frozen', False):
+        operand._calc_training_binary_mask()
+        if operand.prune_bias:
+            operand._calc_training_binary_mask(is_bias=True)
 
 
 def is_roughly_non_decreasing(x_list, atol: float = 0.01) -> bool:
@@ -239,7 +256,9 @@ class BaseMockRunRecipe(ABC):
         else:
             raise KeyError(f'"{key}" not found.')
 
-    def generate_mock_dataset(self, num_samples: int = 16, seed: int = 42) -> Dataset:
+    def generate_mock_dataset(self, num_samples: int = 16, seed: int = 42,
+                              float_low: float = -1., float_high: float = 1.,
+                              int_low: int = 0, int_high: int = 2) -> Dataset:
         g = torch.Generator()
         g.manual_seed(seed)
         input_dict = {}
@@ -247,9 +266,10 @@ class BaseMockRunRecipe(ABC):
             shape = list(input_info.get('sample_size'))
             keyword = input_info.get('keyword')
             if input_info.get('type', 'float') == 'float':
-                tensor = torch.randn((num_samples, *shape[1:]), dtype=torch.float, generator=g)
+                tensor = torch.rand((num_samples, *shape[1:]), dtype=torch.float, generator=g) \
+                    * (float_high - float_low) + float_low
             else:
-                tensor = torch.randint(0, 2, (num_samples, *shape[1:]), generator=g)
+                tensor = torch.randint(int_low, int_high, (num_samples, *shape[1:]), generator=g)
             input_dict[keyword] = tensor
         input_dict['labels'] = torch.arange(self.model_config.num_labels).repeat(
             num_samples // self.model_config.num_labels + 1)[:num_samples]
@@ -371,9 +391,9 @@ class BertRunRecipe(BaseMockRunRecipe):
         dim = self.model_config.max_position_embeddings
         return [
             {"sample_size": [1, dim], "type": "long", "keyword": "input_ids"},
+            {"sample_size": [1, dim], "type": "long", "keyword": "attention_mask"},
             {"sample_size": [1, dim], "type": "long", "keyword": "token_type_ids"},
             {"sample_size": [1, dim], "type": "long", "keyword": "position_ids"},
-            {"sample_size": [1, dim], "type": "long", "keyword": "attention_mask"},
         ]
 
     @property
@@ -645,7 +665,7 @@ class CompressionCallback(TrainerCallback):
 def build_compression_trainer(output_dir,
                               compression_ctrl: CompressionAlgorithmController,
                               compressed_model: NNCFNetwork,
-                              train_dataset: Dataset,
+                              train_dataset: Optional[Dataset] = None,
                               eval_dataset: Optional[Dataset] = None,
                               callback: Optional[CompressionCallback] = None,
                               batch_size: int = 1,

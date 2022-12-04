@@ -166,7 +166,7 @@ class TestStructuredMaskContext:
         # use 'meta' device for check since it does not need gpus
         mock_meta_mask = torch.ones((1, 1), device=torch.device('meta'))
         with caplog.at_level(logging.WARNING, logger='nncf'):
-            mocker.patch.object(logging.getLogger('nncf'), 'propagate', return_value=True)
+            mocker.patch.object(logging.getLogger('nncf'), 'propagate', True)
             setattr(ctx, mask_name, mock_meta_mask)
             assert getattr(ctx, mask_name).device == torch.device('meta')
         assert f'Changing {mask_name} device' in caplog.text

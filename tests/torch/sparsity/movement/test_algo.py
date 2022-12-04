@@ -1,10 +1,12 @@
-from functools import partial
+from collections import defaultdict
+from itertools import chain
 from pathlib import Path
-from unittest.mock import patch
 
+from datasets import Dataset  # pylint: disable=no-name-in-module
 import numpy as np
 import onnx
 from onnx import numpy_helper
+import onnxruntime
 import pytest
 from pytest import approx
 import torch
@@ -41,7 +43,8 @@ from tests.torch.sparsity.movement.helpers import SwinRunRecipe
 from tests.torch.sparsity.movement.helpers import TransformerBlockItemOrderedDict
 from tests.torch.sparsity.movement.helpers import Wav2Vec2RunRecipe
 from tests.torch.sparsity.movement.helpers import build_compression_trainer
-from tests.torch.sparsity.movement.helpers import initialize_sparsifer_parameters
+from tests.torch.sparsity.movement.helpers import force_update_sparsifer_binary_masks_by_threshold
+from tests.torch.sparsity.movement.helpers import initialize_sparsifier_parameters_by_linspace
 from tests.torch.sparsity.movement.helpers import is_roughly_non_decreasing
 from tests.torch.sparsity.movement.helpers import is_roughly_of_same_value
 
@@ -227,7 +230,7 @@ class TestControllerStats:
                                                       recipe.nncf_config,
                                                       dump_graphs=False)
         minfo = compression_ctrl.sparsified_module_info[0]
-        initialize_sparsifer_parameters(minfo.operand, -1, 1)
+        initialize_sparsifier_parameters_by_linspace(minfo.operand, -1, 1)
         # initialized importance score for weight: [-1, -0.33, 0.33, 1], bias: [-1, 1]
         for threshold, ref_num_zeros in zip([-2, -0.5, 0, 0.5, 2], [0, 2, 3, 4, 4, 6]):
             minfo.operand.importance_threshold = threshold
@@ -370,47 +373,113 @@ class TestControllerCompressionInfo:
         assert compression_ctrl.compression_rate == 0.6
 
 
-class TestControllerONNXExport:
-
-    def check_onnx_has_sparsified_param(self, compressed_model, compression_ctrl, onnx_path):
-        ref_params = {}
-        module_vs_name_map = {module: name for name, module in compressed_model.named_modules()}
-        for minfo in compression_ctrl.sparsified_module_info:
-            with torch.no_grad():
-                weight, bias = minfo.operand(minfo.module.weight, minfo.module.bias)
-            name = module_vs_name_map[minfo.module]
-            ref_params[name + '.weight'] = weight
-            if bias is not None:
-                ref_params[name + '.bias'] = bias
-
-        # temporary solution to preserve param names in onnx model
-        with patch("torch.onnx.export", wraps=partial(torch.onnx.export, do_constant_folding=False)):
-            compression_ctrl.export_model(onnx_path)
-        onnx_model = onnx.load(onnx_path)
-
-        for t in onnx_model.graph.initializer:
-            if t.name in ref_params:
-                ref_param = ref_params.pop(t.name).numpy()
-                onnx_param = numpy_helper.to_array(t)
-                assert np.allclose(ref_param, onnx_param)
-        assert len(ref_params) == 0
-
+class TestModelSaving:
     @pytest.mark.parametrize('recipe', [
+        BertRunRecipe.from_default(),
+        Wav2Vec2RunRecipe.from_default(),
+        SwinRunRecipe.from_default(),
         LinearRunRecipe.from_default(),
-        LinearRunRecipe.from_default(bias=False)
+        Conv2dPlusLinearRunrecipe.from_default()
     ])
-    def test_export_onnx_has_sparsified_param(self, tmp_path: Path, recipe: BaseMockRunRecipe):
+    def test_same_outputs_in_torch_and_exported_onnx(self, tmp_path: Path, recipe: BaseMockRunRecipe):
+        num_samples = 4
         compression_ctrl, compressed_model = create_compressed_model(recipe.model,
                                                                      recipe.nncf_config,
                                                                      dump_graphs=False)
-        for minfo in compression_ctrl.sparsified_module_info:
-            initialize_sparsifer_parameters(minfo.operand)
-        for threshold in [-0.5, 0.5]:
-            compressed_model.train()
-            for minfo in compression_ctrl.sparsified_module_info:
-                minfo.operand.importance_threshold = threshold
-            onnx_path = tmp_path / f'model_thres{threshold}.onnx'
-            self.check_onnx_has_sparsified_param(compressed_model, compression_ctrl, onnx_path)
+        dataset = recipe.generate_mock_dataset(num_samples, seed=42)
+        for i, minfo in enumerate(compression_ctrl.sparsified_module_info):
+            initialize_sparsifier_parameters_by_linspace(minfo.operand, seed=i)
+            force_update_sparsifer_binary_masks_by_threshold(minfo.operand, 0.)
+
+        compressed_model.eval()
+        onnx_model_path = str(tmp_path / 'model.onnx')
+        compression_ctrl.export_model(onnx_model_path)
+
+        trainer = build_compression_trainer(tmp_path, compression_ctrl, compressed_model)
+        torch_outputs = trainer.predict(dataset).predictions
+        onnx_output_dict = self._get_onnx_model_inference_outputs(onnx_model_path, dataset, recipe)
+        onnx_outputs = next(iter(onnx_output_dict.values()))
+        assert np.allclose(onnx_outputs, torch_outputs, atol=1e-6)
+
+    def _get_onnx_model_inference_outputs(self, onnx_model_path: str,
+                                          dataset: Dataset,
+                                          recipe: BaseMockRunRecipe):
+        sess = onnxruntime.InferenceSession(onnx_model_path)
+        input_names = [item.name for item in sess.get_inputs()]
+        output_names = [item.name for item in sess.get_outputs()]
+        onnx_output_dict = defaultdict(list)
+        for i in range(len(dataset)):
+            item = dataset[i:i+1]
+            onnx_input = {}
+            for input_name, input_info in zip(input_names, recipe.model_input_info):
+                onnx_input[input_name] = np.array(item[input_info['keyword']],
+                                                  dtype=input_info.get('type', 'float32'))
+            outputs = sess.run(None, onnx_input)
+            for name, output in zip(output_names, outputs):
+                onnx_output_dict[name].append(output)
+        return {name: np.concatenate(array_list) for name, array_list in onnx_output_dict.items()}
+
+    @pytest.mark.parametrize('linear_recipe', [
+        LinearRunRecipe.from_default(bias=True),
+        Conv2dPlusLinearRunrecipe.from_default(bias=False)
+    ])
+    def test_exported_onnx_has_sparsified_param(self, tmp_path: Path, linear_recipe: BaseMockRunRecipe):
+        compression_ctrl, _ = create_compressed_model(linear_recipe.model,
+                                                      linear_recipe.nncf_config,
+                                                      dump_graphs=False)
+
+        assert len(compression_ctrl.sparsified_module_info) == 1
+        minfo = compression_ctrl.sparsified_module_info[0]
+        initialize_sparsifier_parameters_by_linspace(minfo.operand)
+        force_update_sparsifer_binary_masks_by_threshold(minfo.operand, 0.)
+        with torch.no_grad():
+            ref_weight, ref_bias = minfo.operand(minfo.module.weight, minfo.module.bias)
+
+        onnx_model_path = str(tmp_path / 'model.onnx')
+        compression_ctrl.export_model(onnx_model_path)
+        onnx_model = onnx.load(onnx_model_path)
+
+        assert ref_weight.count_nonzero() > 0
+        assert self._onnx_model_has_target_linear_param(onnx_model, ref_weight.cpu().numpy())
+        if ref_bias is not None:
+            assert ref_bias.count_nonzero() > 0
+            assert self._onnx_model_has_target_linear_param(onnx_model, ref_bias.cpu().numpy())
+
+    def _onnx_model_has_target_linear_param(self, onnx_model: onnx.ModelProto,
+                                            target_param: np.ndarray) -> bool:
+        for item in chain(onnx_model.graph.initializer, onnx_model.graph.node):
+            if hasattr(item, 'raw_data'):
+                onnx_weight = numpy_helper.to_array(item)
+                # linear weight may be transposed when do_constant_folding=True
+                for weight in [onnx_weight, onnx_weight.T]:
+                    if weight.shape == target_param.shape and np.allclose(weight, target_param):
+                        return True
+        return False
+
+    def test_model_state_dict(self):
+        linear_recipe = LinearRunRecipe.from_default(bias=True)
+        model = linear_recipe.model
+        original_state_dict = model.state_dict()
+        ref_state_dict = {}
+        for name, value in original_state_dict.items():
+            ref_state_dict[f'nncf_module.{name}'] = value
+            for keyword in ['weight', 'bias']:
+                name_parts = name.split('.')
+                if name_parts[-1] == keyword:
+                    importance_name = '.'.join(['nncf_module', *name_parts[:-1],
+                                                f'pre_ops.0.op.{keyword}_importance'])
+                    ref_state_dict[importance_name] = torch.zeros_like(value, dtype=torch.float)
+                    mask_name = '.'.join(['nncf_module', *name_parts[: -1],
+                                          f'pre_ops.0.op.{keyword}_ctx._binary_mask'])
+                    ref_state_dict[mask_name] = torch.ones_like(value, dtype=torch.float)
+
+        _, compressed_model = create_compressed_model(model,
+                                                      linear_recipe.nncf_config,
+                                                      dump_graphs=False)
+        compressed_state_dict = compressed_model.state_dict()
+        assert sorted(ref_state_dict) == sorted(compressed_state_dict)
+        for name, ref_value in ref_state_dict.items():
+            assert torch.allclose(compressed_state_dict[name], ref_value)
 
 
 desc_test_controller_structured_mask_resolution = {

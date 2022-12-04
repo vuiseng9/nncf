@@ -20,7 +20,7 @@ from nncf.experimental.torch.sparsity.movement.layers import SparseConfigByScope
 from nncf.experimental.torch.sparsity.movement.layers import SparseStructure
 from nncf.experimental.torch.sparsity.movement.loss import ImportanceLoss
 from tests.torch.sparsity.movement.helpers import LinearRunRecipe
-from tests.torch.sparsity.movement.helpers import initialize_sparsifer_parameters
+from tests.torch.sparsity.movement.helpers import initialize_sparsifier_parameters_by_linspace
 from tests.torch.sparsity.movement.helpers import mock_linear_nncf_node
 
 
@@ -226,7 +226,7 @@ class TestSparsifier:
                                                       dump_graphs=False)
         module_info = compression_ctrl.sparsified_module_info[0]
         operand = module_info.operand
-        initialize_sparsifer_parameters(operand)
+        initialize_sparsifier_parameters_by_linspace(operand)
         operand.importance_threshold = 0.
         ori_weight, ori_bias = module_info.module.weight, module_info.module.bias
         masked_weight, masked_bias = operand(ori_weight, ori_bias)  # sparsifier forward function
