@@ -1,6 +1,7 @@
 from collections import defaultdict
 from itertools import chain
 from pathlib import Path
+from typing import Optional
 
 from datasets import Dataset  # pylint: disable=no-name-in-module
 import numpy as np
@@ -124,8 +125,9 @@ class TestControllerCreation:
     @pytest.mark.parametrize('recipe', [
         BertRunRecipe.from_default(hidden_size=4, intermediate_size=6),
         BertRunRecipe.from_default(hidden_size=4, intermediate_size=6, ffn_bias=False),
+        BertRunRecipe.from_default(hidden_size=4, intermediate_size=6, compression_lr_multiplier=2.),
         SwinRunRecipe.from_default(depths=[1, 1], num_heads=[2, 4], mlp_ratio=1.5, qkv_bias=False)
-    ], ids=['bert', 'bert_no_ffn_bias', 'swin_no_qkv_bias'])
+    ], ids=['bert', 'bert_no_ffn_bias', 'bert_with_compression_lr_multiplier', 'swin_no_qkv_bias'])
     def test_can_create_movement_sparsity_layers(self, sparse_structure_by_scopes, recipe: BaseMockRunRecipe):
         recipe.set('sparse_structure_by_scopes', sparse_structure_by_scopes)
         compression_ctrl, compressed_model = create_compressed_model(recipe.model,
@@ -157,7 +159,8 @@ class TestControllerCreation:
 
     def _check_sparsified_layer_mode(self, sparsifier: MovementSparsifier,
                                      module: NNCFLinear,
-                                     config: SparseConfig):
+                                     config: SparseConfig,
+                                     compression_lr_multiplier: Optional[float]):
         weight_shape = module.weight.shape
         assert isinstance(sparsifier.weight_importance, CompressionParameter)
         if config.mode == SparseStructure.BLOCK:
@@ -172,11 +175,27 @@ class TestControllerCreation:
         ref_weight_importance = torch.zeros(ref_weight_shape)
         assert torch.allclose(sparsifier.weight_importance,
                               ref_weight_importance)
+        self._check_tensor_compression_lr_multiplier_hook(sparsifier.weight_importance,
+                                                          compression_lr_multiplier)
 
         if module.bias is not None:
             assert isinstance(sparsifier.bias_importance, CompressionParameter)
             ref_bias_importance = torch.zeros([ref_weight_importance.shape[0]])
             assert torch.allclose(sparsifier.bias_importance, ref_bias_importance)
+            self._check_tensor_compression_lr_multiplier_hook(sparsifier.bias_importance,
+                                                              compression_lr_multiplier)
+
+    def _check_tensor_compression_lr_multiplier_hook(self, tensor: torch.Tensor,
+                                                     compression_lr_multiplier: Optional[float]):
+        requires_grad = tensor.requires_grad
+        tensor.requires_grad_(True)
+        tensor.grad = None
+        tensor.backward(torch.ones_like(tensor))
+        ref_compression_lr_multiplier = 1. if compression_lr_multiplier is None else compression_lr_multiplier
+        ref_grad = torch.ones_like(tensor) * ref_compression_lr_multiplier
+        assert torch.allclose(tensor.grad, ref_grad)
+        tensor.grad = None
+        tensor.requires_grad_(requires_grad)
 
     @pytest.mark.parametrize('desc', desc_improper_sparse_structures.values(),
                              ids=desc_improper_sparse_structures.keys())

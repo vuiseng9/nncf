@@ -114,6 +114,7 @@ class SchedulerParams:
 class NNCFAlgoConfig:
     def __init__(self, sparse_structure_by_scopes: Optional[List[Dict]] = None,
                  ignored_scopes: Optional[List[str]] = None,
+                 compression_lr_multiplier: Optional[float] = None,
                  scheduler_params: Optional[SchedulerParams] = None,
                  **scheduler_overrides):
         self.scheduler_params = scheduler_params or SchedulerParams()
@@ -122,14 +123,18 @@ class NNCFAlgoConfig:
             setattr(self.scheduler_params, k, v)
         self.sparse_structure_by_scopes = sparse_structure_by_scopes or []
         self.ignored_scopes = ignored_scopes or []
+        self.compression_lr_multiplier = compression_lr_multiplier
 
     def to_dict(self):
-        return {
+        result = {
             "algorithm": "movement_sparsity",
             "params": self.scheduler_params.__dict__,
             "sparse_structure_by_scopes": self.sparse_structure_by_scopes,
             "ignored_scopes": self.ignored_scopes,
         }
+        if self.compression_lr_multiplier is not None:
+            result['compression_lr_multiplier'] = self.compression_lr_multiplier
+        return result
 
 
 class TransformerBlockInfo:
