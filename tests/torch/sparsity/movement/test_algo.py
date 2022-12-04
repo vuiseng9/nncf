@@ -137,6 +137,7 @@ class TestControllerCreation:
         assert isinstance(compression_ctrl.scheduler, MovementPolynomialThresholdScheduler)
 
         configs = recipe.get('sparse_structure_by_scopes')
+        compression_lr_multiplier = recipe.get('compression_lr_multiplier')
         sparse_configs_by_scopes = [SparseConfigByScope.from_config(c) for c in configs]
         for scope, module in compressed_model.get_nncf_modules().items():
             if not hasattr(module, 'pre_ops'):
@@ -150,7 +151,7 @@ class TestControllerCreation:
                         if matches_any(str(scope), sparse_config_by_scope.target_scopes):
                             sparse_config = sparse_config_by_scope.sparse_config
                             break
-                    self._check_sparsified_layer_mode(op.operand, module, sparse_config)
+                    self._check_sparsified_layer_mode(op.operand, module, sparse_config, compression_lr_multiplier)
             if should_consider_scope(str(scope), recipe.get('ignored_scopes')) and \
                     isinstance(module, tuple(SUPPORTED_NNCF_MODULES)):
                 assert count_movement_op == 1
