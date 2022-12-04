@@ -350,10 +350,10 @@ class TestStructuredMaskHandler:
                                                                      dump_graphs=False)
         handler, all_ctxes = self.get_handler_from_ctrl(compression_ctrl)
         module_dict = run_recipe.get_nncf_modules_in_transformer_block_order(compressed_model)[0]
-        module_2_node_name = {minfo.module: minfo.module_node_name
+        module_vs_node_name_map = {minfo.module: minfo.module_node_name
                               for minfo in compression_ctrl.sparsified_module_info}
-        node_name_2_context = {ctx.module_node_name: ctx for ctx in all_ctxes}
-        ctxes = [node_name_2_context[module_2_node_name[m]] for m in module_dict.values()]
+        node_name_vs_context_map = {ctx.module_node_name: ctx for ctx in all_ctxes}
+        ctxes = [node_name_vs_context_map[module_vs_node_name_map[m]] for m in module_dict.values()]
         for ctx, param in zip(ctxes, desc['independent_structured'].values()):
             ctx.independent_structured_mask = param
 
