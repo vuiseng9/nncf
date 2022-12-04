@@ -119,29 +119,6 @@ desc_improper_sparse_structures = {
 
 
 class TestControllerCreation:
-    def check_sparsified_layer_mode(self, sparsifier: MovementSparsifier,
-                                    module: NNCFLinear,
-                                    config: SparseConfig):
-        weight_shape = module.weight.shape
-        assert isinstance(sparsifier.weight_importance, CompressionParameter)
-        if config.mode == SparseStructure.BLOCK:
-            ref_weight_shape = [
-                weight_shape[0] // config.sparse_factors[0],
-                weight_shape[1] // config.sparse_factors[1]
-            ]
-        elif config.mode == SparseStructure.PER_DIM:
-            ref_weight_shape = [1, weight_shape[1]] if config.sparse_axis == 0 else [weight_shape[0], 1]
-        else:
-            ref_weight_shape = weight_shape
-        ref_weight_importance = torch.zeros(ref_weight_shape)
-        assert torch.allclose(sparsifier.weight_importance,
-                              ref_weight_importance)
-
-        if module.bias is not None:
-            assert isinstance(sparsifier.bias_importance, CompressionParameter)
-            ref_bias_importance = torch.zeros([ref_weight_importance.shape[0]])
-            assert torch.allclose(sparsifier.bias_importance, ref_bias_importance)
-
     @pytest.mark.parametrize('sparse_structure_by_scopes', desc_sparse_structures.values(),
                              ids=desc_sparse_structures.keys())
     @pytest.mark.parametrize('recipe', [
@@ -171,12 +148,35 @@ class TestControllerCreation:
                         if matches_any(str(scope), sparse_config_by_scope.target_scopes):
                             sparse_config = sparse_config_by_scope.sparse_config
                             break
-                    self.check_sparsified_layer_mode(op.operand, module, sparse_config)
+                    self._check_sparsified_layer_mode(op.operand, module, sparse_config)
             if should_consider_scope(str(scope), recipe.get('ignored_scopes')) and \
                     isinstance(module, tuple(SUPPORTED_NNCF_MODULES)):
                 assert count_movement_op == 1
             else:
                 assert count_movement_op == 0
+
+    def _check_sparsified_layer_mode(self, sparsifier: MovementSparsifier,
+                                     module: NNCFLinear,
+                                     config: SparseConfig):
+        weight_shape = module.weight.shape
+        assert isinstance(sparsifier.weight_importance, CompressionParameter)
+        if config.mode == SparseStructure.BLOCK:
+            ref_weight_shape = [
+                weight_shape[0] // config.sparse_factors[0],
+                weight_shape[1] // config.sparse_factors[1]
+            ]
+        elif config.mode == SparseStructure.PER_DIM:
+            ref_weight_shape = [1, weight_shape[1]] if config.sparse_axis == 0 else [weight_shape[0], 1]
+        else:
+            ref_weight_shape = weight_shape
+        ref_weight_importance = torch.zeros(ref_weight_shape)
+        assert torch.allclose(sparsifier.weight_importance,
+                              ref_weight_importance)
+
+        if module.bias is not None:
+            assert isinstance(sparsifier.bias_importance, CompressionParameter)
+            ref_bias_importance = torch.zeros([ref_weight_importance.shape[0]])
+            assert torch.allclose(sparsifier.bias_importance, ref_bias_importance)
 
     @pytest.mark.parametrize('desc', desc_improper_sparse_structures.values(),
                              ids=desc_improper_sparse_structures.keys())

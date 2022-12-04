@@ -186,15 +186,6 @@ class TestSparsifier:
             assert torch.allclose(masked_weight, desc['ref_masked_weight'])
             assert torch.allclose(masked_bias, desc['ref_masked_bias'])
 
-    def calc_linear_layer_equiv_weight_bias(self, module: NNCFLinear):
-        in_features = module.in_features
-        zero_input = torch.zeros((1, in_features))
-        eye_input = torch.eye(in_features)
-        with torch.no_grad():
-            bias = module(zero_input)
-            weight = module(eye_input) - bias
-        return weight.T, bias
-
     @pytest.mark.parametrize("sparse_structure_by_scopes", [
         [{
             "mode": "block",
@@ -230,13 +221,22 @@ class TestSparsifier:
         operand.importance_threshold = 0.
         ori_weight, ori_bias = module_info.module.weight, module_info.module.bias
         masked_weight, masked_bias = operand(ori_weight, ori_bias)  # sparsifier forward function
-        equiv_weight, equiv_bias = self.calc_linear_layer_equiv_weight_bias(module_info.module)
+        equiv_weight, equiv_bias = self._calc_linear_layer_equiv_weight_bias(module_info.module)
         assert torch.allclose(equiv_weight, masked_weight)
         if module_info.module.bias is not None:
             assert torch.allclose(equiv_bias, masked_bias)
         else:
             assert masked_bias is None
             assert torch.allclose(equiv_bias, torch.zeros_like(equiv_bias))
+
+    def _calc_linear_layer_equiv_weight_bias(self, module: NNCFLinear):
+        in_features = module.in_features
+        zero_input = torch.zeros((1, in_features))
+        eye_input = torch.eye(in_features)
+        with torch.no_grad():
+            bias = module(zero_input)
+            weight = module(eye_input) - bias
+        return weight.T, bias
 
     def test_apply_binary_mask(self):
         operand = MovementSparsifier(mock_linear_nncf_node(2, 2, bias=True))
