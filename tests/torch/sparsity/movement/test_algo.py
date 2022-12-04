@@ -411,12 +411,12 @@ class TestModelSaving:
             initialize_sparsifier_parameters_by_linspace(minfo.operand, seed=i)
             force_update_sparsifer_binary_masks_by_threshold(minfo.operand, 0.)
 
+        trainer = build_compression_trainer(tmp_path, compression_ctrl, compressed_model)
+        torch_outputs = trainer.predict(dataset).predictions
+
         compressed_model.eval()
         onnx_model_path = str(tmp_path / 'model.onnx')
         compression_ctrl.export_model(onnx_model_path)
-
-        trainer = build_compression_trainer(tmp_path, compression_ctrl, compressed_model)
-        torch_outputs = trainer.predict(dataset).predictions
         onnx_output_dict = self._get_onnx_model_inference_outputs(onnx_model_path, dataset, recipe)
         onnx_outputs = next(iter(onnx_output_dict.values()))
         assert np.allclose(onnx_outputs, torch_outputs, atol=1e-6)
