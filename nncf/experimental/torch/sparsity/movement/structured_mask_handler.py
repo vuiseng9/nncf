@@ -11,7 +11,6 @@
  limitations under the License.
 """
 from functools import reduce
-import logging
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple, Union
 
@@ -236,7 +235,7 @@ class StructuredMaskHandler:
         logging_str_l = ['Structured mask contexts by group:']
         for group in self._structured_mask_ctx_groups:
             logging_str_l.append(str(group))
-        logging.info('\n'.join(logging_str_l))
+        logger.info('\n'.join(logging_str_l))
 
     def update_independent_structured_mask(self):
         for group in self._structured_mask_ctx_groups:

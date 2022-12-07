@@ -132,7 +132,33 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
         else:
             self._steps_in_current_epoch = self._current_step % self._steps_per_epoch + 1
 
+    def _calc_init_threshold_from_controller(self):
+        # return -0.00001
+        import time
+        import numpy as np
+        import torch
+        with torch.no_grad():
+            start_time = time.time()
+            param_l = []
+            for minfo in self._controller.sparsified_module_info:
+                if not hasattr(minfo.operand, 'prune_bias'):
+                    continue
+                op = minfo.operand
+                weight = op._expand_importance(op.weight_importance).cpu().view(-1)
+                param_l.append(weight.numpy())
+                if op.prune_bias:
+                    bias = op._expand_importance(op.bias_importance, True).cpu().view(-1)
+                    param_l.append(bias.numpy())
+            param = np.concatenate(param_l)
+            k = int(param.size * 0.001)
+            param.partition(k)
+            logger.info('[MOVEMENT] init threshold finding time: %.1f', time.time() - start_time)
+            logger.info('[MOVEMENT] init threshold = %.5f', param[k])
+            return param[k]
+
     def _schedule_operand_threshold(self):
+        if self._steps_per_epoch is not None and self.current_step == self.warmup_start_epoch * self._steps_per_epoch:
+            self.init_importance_threshold = self._calc_init_threshold_from_controller()
         if self.current_stage == MovementSchedulerStage.POST_WARMUP and (not self._is_controller_frozen):
             if self.enable_structured_masking:
                 self._controller.reset_independent_structured_mask()
