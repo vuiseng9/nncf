@@ -18,9 +18,6 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 
-from nncf.torch.layers import NNCFLinear
-from nncf.torch.nncf_network import NNCFNetwork
-from nncf.torch.sparsity.base_algo import SparseModuleInfo
 from nncf.common.graph.graph import NNCFNodeName
 from nncf.common.graph.layer_attributes import LinearLayerAttributes
 from nncf.common.utils.logger import logger
@@ -30,6 +27,9 @@ from nncf.experimental.torch.search_building_blocks.search_blocks import get_bui
 from nncf.experimental.torch.sparsity.movement.layers import MovementSparsifier
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import BaseStructuredMaskStrategy
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import StructuredMaskRule
+from nncf.torch.layers import NNCFLinear
+from nncf.torch.nncf_network import NNCFNetwork
+from nncf.torch.sparsity.base_algo import SparseModuleInfo
 
 SUPPORTED_NNCF_MODULES = [NNCFLinear]
 EXPECTED_NODE_LAYER_ATTRS = [LinearLayerAttributes]

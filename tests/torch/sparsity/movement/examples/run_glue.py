@@ -3,6 +3,9 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+import jstyleson
+import numpy as np
+
 from nncf import NNCFConfig
 from nncf.api.compression import CompressionAlgorithmController
 from nncf.common.utils.tensorboard import prepare_for_tensorboard
@@ -10,8 +13,6 @@ from nncf.torch import create_compressed_model
 
 import datasets
 import evaluate
-import jstyleson
-import numpy as np
 from transformers import AutoConfig
 from transformers import AutoModelForSequenceClassification
 from transformers import AutoTokenizer
@@ -23,7 +24,6 @@ from transformers.trainer import TrainerCallback
 from transformers.trainer import TrainerControl
 from transformers.trainer import TrainerState
 from transformers.trainer import TrainingArguments
-
 
 quick_check_num = 10
 task_to_sample_keys = {
@@ -231,6 +231,7 @@ def main():
         trainer.save_metrics("eval", metrics)
     trainer.save_state()
     import torch
+
     # torch.save(trainer.yujie_data, f'dataseed-mega1-seed{training_args.seed}.bin')
 
 
