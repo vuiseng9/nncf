@@ -219,6 +219,7 @@ def main_worker(current_gpu, config: SampleConfig):
     model_state_dict, compression_state = extract_model_and_compression_states(resuming_checkpoint)
     compression_ctrl, model = create_compressed_model(model, nncf_config, compression_state)
 
+    QIO_DUMP_ONE=False
     if config.dump_quantize_io is True:
         # The intent of the following is to capture the input and output of quantizer
         # as test vectors for new quantization kernel development
@@ -226,16 +227,28 @@ def main_worker(current_gpu, config: SampleConfig):
         # currently, only a single batch of model input will be serialized for
         # one weight quantizer and one activation quantizer
 
-        quant_io_memo = OrderedDict()
+        if QIO_DUMP_ONE:
+            quant_io_memo = OrderedDict()
 
-        wuid, wq = list(compression_ctrl.weight_quantizers.items())[0]
-        auid, aq = list(compression_ctrl.non_weight_quantizers.items())[-1]
+            wuid, wq = list(compression_ctrl.weight_quantizers.items())[0]
+            auid, aq = list(compression_ctrl.non_weight_quantizers.items())[-1]
 
-        quant_io_memo[str(wuid)]=OrderedDict()
-        wq.quantizer_module_ref.dump_dict = quant_io_memo[str(wuid)]
+            quant_io_memo[str(wuid)]=OrderedDict()
+            wq.quantizer_module_ref.dump_dict = quant_io_memo[str(wuid)]
 
-        quant_io_memo[str(auid)]=OrderedDict()
-        aq.quantizer_module_ref.dump_dict = quant_io_memo[str(auid)]
+            quant_io_memo[str(auid)]=OrderedDict()
+            aq.quantizer_module_ref.dump_dict = quant_io_memo[str(auid)]
+
+        else:
+            quant_io_memo_weight = OrderedDict()
+            for wuid, wq in compression_ctrl.weight_quantizers.items():
+                quant_io_memo_weight[str(wuid)]=OrderedDict()
+                wq.quantizer_module_ref.dump_dict = quant_io_memo_weight[str(wuid)]
+
+            quant_io_memo_activation = OrderedDict()
+            for auid, aq in compression_ctrl.non_weight_quantizers.items():
+                quant_io_memo_activation[str(auid)]=OrderedDict()
+                aq.quantizer_module_ref.dump_dict = quant_io_memo_activation[str(auid)]
 
     if model_state_dict is not None:
         load_state(model, model_state_dict, is_resume=True)
@@ -312,10 +325,14 @@ def main_worker(current_gpu, config: SampleConfig):
 
     if config.dump_quantize_io is True:
         quant_io_dump_pth = "qio_" + osp.splitext(osp.basename(config.config))[0] +".pth"
-        logger.info(f"[TPC-DEV] Dumping quantize kernel io to {quant_io_dump_pth}")
-        torch.save(quant_io_memo, quant_io_dump_pth)
-        # how to load this dump? quant_io_memo = torch.load(quant_io_dump_pth)
-
+        if QIO_DUMP_ONE:
+            logger.info(f"[TPC-DEV] Dumping quantize kernel io to {quant_io_dump_pth}")
+            torch.save(quant_io_memo, quant_io_dump_pth)
+        else:
+            logger.info(f"[TPC-DEV] Dumping quantize kernel io to '{'wt,act'}'-{quant_io_dump_pth}")
+            torch.save(quant_io_memo_weight, "wt-" + quant_io_dump_pth)
+            torch.save(quant_io_memo_activation, "act-" + quant_io_dump_pth)
+            
     config.mlflow.end_run()
 
     if 'export' in config.mode:
