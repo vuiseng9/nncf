@@ -14,7 +14,6 @@ from enum import Enum
 import math
 from typing import Any, Dict, Optional
 
-import numpy as np
 import torch
 
 from nncf.api.compression import CompressionAlgorithmController
@@ -171,18 +170,17 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
     @torch.no_grad()
     def _calc_init_threshold_from_controller(self, target_sparsity: float = 0.001) -> float:
         assert 0. <= target_sparsity < 1.
-        importance_arrays = []
+        importance_tensors = []
         for minfo in self._controller.sparsified_module_info:
             operand = minfo.operand
             weight = operand.get_importance(is_bias=False, expanded=True)
-            importance_arrays.append(weight.detach().cpu().view(-1).numpy())
+            importance_tensors.append(weight.detach().cpu().view(-1))
             if operand.prune_bias:
                 bias = operand.get_importance(is_bias=True, expanded=True)
-                importance_arrays.append(bias.detach().cpu().view(-1).numpy())
-        all_importances = np.concatenate(importance_arrays)
-        k = min(all_importances.size - 1, int(all_importances.size * target_sparsity))
-        all_importances.partition(k)  # we only need the k-th smallest value
-        return float(all_importances[k])
+                importance_tensors.append(bias.detach().cpu().view(-1))
+        all_importances = torch.cat(importance_tensors)
+        k = min(all_importances.numel(), int(all_importances.numel() * target_sparsity) + 1)  # k starts from 1
+        return all_importances.kthvalue(k).values.item()
 
     def _update_operand_importance_threshold_and_factor(self):
         current = (self.current_importance_threshold, self.current_importance_regularization_factor)
