@@ -63,12 +63,12 @@ class BaseStructuredMaskStrategy(ABC):
 
 
 class BaseTransformerStructuredMaskStrategy(BaseStructuredMaskStrategy, ABC):
-    MHSA_Q: str = "query"
-    MHSA_K: str = "key"
-    MHSA_V: str = "value"
-    MHSA_O: str = "output"
-    FFN_I: str = "feed_forward_intermediate"
-    FFN_O: str = "feed_forward_output"
+    MHSA_Q: str = "{re}query"
+    MHSA_K: str = "{re}key"
+    MHSA_V: str = "{re}value"
+    MHSA_O: str = "{re}output"
+    FFN_I: str = "{re}feed_forward_intermediate"
+    FFN_O: str = "{re}feed_forward_output"
 
     def __init__(self, dim_per_head: int) -> None:
         super().__init__()
@@ -107,12 +107,12 @@ class BaseTransformerStructuredMaskStrategy(BaseStructuredMaskStrategy, ABC):
 
 @STRUCTURED_MASK_STRATEGY.register("huggingface_bert")
 class HuggingFaceTransformerStructuredMaskStrategy(BaseTransformerStructuredMaskStrategy):
-    MHSA_Q: str = "query"
-    MHSA_K: str = "key"
-    MHSA_V: str = "value"
-    MHSA_O: str = "BertSelfOutput"
-    FFN_I: str = "BertIntermediate"
-    FFN_O: str = "BertOutput"
+    MHSA_Q: str = "{re}query"
+    MHSA_K: str = "{re}key"
+    MHSA_V: str = "{re}value"
+    MHSA_O: str = "{re}BertSelfOutput"
+    FFN_I: str = "{re}BertIntermediate"
+    FFN_O: str = "{re}BertOutput"
 
     @classmethod
     def from_compressed_model(cls, compressed_model: NNCFNetwork):
@@ -123,12 +123,12 @@ class HuggingFaceTransformerStructuredMaskStrategy(BaseTransformerStructuredMask
 
 @STRUCTURED_MASK_STRATEGY.register("huggingface_wav2vec2")
 class HuggingFaceWav2Vec2StructuredMaskStrategy(BaseTransformerStructuredMaskStrategy):
-    MHSA_Q: str = "q_proj"
-    MHSA_K: str = "k_proj"
-    MHSA_V: str = "v_proj"
-    MHSA_O: str = "out_proj"
-    FFN_I: str = "intermediate_dense"
-    FFN_O: str = "output_dense"
+    MHSA_Q: str = "{re}q_proj"
+    MHSA_K: str = "{re}k_proj"
+    MHSA_V: str = "{re}v_proj"
+    MHSA_O: str = "{re}out_proj"
+    FFN_I: str = "{re}intermediate_dense"
+    FFN_O: str = "{re}output_dense"
 
     @classmethod
     def from_compressed_model(cls, compressed_model: NNCFNetwork):
@@ -139,12 +139,12 @@ class HuggingFaceWav2Vec2StructuredMaskStrategy(BaseTransformerStructuredMaskStr
 
 @STRUCTURED_MASK_STRATEGY.register("huggingface_swin")
 class HuggingFaceSwinStructuredMaskStrategy(BaseTransformerStructuredMaskStrategy):
-    MHSA_Q: str = "query"
-    MHSA_K: str = "key"
-    MHSA_V: str = "value"
-    MHSA_O: str = "SwinSelfOutput"
-    FFN_I: str = "SwinIntermediate"
-    FFN_O: str = "SwinOutput"
+    MHSA_Q: str = "{re}query"
+    MHSA_K: str = "{re}key"
+    MHSA_V: str = "{re}value"
+    MHSA_O: str = "{re}SwinSelfOutput"
+    FFN_I: str = "{re}SwinIntermediate"
+    FFN_O: str = "{re}SwinOutput"
 
     @classmethod
     def from_compressed_model(cls, compressed_model: NNCFNetwork):

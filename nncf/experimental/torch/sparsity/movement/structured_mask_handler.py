@@ -20,6 +20,7 @@ import torch.nn.functional as F
 
 from nncf.common.graph.graph import NNCFNodeName
 from nncf.common.graph.layer_attributes import LinearLayerAttributes
+from nncf.common.utils.helpers import matches_any
 from nncf.common.utils.logger import logger
 from nncf.experimental.torch.search_building_blocks.search_blocks import BlockFilteringStrategy
 from nncf.experimental.torch.search_building_blocks.search_blocks import BuildingBlockType
@@ -33,12 +34,6 @@ from nncf.torch.sparsity.base_algo import SparseModuleInfo
 
 SUPPORTED_NNCF_MODULES = [NNCFLinear]
 EXPECTED_NODE_LAYER_ATTRS = [LinearLayerAttributes]
-
-
-def contains_any(tested_str: str,
-                 templates: Union[Iterable[str], str]) -> bool:
-    templates = [templates] if isinstance(templates, str) else templates
-    return any(str(item) in tested_str for item in templates)
 
 
 class StructuredMaskContextStatistics:
@@ -304,7 +299,7 @@ class StructuredMaskHandler:
                     module = compressed_model.get_module_by_scope(op_addr.scope_in_model)
                     minfo = module_vs_sparse_module_info_map[module]
                     for rule in rules_by_group_type[group_type]:
-                        if contains_any(minfo.module_node_name, rule.keywords):
+                        if matches_any(minfo.module_node_name, rule.keywords):
                             ctx = StructuredMaskContext(minfo.operand,
                                                         minfo.module_node_name,
                                                         rule.prune_grid,
