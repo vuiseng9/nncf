@@ -87,7 +87,7 @@ class TestSchedulerCreation:
 
 
 desc_current_importance_threshold_and_regularization_factor = {
-    "normal_warmup_range": dict(
+    'normal_warmup_range': dict(
         params=SchedulerParams(power=2,
                                warmup_start_epoch=1, warmup_end_epoch=3,
                                init_importance_threshold=-1, final_importance_threshold=0,
@@ -98,7 +98,7 @@ desc_current_importance_threshold_and_regularization_factor = {
         ref_factor=[0., 0., 0., 0., 0., 0.0234, 0.0438, 0.0609, 0.0750, 0.0859, 0.0938, 0.0984,
                     0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
     ),
-    "overflowed_warmup_range": dict(
+    'overflowed_warmup_range': dict(
         params=SchedulerParams(power=4,
                                warmup_start_epoch=2, warmup_end_epoch=8,
                                init_importance_threshold=0, final_importance_threshold=5,
@@ -108,7 +108,7 @@ desc_current_importance_threshold_and_regularization_factor = {
                        2.5887, 3.1702, 3.6396, 4.0123, 4.3027, 4.5237],
         ref_factor=[0., 0., 0., 0., 0., 0., 0., 2.0438, 3.7570, 5.1775, 6.3405, 7.2793, 8.0247, 8.6053, 9.0474]
     ),
-    "unfavored_importance_threshold_and_factor": dict(
+    'unfavored_importance_threshold_and_factor': dict(
         params=SchedulerParams(power=4,
                                warmup_start_epoch=2, warmup_end_epoch=8,
                                init_importance_threshold=0, final_importance_threshold=5,
@@ -118,7 +118,7 @@ desc_current_importance_threshold_and_regularization_factor = {
                        2.5887, 3.1702, 3.6396, 4.0123, 4.3027, 4.5237],
         ref_factor=[0., 0., 0., 0., 0., 0., 0., 2.0438, 3.7570, 5.1775, 6.3405, 7.2793, 8.0247, 8.6053, 9.0474]
     ),
-    "unspecified_init_threshold": dict(
+    'unspecified_init_threshold': dict(
         params=SchedulerParams(power=2,
                                warmup_start_epoch=1, warmup_end_epoch=3,
                                init_importance_threshold=None, final_importance_threshold=0,

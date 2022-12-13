@@ -144,10 +144,10 @@ class NNCFAlgoConfig:
 
     def to_dict(self) -> Dict[str, Any]:
         result = {
-            "algorithm": "movement_sparsity",
-            "params": self.scheduler_params.to_dict(),
-            "sparse_structure_by_scopes": self.sparse_structure_by_scopes,
-            "ignored_scopes": self.ignored_scopes,
+            'algorithm': 'movement_sparsity',
+            'params': self.scheduler_params.to_dict(),
+            'sparse_structure_by_scopes': self.sparse_structure_by_scopes,
+            'ignored_scopes': self.ignored_scopes,
         }
         if self.compression_lr_multiplier is not None:
             result['compression_lr_multiplier'] = self.compression_lr_multiplier
@@ -230,8 +230,8 @@ class BaseMockRunRecipe(ABC):
     @property
     def nncf_config(self) -> NNCFConfig:
         config_dict = {
-            "input_info": self.model_input_info,
-            "compression": self.algo_config.to_dict()}
+            'input_info': self.model_input_info,
+            'compression': self.algo_config.to_dict()}
         if self.log_dir is not None:
             config_dict['log_dir'] = str(self.log_dir)
         return NNCFConfig.from_dict(config_dict)
@@ -320,11 +320,11 @@ class Wav2Vec2RunRecipe(BaseMockRunRecipe):
 
     default_algo_config = NNCFAlgoConfig(
         sparse_structure_by_scopes=[
-            {"mode": "block", "sparse_factors": [2, 2], "target_scopes": "{re}Wav2Vec2Attention"},
-            {"mode": "per_dim", "axis": 0, "target_scopes": "{re}intermediate_dense"},
-            {"mode": "per_dim", "axis": 1, "target_scopes": "{re}output_dense"},
+            {'mode': 'block', 'sparse_factors': [2, 2], 'target_scopes': '{re}Wav2Vec2Attention'},
+            {'mode': 'per_dim', 'axis': 0, 'target_scopes': '{re}intermediate_dense'},
+            {'mode': 'per_dim', 'axis': 1, 'target_scopes': '{re}output_dense'},
         ],
-        ignored_scopes=["{re}feature_extractor"],
+        ignored_scopes=['{re}feature_extractor'],
         scheduler_params=SchedulerParams(),
     )
 
@@ -333,7 +333,7 @@ class Wav2Vec2RunRecipe(BaseMockRunRecipe):
 
     @property
     def model_input_info(self) -> List[dict]:
-        return [{"sample_size": [1, 32], "keyword": "input_values"}]
+        return [{'sample_size': [1, 32], 'keyword': 'input_values'}]
 
     @property
     def transformer_block_info(self) -> List[TransformerBlockInfo]:
@@ -378,11 +378,11 @@ class BertRunRecipe(BaseMockRunRecipe):
     )
     default_algo_config = NNCFAlgoConfig(
         sparse_structure_by_scopes=[
-            {"mode": "block", "sparse_factors": [2, 2], "target_scopes": "{re}attention"},
-            {"mode": "per_dim", "axis": 0, "target_scopes": "{re}BertIntermediate"},
-            {"mode": "per_dim", "axis": 1, "target_scopes": "{re}BertOutput"},
+            {'mode': 'block', 'sparse_factors': [2, 2], 'target_scopes': '{re}attention'},
+            {'mode': 'per_dim', 'axis': 0, 'target_scopes': '{re}BertIntermediate'},
+            {'mode': 'per_dim', 'axis': 1, 'target_scopes': '{re}BertOutput'},
         ],
-        ignored_scopes=["{re}embedding", "{re}pooler", "{re}classifier"],
+        ignored_scopes=['{re}embedding', '{re}pooler', '{re}classifier'],
         scheduler_params=SchedulerParams(),
     )
 
@@ -414,10 +414,10 @@ class BertRunRecipe(BaseMockRunRecipe):
     def model_input_info(self) -> List[dict]:
         dim = self.model_config.max_position_embeddings
         return [
-            {"sample_size": [1, dim], "type": "long", "keyword": "input_ids"},
-            {"sample_size": [1, dim], "type": "long", "keyword": "attention_mask"},
-            {"sample_size": [1, dim], "type": "long", "keyword": "token_type_ids"},
-            {"sample_size": [1, dim], "type": "long", "keyword": "position_ids"},
+            {'sample_size': [1, dim], 'type': 'long', 'keyword': 'input_ids'},
+            {'sample_size': [1, dim], 'type': 'long', 'keyword': 'attention_mask'},
+            {'sample_size': [1, dim], 'type': 'long', 'keyword': 'token_type_ids'},
+            {'sample_size': [1, dim], 'type': 'long', 'keyword': 'position_ids'},
         ]
 
     @property
@@ -463,11 +463,11 @@ class SwinRunRecipe(BaseMockRunRecipe):
     )
     default_algo_config = NNCFAlgoConfig(
         sparse_structure_by_scopes=[
-            {"mode": "block", "sparse_factors": [2, 2], "target_scopes": "{re}attention"},
-            {"mode": "per_dim", "axis": 0, "target_scopes": "{re}SwinIntermediate"},
-            {"mode": "per_dim", "axis": 1, "target_scopes": "{re}SwinOutput"},
+            {'mode': 'block', 'sparse_factors': [2, 2], 'target_scopes': '{re}attention'},
+            {'mode': 'per_dim', 'axis': 0, 'target_scopes': '{re}SwinIntermediate'},
+            {'mode': 'per_dim', 'axis': 1, 'target_scopes': '{re}SwinOutput'},
         ],
-        ignored_scopes=["{re}embedding", "{re}pooler", "{re}classifier"],
+        ignored_scopes=['{re}embedding', '{re}pooler', '{re}classifier'],
         scheduler_params=SchedulerParams(),
     )
 
@@ -477,8 +477,8 @@ class SwinRunRecipe(BaseMockRunRecipe):
     @property
     def model_input_info(self) -> List[dict]:
         img_size = self.model_config.image_size
-        return [{"sample_size": [1, self.model_config.num_channels, img_size, img_size],
-                 "keyword": 'pixel_values'}]
+        return [{'sample_size': [1, self.model_config.num_channels, img_size, img_size],
+                 'keyword': 'pixel_values'}]
 
     @property
     def transformer_block_info(self) -> List[TransformerBlockInfo]:
@@ -523,8 +523,8 @@ class LinearForClassification(PreTrainedModel):
         logits = self.model(tensor)
         if labels is not None:
             loss = F.cross_entropy(logits, labels)
-            return {"loss": loss, "logits": logits}
-        return {"logits": logits}
+            return {'loss': loss, 'logits': logits}
+        return {'logits': logits}
 
 
 class Conv2dForClassification(LinearForClassification):
@@ -570,7 +570,7 @@ class LinearRunRecipe(BaseMockRunRecipe):
 
     @property
     def model_input_info(self) -> List[dict]:
-        return [{"sample_size": [1, self.model_config.input_size], "keyword": "tensor"}]
+        return [{'sample_size': [1, self.model_config.input_size], 'keyword': 'tensor'}]
 
     @property
     def transformer_block_info(self) -> List[TransformerBlockInfo]:
@@ -602,8 +602,8 @@ class Conv2dRunRecipe(LinearRunRecipe):
 
     @property
     def model_input_info(self) -> List[dict]:
-        return [{"sample_size": [1, 3, self.model_config.input_size, self.model_config.input_size],
-                 "keyword": "tensor"}]
+        return [{'sample_size': [1, 3, self.model_config.input_size, self.model_config.input_size],
+                 'keyword': 'tensor'}]
 
 
 class Conv2dPlusLinearRunrecipe(LinearRunRecipe):
@@ -626,8 +626,8 @@ class Conv2dPlusLinearRunrecipe(LinearRunRecipe):
 
     @property
     def model_input_info(self) -> List[dict]:
-        return [{"sample_size": [1, 3, self.model_config.input_size, self.model_config.input_size],
-                 "keyword": "tensor"}]
+        return [{'sample_size': [1, 3, self.model_config.input_size, self.model_config.input_size],
+                 'keyword': 'tensor'}]
 
 
 class CompressionTrainer(Trainer):
@@ -696,19 +696,19 @@ def build_compression_trainer(output_dir,
                               **training_kwargs) -> CompressionTrainer:
     training_args = dict(
         output_dir=Path(output_dir),
-        label_names=["labels"],
-        evaluation_strategy="epoch",
+        label_names=['labels'],
+        evaluation_strategy='epoch',
         logging_steps=1,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
         num_train_epochs=6,
         learning_rate=1e-3,
-        optim="adamw_torch",
+        optim='adamw_torch',
         remove_unused_columns=False,
         seed=42,
         data_seed=42,
         full_determinism=True,
-        report_to="none",
+        report_to='none',
         disable_tqdm=True,
         no_cuda=True,
     )

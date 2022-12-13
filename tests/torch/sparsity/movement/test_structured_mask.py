@@ -53,25 +53,25 @@ STRUCTURED_MASK_SUPPORTED_RECIPES = [
 ]
 
 desc_test_update_independent_structured_mask = {
-    "prune1row": dict(
+    'prune1row': dict(
         weight_binary_mask=torch.FloatTensor([[1, 1, 0], [1, 1, 0], [0, 0, 0]]),
         bias_binary_mask=torch.FloatTensor([1, 0, 0]),
         prune_grid=(1, 3),
         ref_independent_structured_mask=torch.FloatTensor([[1], [1], [0]])
     ),
-    "prune1col": dict(
+    'prune1col': dict(
         weight_binary_mask=torch.FloatTensor([[1, 1, 0], [1, 1, 0], [0, 0, 0]]),
         bias_binary_mask=torch.FloatTensor([1, 0, 0]),
         prune_grid=(3, 1),
         ref_independent_structured_mask=torch.FloatTensor([[1, 1, 0]])
     ),
-    "prune1col_nobias": dict(
+    'prune1col_nobias': dict(
         weight_binary_mask=torch.FloatTensor([[1, 1, 0], [1, 1, 0], [0, 0, 0]]),
         bias_binary_mask=None,
         prune_grid=(3, 1),
         ref_independent_structured_mask=torch.FloatTensor([[1, 1, 0]])
     ),
-    "not_pruneable": dict(
+    'not_pruneable': dict(
         weight_binary_mask=torch.FloatTensor([[1, 1, 0], [1, 1, 0], [0, 0, 0]]),
         bias_binary_mask=torch.FloatTensor([1, 1, 1]),
         prune_grid=(1, 3),
@@ -80,7 +80,7 @@ desc_test_update_independent_structured_mask = {
 }
 
 desc_test_gather_statistics_from_operand = {
-    "row_prune_with_bias": dict(
+    'row_prune_with_bias': dict(
         weight_mask=torch.FloatTensor([[0] * 4, [0] * 4, [1] * 4, [1] * 4]),
         bias_mask=torch.FloatTensor([0, 0, 1, 1]),
         prune_grid=(2, 4),
@@ -89,7 +89,7 @@ desc_test_gather_statistics_from_operand = {
         pruned_bias_shape=(2,),
         head_to_keep=[1]
     ),
-    "row_prune_without_bias": dict(
+    'row_prune_without_bias': dict(
         weight_mask=torch.FloatTensor([[0] * 4, [0] * 4, [1] * 4, [1] * 4]),
         bias_mask=None,
         prune_grid=(2, 4),
@@ -98,7 +98,7 @@ desc_test_gather_statistics_from_operand = {
         pruned_bias_shape=(0,),
         head_to_keep=[1]
     ),
-    "col_prune_with_bias": dict(
+    'col_prune_with_bias': dict(
         weight_mask=torch.FloatTensor([[1, 1, 1, 0]] * 4),
         bias_mask=torch.FloatTensor([1, 1, 1, 1]),
         prune_grid=(4, 1),
@@ -107,7 +107,7 @@ desc_test_gather_statistics_from_operand = {
         pruned_bias_shape=(4,),
         head_to_keep=[0, 1, 2]
     ),
-    "col_prune_without_bias": dict(
+    'col_prune_without_bias': dict(
         weight_mask=torch.FloatTensor([[1, 1, 1, 0]] * 4),
         bias_mask=None,
         prune_grid=(4, 1),
@@ -260,8 +260,10 @@ class TestStructuredMaskContextGroup:
         if num_contexts == 0:
             assert str(ctx_group) == f'{prefix}[]'
         else:
-            assert str(ctx_group) == f'{prefix}[%s\n]' % (
-                ''.join(f'\n\tctx{i}' for i in range(num_contexts)))
+            assert str(ctx_group) == '{prefix}[{ctxes}\n]'.format(
+                prefix=prefix,
+                ctxes=''.join(f'\n\tctx{i}' for i in range(num_contexts))
+            )
 
 
 class TestStructuredMaskRule:
@@ -274,7 +276,7 @@ class TestStructuredMaskRule:
 
 
 desc_test_resolve_dependent_structured = {
-    "prune_1head_1channel": dict(
+    'prune_1head_1channel': dict(
         independent_structured=TransformerBlockItemOrderedDict(
             mhsa_q=torch.FloatTensor([[1], [0]]),
             mhsa_k=torch.FloatTensor([[1], [0]]),
@@ -292,7 +294,7 @@ desc_test_resolve_dependent_structured = {
             ffn_o=torch.FloatTensor([[1, 1, 0]]),
         ),
     ),
-    "prune_0head_0channel": dict(
+    'prune_0head_0channel': dict(
         independent_structured=TransformerBlockItemOrderedDict(
             mhsa_q=torch.FloatTensor([[1], [0]]),
             mhsa_k=torch.FloatTensor([[1], [0]]),
@@ -394,7 +396,7 @@ class TestStructuredMaskHandler:
         assert isinstance(df, pd.DataFrame)
         columns = df.columns.to_list()
         mock_stat = StructuredMaskContextStatistics(*([mocker.Mock()] * 6))
-        ref_columns = ["group_id", "type", "torch_module", *mock_stat.__dict__.keys()]
+        ref_columns = ['group_id', 'type', 'torch_module', *mock_stat.__dict__.keys()]
         assert sorted(columns) == sorted(ref_columns)
         assert len(df) == 6 * sum(tbinfo.num_hidden_layers for tbinfo in run_recipe.transformer_block_info)
         for item in df['head_or_channel_id_to_keep']:

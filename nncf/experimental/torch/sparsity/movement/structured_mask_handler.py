@@ -78,14 +78,14 @@ class StructuredMaskContext:
     @property
     def independent_structured_mask(self) -> Optional[torch.Tensor]:
         if self._independent_structured_mask is None:
-            logger.warning("Independent structured mask has not been calculated. Return None.")
+            logger.warning('Independent structured mask has not been calculated. Return None.')
         return self._independent_structured_mask
 
     @independent_structured_mask.setter
     @torch.no_grad()
     def independent_structured_mask(self, tensor: torch.Tensor):
         if self.structured_mask_shape != tensor.shape:
-            raise ValueError("Wrong shape about independent structured mask")
+            raise ValueError('Wrong shape about independent structured mask')
         if self._independent_structured_mask is None:
             self._independent_structured_mask = tensor.clone()
         else:
@@ -97,14 +97,14 @@ class StructuredMaskContext:
     @property
     def dependent_structured_mask(self) -> Optional[torch.Tensor]:
         if self._dependent_structured_mask is None:
-            logger.warning("Dependent structured mask has not been calculated. Return None.")
+            logger.warning('Dependent structured mask has not been calculated. Return None.')
         return self._dependent_structured_mask
 
     @dependent_structured_mask.setter
     @torch.no_grad()
     def dependent_structured_mask(self, tensor: torch.Tensor):
         if self.structured_mask_shape != tensor.shape:
-            raise ValueError("Wrong shape about dependent structured mask")
+            raise ValueError('Wrong shape about dependent structured mask')
         if self._dependent_structured_mask is None:
             self._dependent_structured_mask = tensor.clone()
         else:
@@ -177,7 +177,8 @@ class StructuredMaskContext:
 
     @staticmethod
     def _inflate_structured_mask(structured_mask: torch.Tensor, grid_size: Tuple[int, int]) -> torch.Tensor:
-        assert len(structured_mask.shape) == len(grid_size), "Unmatching dimension"
+        assert len(structured_mask.shape) == len(grid_size), \
+            f'Unmatching dimension with structured_mask in shape {structured_mask.shape} and grid_size in 2D.'
         inflated_mask = structured_mask.clone()
         for axis, repeat_times in enumerate(grid_size):
             inflated_mask = inflated_mask.repeat_interleave(repeat_times, dim=axis)
@@ -226,7 +227,7 @@ class StructuredMaskHandler:
         for group in self._structured_mask_ctx_groups:
             group_type = group.group_type
             if group_type not in self.rules_by_group_type:
-                raise ValueError(f"No strucrtured mask strategy for group_type=\"{group_type}\"")
+                raise ValueError(f'No strucrtured mask strategy for group_type="{group_type}"')
             ctxes = group.structured_mask_context_list
             row_prune_ctxes = list(filter(lambda ctx: ctx.prune_by_row, ctxes))
             col_prune_ctxes = list(filter(lambda ctx: not ctx.prune_by_row, ctxes))
@@ -303,7 +304,7 @@ class StructuredMaskHandler:
                             ctxes.append(ctx)
                             break
                     else:
-                        raise ValueError("No structured mask rule found for "
-                                         f"[{group_type}]{minfo.module_node_name}.")
+                        raise ValueError('No structured mask rule found for '
+                                         f'[{group_type}]{minfo.module_node_name}.')
             groups.append(StructuredMaskContextGroup(group_id, group_type, ctxes))
         return groups
