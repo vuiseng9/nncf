@@ -12,7 +12,7 @@
 """
 from functools import reduce
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 import torch
@@ -42,7 +42,7 @@ class StructuredMaskContextStatistics:
                  pruned_weight_shape: Tuple[int, int],
                  bias_shape: Tuple[int],
                  pruned_bias_shape: Tuple[int],
-                 head_or_channel_id_to_keep: Union[str, List[int]],
+                 head_or_channel_id_to_keep: List[int],
                  module_node_name: NNCFNodeName,
                  ):
         self.weight_shape = weight_shape
@@ -267,16 +267,14 @@ class StructuredMaskHandler:
                            key=lambda ctx: ctx.sparsifier_operand.target_module_node.node_id)
             for ctx in ctxes:
                 stats = ctx.gather_statistics_from_operand()
-                if len(stats.head_or_channel_id_to_keep) > max_num_of_kept_heads_to_report:  # avoid too long display
-                    stats.head_or_channel_id_to_keep = f'[{len(stats.head_or_channel_id_to_keep)} items]'
                 module = self.compressed_model.get_containing_module(stats.module_node_name)
-                torch_module_name = module_vs_name_map[module]
-                entry_list.append(dict(
-                    group_id=group.group_id,
-                    type=group.group_type.value,
-                    torch_module=torch_module_name,
-                    **stats.__dict__
-                ))
+                entry = dict(group_id=group.group_id,
+                             type=group.group_type.value,
+                             torch_module=module_vs_name_map[module],
+                             **stats.__dict__)
+                if len(stats.head_or_channel_id_to_keep) > max_num_of_kept_heads_to_report:  # avoid long display
+                    entry['head_or_channel_id_to_keep'] = f'[{len(stats.head_or_channel_id_to_keep)} items]'
+                entry_list.append(entry)
         return pd.DataFrame(entry_list)
 
     @staticmethod

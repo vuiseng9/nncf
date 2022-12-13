@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path
 import re
+from typing import List, Tuple
 from unittest.mock import Mock
 
 import pandas as pd
@@ -15,6 +16,7 @@ from nncf.experimental.torch.sparsity.movement.layers import SparseStructure
 from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskContext
 from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskContextGroup
 from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskContextStatistics
+from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskHandler
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import STRUCTURED_MASK_STRATEGY
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import StructuredMaskRule
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import detect_supported_model_family
@@ -392,7 +394,8 @@ class TestStructuredMaskHandler:
         assert Path(tmp_path, f'{file_name}.md').is_file()
 
     # pylint: disable=protected-access
-    def _get_handler_from_ctrl(self, compression_ctrl):
+    def _get_handler_from_ctrl(self, compression_ctrl) -> Tuple[StructuredMaskHandler,
+                                                                List[StructuredMaskContext]]:
         handler = compression_ctrl._structured_mask_handler
         all_ctxes = []
         for group in handler._structured_mask_ctx_groups:
