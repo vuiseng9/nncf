@@ -33,17 +33,6 @@ class SparseStructure(str, Enum):
     BLOCK = "block"
     PER_DIM = "per_dim"
 
-    @classmethod
-    def from_str(cls, mode: str) -> 'SparseStructure':
-        if mode == SparseStructure.FINE.value:
-            return SparseStructure.FINE
-        if mode == SparseStructure.BLOCK.value:
-            return SparseStructure.BLOCK
-        if mode == SparseStructure.PER_DIM.value:
-            return SparseStructure.PER_DIM
-        raise RuntimeError(f"Unknown sparse structure: {mode}."
-                           f"List of supported: {[e.value for e in SparseStructure]}")
-
 
 class SparseConfig:
     def __init__(self,
@@ -92,7 +81,7 @@ class SparseConfig:
         Creates the object from its config.
         """
         mode_str = config.get('mode', SparseStructure.FINE.value)
-        mode = SparseStructure.from_str(mode_str)
+        mode = SparseStructure(mode_str)
         sparse_factors = config.get('sparse_factors')
         axis = config.get('axis')
         return cls(mode, sparse_factors, axis)
