@@ -73,7 +73,7 @@ class StructuredMaskContext:
 
     def __str__(self) -> str:
         prune_info = 'row prune' if self.prune_by_row else 'column prune'
-        return f'<{self.__class__.__name__}({prune_info} by {self.grid_size}) for "{self.module_node_name}">'
+        return f'{self.__class__.__name__}({prune_info} by {self.grid_size}, "{self.module_node_name}")'
 
     @property
     def independent_structured_mask(self) -> Optional[torch.Tensor]:
@@ -193,12 +193,11 @@ class StructuredMaskContextGroup:
         self.structured_mask_context_list = structured_mask_context_list
 
     def __str__(self) -> str:
-        if len(self.structured_mask_context_list) == 0:
+        if not self.structured_mask_context_list:
             ctx_str = '[]'
         else:
-            ctx_str = '\n\t'.join(map(str, self.structured_mask_context_list))
-            ctx_str = f'[\n\t{ctx_str}\n]'
-        return f'[{self.group_id}]{self.group_type}: {ctx_str}'
+            ctx_str = '[\n\t{}\n]'.format('\n\t'.join(map(str, self.structured_mask_context_list)))
+        return f'{self.__class__.__name__}[{self.group_id}]({self.group_type}): {ctx_str}'
 
 
 class StructuredMaskHandler:
@@ -214,10 +213,9 @@ class StructuredMaskHandler:
         self._structured_mask_ctx_groups = self._create_structured_mask_context_groups(
             compressed_model, sparsified_module_info_list, self.rules_by_group_type)
 
-        logging_str_l = ['Structured mask contexts by group:']
-        for group in self._structured_mask_ctx_groups:
-            logging_str_l.append(str(group))
-        logger.info('\n'.join(logging_str_l))
+        logger.debug('Totally %d structured mask context groups.', len(self._structured_mask_ctx_groups))
+        for structured_mask_ctx_group in self._structured_mask_ctx_groups:
+            logger.debug('%s', structured_mask_ctx_group)
 
     def update_independent_structured_mask(self):
         for group in self._structured_mask_ctx_groups:

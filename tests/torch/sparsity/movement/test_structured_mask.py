@@ -235,7 +235,7 @@ class TestStructuredMaskContext:
         operand = MovementSparsifier(node, SparseConfig(SparseStructure.FINE))
         ctx = StructuredMaskContext(operand, node.node_name, grid_size, prune_by_row)
         row_or_col = 'row' if prune_by_row else 'column'
-        ref_str = f'<StructuredMaskContext({row_or_col} prune by {grid_size}) for "{node.node_name}">'
+        ref_str = f'StructuredMaskContext({row_or_col} prune by {grid_size}, "{node.node_name}")'
         assert str(ctx) == ref_str
 
 
@@ -244,10 +244,11 @@ class TestStructuredMaskContextGroup:
     def test_string_representation(self, num_contexts: int):
         ctxes = [Mock(__str__=Mock(return_value=f'ctx{i}')) for i in range(num_contexts)]
         ctx_group = StructuredMaskContextGroup(0, BuildingBlockType.FF, ctxes)
+        prefix = f'StructuredMaskContextGroup[0]({BuildingBlockType.FF}): '
         if num_contexts == 0:
-            assert str(ctx_group) == f'[0]{BuildingBlockType.FF}: []'
+            assert str(ctx_group) == f'{prefix}[]'
         else:
-            assert str(ctx_group) == f'[0]{BuildingBlockType.FF}: [%s\n]' % (
+            assert str(ctx_group) == f'{prefix}[%s\n]' % (
                 ''.join(f'\n\tctx{i}' for i in range(num_contexts)))
 
 

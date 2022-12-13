@@ -85,10 +85,10 @@ class MovementSparsityBuilder(BaseSparsityAlgoBuilder):
             node_name = module_node.node_name
 
             if not self._should_consider_scope(node_name):
-                logger.info("Ignored adding Weight Sparsifier in scope: {}".format(node_name))
+                logger.info("Ignored adding Weight Sparsifier in scope: %s", node_name)
                 continue
 
-            logger.info("Adding Weight Sparsifier in scope: {}".format(node_name))
+            logger.debug("Adding Weight Sparsifier in scope: %s", node_name)
             compression_lr_multiplier = self.config.get_redefinable_global_param_value_for_algo(
                 'compression_lr_multiplier', self.name)
             sparsifying_operation = self.create_weight_sparsifying_operation(module_node, compression_lr_multiplier)
