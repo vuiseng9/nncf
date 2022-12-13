@@ -69,8 +69,9 @@ class BaseStructuredMaskStrategy(ABC):
         """
         Returns the rule list for each `BuildingBlockType`, which should cover all
         modules that will do structured masking as a group.
+
+        :return: A dict specifying `StructuredMaskRule` list for each `BuildingBlockType`.
         """
-        pass
 
 
 class BaseTransformerStructuredMaskStrategy(BaseStructuredMaskStrategy, ABC):

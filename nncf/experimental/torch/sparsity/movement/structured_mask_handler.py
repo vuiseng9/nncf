@@ -207,7 +207,7 @@ class StructuredMaskHandler:
 
     This handler gathers sparsifiable layers together as groups according to the building block
     they belong to, e.g., multi-head self-attention or feed-forward network in Transformers.
-    Within each group, it refreshes the binary masks from unstructured to structured ones, 
+    Within each group, it refreshes the binary masks from unstructured to structured ones,
     while considering the pruning dependencies across layers.
     """
 
