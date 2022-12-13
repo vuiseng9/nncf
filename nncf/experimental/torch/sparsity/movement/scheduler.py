@@ -53,11 +53,15 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
         self.power: float = params.get('power', 3)
         self.init_importance_threshold: Optional[float] = params.get('init_importance_threshold', None)
         self.final_importance_threshold: float = params.get('final_importance_threshold', 0.)
-        self.warmup_start_epoch: int = params.get('warmup_start_epoch', 1)
-        self.warmup_end_epoch: int = params.get('warmup_end_epoch', 2)
-        self.final_importance_regularization_factor: float = params.get('importance_regularization_factor', 0.1)
+        self.warmup_start_epoch: int = params.get('warmup_start_epoch', None)
+        self.warmup_end_epoch: int = params.get('warmup_end_epoch', None)
+        self.final_importance_regularization_factor: float = params.get('importance_regularization_factor', None)
         self.enable_structured_masking: bool = params.get('enable_structured_masking', True)
         self._steps_per_epoch = params.get('steps_per_epoch', None)
+
+        if None in [self.warmup_start_epoch, self.warmup_end_epoch, self.final_importance_regularization_factor]:
+            raise ValueError('`warmup_start_epoch`, `warmup_start_epoch` and `final_importance_regularization_factor` '
+                             'are required in config for Movement Sparsity.')
 
         if self._steps_per_epoch is None and self.warmup_start_epoch < 1:
             raise ValueError('`warmup_start_epoch` must be >= 1 to enable the auto calculation of '

@@ -107,14 +107,14 @@ def is_roughly_of_same_value(x_list, atol: float = 1e-6) -> bool:
 
 
 class SchedulerParams:
-    def __init__(self, power: int = 3,
-                 warmup_start_epoch: int = 1,
-                 warmup_end_epoch: int = 3,
+    def __init__(self, power: Optional[int] = 3,
+                 warmup_start_epoch: Optional[int] = 1,
+                 warmup_end_epoch: Optional[int] = 3,
                  init_importance_threshold: Optional[float] = -1.0,
-                 final_importance_threshold: float = 0.0,
-                 importance_regularization_factor: float = 0.1,
+                 final_importance_threshold: Optional[float] = 0.0,
+                 importance_regularization_factor: Optional[float] = 0.1,
                  steps_per_epoch: Optional[int] = 4,
-                 enable_structured_masking: bool = True):
+                 enable_structured_masking: Optional[bool] = True):
         self.power = power
         self.warmup_start_epoch = warmup_start_epoch
         self.warmup_end_epoch = warmup_end_epoch
@@ -123,6 +123,9 @@ class SchedulerParams:
         self.importance_regularization_factor = importance_regularization_factor
         self.steps_per_epoch = steps_per_epoch
         self.enable_structured_masking = enable_structured_masking
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {key: value for key, value in self.__dict__.items() if value is not None}
 
 
 class NNCFAlgoConfig:
@@ -139,10 +142,10 @@ class NNCFAlgoConfig:
         self.ignored_scopes = ignored_scopes or []
         self.compression_lr_multiplier = compression_lr_multiplier
 
-    def to_dict(self):
+    def to_dict(self) -> Dict[str, Any]:
         result = {
             "algorithm": "movement_sparsity",
-            "params": self.scheduler_params.__dict__,
+            "params": self.scheduler_params.to_dict(),
             "sparse_structure_by_scopes": self.sparse_structure_by_scopes,
             "ignored_scopes": self.ignored_scopes,
         }
@@ -180,9 +183,9 @@ class BaseMockRunRecipe(ABC):
                  log_dir=None) -> None:
         self.model_config = model_config
         self.algo_config = algo_config
-        self.model_keys = set(self.model_config.__dict__)
-        self.scheduler_keys = set(self.algo_config.scheduler_params.__dict__)
-        self.algo_keys = set(self.algo_config.__dict__)
+        self._model_keys = set(self.model_config.__dict__)
+        self._scheduler_keys = set(self.algo_config.scheduler_params.__dict__)
+        self._algo_keys = set(self.algo_config.__dict__)
         self.set_log_dir(log_dir)
 
     @classmethod
@@ -255,30 +258,31 @@ class BaseMockRunRecipe(ABC):
     def get(self, key: str):
         if key == 'log_dir':
             return self.log_dir
-        if key in self.model_keys:
-            return self.model_config.__dict__[key]
-        if key in self.algo_keys:
-            return self.algo_config.__dict__[key]
-        if key in self.scheduler_keys:
-            return self.algo_config.scheduler_params.__dict__[key]
-        raise KeyError(f'{key} not found.')
+        if key in self._model_keys:
+            return getattr(self.model_config, key)
+        if key in self._algo_keys:
+            return getattr(self.algo_config, key)
+        if key in self._scheduler_keys:
+            return getattr(self.algo_config.scheduler_params, key)
+        raise KeyError(f'"{key}" not found.')
 
     def set(self, **kwargs):
         for key, value in kwargs.items():
             if key == 'log_dir':
                 self.set_log_dir(value)
-            elif key in self.model_keys:
+            elif key in self._model_keys:
                 setattr(self.model_config, key, value)
-            elif key in self.algo_keys:
+            elif key in self._algo_keys:
                 setattr(self.algo_config, key, value)
-            elif key in self.scheduler_keys:
+            elif key in self._scheduler_keys:
                 setattr(self.algo_config.scheduler_params, key, value)
             else:
                 raise KeyError(f'"{key}" not found.')
 
-    def generate_mock_dataset(self, num_samples: int = 16, seed: int = 42,
+    def generate_mock_dataset(self, num_samples: int = 16,
                               float_low: float = -1., float_high: float = 1.,
-                              int_low: int = 0, int_high: int = 2) -> Dataset:
+                              int_low: int = 0, int_high: int = 2,
+                              seed: int = 42) -> Dataset:
         g = torch.Generator()
         g.manual_seed(seed)
         input_dict = {}
@@ -387,7 +391,7 @@ class BertRunRecipe(BaseMockRunRecipe):
                  log_dir=None) -> None:
         super().__init__(model_config, algo_config, log_dir)
         extra_model_keys = {'mhsa_qkv_bias', 'mhsa_o_bias', 'ffn_bias'}
-        self.model_keys = self.model_keys.union(extra_model_keys)
+        self._model_keys = self._model_keys.union(extra_model_keys)
         for key in extra_model_keys:
             value = getattr(self.model_config, key, True)
             setattr(self.model_config, key, value)
