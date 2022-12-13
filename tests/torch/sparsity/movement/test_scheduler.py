@@ -41,7 +41,7 @@ class TestSchedulerCreation:
         scheduler = MovementPolynomialThresholdScheduler(controller=MagicMock(), params=params.to_dict())
         ref = dict(power=3, warmup_start_epoch=1, warmup_end_epoch=2,
                    init_importance_threshold=None, final_importance_threshold=0.,
-                   final_importance_regularization_factor=1, _steps_per_epoch=None,
+                   importance_regularization_factor=1, _steps_per_epoch=None,
                    enable_structured_masking=True)
         for key, value in ref.items():
             assert hasattr(scheduler, key) and getattr(scheduler, key) == value

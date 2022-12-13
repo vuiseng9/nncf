@@ -55,12 +55,12 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
         self.final_importance_threshold: float = params.get('final_importance_threshold', 0.)
         self.warmup_start_epoch: int = params.get('warmup_start_epoch', None)
         self.warmup_end_epoch: int = params.get('warmup_end_epoch', None)
-        self.final_importance_regularization_factor: float = params.get('importance_regularization_factor', None)
+        self.importance_regularization_factor: float = params.get('importance_regularization_factor', None)
         self.enable_structured_masking: bool = params.get('enable_structured_masking', True)
         self._steps_per_epoch = params.get('steps_per_epoch', None)
 
-        if None in [self.warmup_start_epoch, self.warmup_end_epoch, self.final_importance_regularization_factor]:
-            raise ValueError('`warmup_start_epoch`, `warmup_start_epoch` and `final_importance_regularization_factor` '
+        if None in [self.warmup_start_epoch, self.warmup_end_epoch, self.importance_regularization_factor]:
+            raise ValueError('`warmup_start_epoch`, `warmup_start_epoch` and `importance_regularization_factor` '
                              'are required in config for Movement Sparsity.')
 
         if self._steps_per_epoch is None and self.warmup_start_epoch < 1:
@@ -71,7 +71,7 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
         if self.warmup_start_epoch < 0 or self.warmup_end_epoch <= self.warmup_start_epoch:
             raise ValueError('Movement sparsity requires 0 <= warmup_start_epoch < warmup_end_epoch.')
 
-        if self.final_importance_regularization_factor < 0:
+        if self.importance_regularization_factor < 0:
             raise ValueError('`importance_regularization_factor` should not be a negative number.')
 
         if self.init_importance_threshold is not None and \
@@ -104,8 +104,8 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
         if current_stage == MovementSchedulerStage.PRE_WARMUP:
             return 0.
         if current_stage == MovementSchedulerStage.IN_WARMUP:
-            return self._calc_current_scheduled_value(0., self.final_importance_regularization_factor)
-        return self.final_importance_regularization_factor
+            return self._calc_current_scheduled_value(0., self.importance_regularization_factor)
+        return self.importance_regularization_factor
 
     @property
     def current_importance_threshold(self) -> float:
