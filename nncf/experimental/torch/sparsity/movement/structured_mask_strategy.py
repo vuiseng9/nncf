@@ -33,10 +33,19 @@ def detect_supported_model_family(model: NNCFNetwork) -> Optional[str]:
 
 
 class StructuredMaskRule:
+    """
+    Defines the rule to resolve the structured mask in a certain layer.
+    """
+
     def __init__(self,
                  keywords: Union[List[str], str],
                  prune_by_row: bool,
                  prune_grid: Tuple[int, int]):
+        """
+        :param keywords: The patterns of module_node_name.
+        :param prune_by_row: Whether the matched module should be pruned by row or column.
+        :param prune_grid: The grid that should be regarded as a whole for structured mask resolution.
+        """
         self.keywords: List[str] = [keywords] if isinstance(keywords, str) else keywords
         self.prune_by_row = prune_by_row
         self.prune_grid = prune_grid
@@ -57,6 +66,10 @@ class BaseStructuredMaskStrategy(ABC):
     @property
     @abstractmethod
     def rules_by_group_type(self) -> Dict[BuildingBlockType, List[StructuredMaskRule]]:
+        """
+        Returns the rule list for each `BuildingBlockType`, which should cover all
+        modules that will do structured masking as a group.
+        """
         pass
 
 
