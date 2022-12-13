@@ -16,7 +16,6 @@ from typing import Any, Dict, Optional
 
 import torch
 
-from nncf.api.compression import CompressionAlgorithmController
 from nncf.common.schedulers import BaseCompressionScheduler
 from nncf.common.schedulers import PolynomialDecaySchedule
 from nncf.common.utils.logger import logger
@@ -40,7 +39,7 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
     scheduler will start calculation only after `steps_per_epoch` is calculated.
     """
 
-    def __init__(self, controller: CompressionAlgorithmController, params: dict):
+    def __init__(self, controller: 'MovementSparsityController', params: dict):
         """
         TODO: revise docstring
         Initializes a sparsity scheduler with a polynomial decay schedule.
