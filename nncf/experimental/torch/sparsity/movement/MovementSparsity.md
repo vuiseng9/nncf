@@ -1,6 +1,6 @@
 ### Movement Sparsity
 
-Movement sparsity (Sanh et al., 2020) has proven to be an effective learning-based unstructured sparsity algorithm, especially for Transformer models in transfer learning, while its extension of block pruning (Lagunas et al., 2021) leverages the idea for structured pruning to accelerate Transformer inference.
+Movement sparsity (Sanh et al., 2020) has proven to be an effective learning-based unstructured sparsity algorithm, especially for Transformer models in transfer learning. Its extension of block pruning (Lagunas et al., 2021) leverages the idea for structured pruning to accelerate Transformer inference.
 
 Implementation of Movement Sparsity in NNCF collapses unstructured sparsification and structured pruning into a single loop.
 
