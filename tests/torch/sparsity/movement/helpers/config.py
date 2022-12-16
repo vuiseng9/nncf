@@ -22,7 +22,7 @@ def convert_scheduler_params_to_dict(params: MovementSchedulerParams) -> Dict[st
     return result
 
 
-class NNCFAlgoConfig:
+class MovementAlgoConfig:
     def __init__(self, sparse_structure_by_scopes: Optional[List[Dict]] = None,
                  ignored_scopes: Optional[List[str]] = None,
                  compression_lr_multiplier: Optional[float] = None,

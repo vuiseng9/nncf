@@ -24,7 +24,7 @@ import torch.utils.data
 
 from nncf import NNCFConfig
 from nncf.torch.nncf_network import NNCFNetwork
-from tests.torch.sparsity.movement.helpers.config import NNCFAlgoConfig
+from tests.torch.sparsity.movement.helpers.config import MovementAlgoConfig
 
 from datasets import Dataset  # pylint: disable=no-name-in-module
 from transformers import AutoModelForAudioClassification
@@ -59,10 +59,10 @@ class BaseMockRunRecipe(ABC):
     model_family: str
     supports_structured_masking: bool
     default_model_config = PretrainedConfig()
-    default_algo_config = NNCFAlgoConfig()
+    default_algo_config = MovementAlgoConfig()
 
     def __init__(self, model_config: PretrainedConfig,
-                 algo_config: NNCFAlgoConfig,
+                 algo_config: MovementAlgoConfig,
                  log_dir=None) -> None:
         self.model_config = model_config
         self.algo_config = algo_config
@@ -177,7 +177,7 @@ class Wav2Vec2RunRecipe(BaseMockRunRecipe):
         num_labels=2,
     )
 
-    default_algo_config = NNCFAlgoConfig(
+    default_algo_config = MovementAlgoConfig(
         sparse_structure_by_scopes=[
             {'mode': 'block', 'sparse_factors': [2, 2], 'target_scopes': '{re}Wav2Vec2Attention'},
             {'mode': 'per_dim', 'axis': 0, 'target_scopes': '{re}intermediate_dense'},
@@ -234,7 +234,7 @@ class BertRunRecipe(BaseMockRunRecipe):
         mhsa_o_bias=True,
         ffn_bias=True
     )
-    default_algo_config = NNCFAlgoConfig(
+    default_algo_config = MovementAlgoConfig(
         sparse_structure_by_scopes=[
             {'mode': 'block', 'sparse_factors': [2, 2], 'target_scopes': '{re}attention'},
             {'mode': 'per_dim', 'axis': 0, 'target_scopes': '{re}BertIntermediate'},
@@ -244,7 +244,7 @@ class BertRunRecipe(BaseMockRunRecipe):
     )
 
     def __init__(self, model_config: BertConfig,
-                 algo_config: NNCFAlgoConfig,
+                 algo_config: MovementAlgoConfig,
                  log_dir=None) -> None:
         super().__init__(model_config, algo_config, log_dir)
         extra_model_keys = {'mhsa_qkv_bias', 'mhsa_o_bias', 'ffn_bias'}
@@ -319,7 +319,7 @@ class SwinRunRecipe(BaseMockRunRecipe):
         qkv_bias=True,
         num_classes=2,
     )
-    default_algo_config = NNCFAlgoConfig(
+    default_algo_config = MovementAlgoConfig(
         sparse_structure_by_scopes=[
             {'mode': 'block', 'sparse_factors': [2, 2], 'target_scopes': '{re}attention'},
             {'mode': 'per_dim', 'axis': 0, 'target_scopes': '{re}SwinIntermediate'},
@@ -415,7 +415,7 @@ class LinearRunRecipe(BaseMockRunRecipe):
         input_size=4,
         bias=True
     )
-    default_algo_config = NNCFAlgoConfig(
+    default_algo_config = MovementAlgoConfig(
         enable_structured_masking=False
     )
 
@@ -447,7 +447,7 @@ class Conv2dRunRecipe(LinearRunRecipe):
         input_size=4,
         bias=True
     )
-    default_algo_config = NNCFAlgoConfig(
+    default_algo_config = MovementAlgoConfig(
         enable_structured_masking=False
     )
 
@@ -471,7 +471,7 @@ class Conv2dPlusLinearRunRecipe(LinearRunRecipe):
         input_size=4,
         bias=True
     )
-    default_algo_config = NNCFAlgoConfig(
+    default_algo_config = MovementAlgoConfig(
         enable_structured_masking=False
     )
 
