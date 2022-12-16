@@ -202,9 +202,8 @@ class MovementSparsifier(nn.Module):
     def forward(self, weight: torch.Tensor, bias: Optional[torch.Tensor] = None
                 ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         if is_tracing_state():
-            with no_jit_trace():
-                masked_weight = weight.mul(self.weight_ctx.binary_mask)
-                masked_bias = None if bias is None else bias.mul(self.bias_ctx.binary_mask)
+            masked_weight = weight.mul(self.weight_ctx.binary_mask)
+            masked_bias = None if bias is None else bias.mul(self.bias_ctx.binary_mask)
         else:
             weight_mask = self._calc_training_binary_mask(is_bias=False)
             masked_weight = apply_binary_mask_impl(weight_mask, weight)
