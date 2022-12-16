@@ -790,12 +790,13 @@ class TestComponentUpdateInTraining:
                                                                      dump_graphs=False)
 
         class CheckInitImportanceThresholdCallback(CompressionCallback):
+            # pylint: disable=protected-access
             def on_step_begin(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
                 super().on_step_begin(args, state, control, **kwargs)
                 if state.global_step < recipe.scheduler_params.warmup_start_epoch * steps_per_epoch:
-                    assert self.compression_ctrl.scheduler.init_importance_threshold is None
+                    assert self.compression_ctrl.scheduler._init_importance_threshold is None
                 else:
-                    assert isinstance(self.compression_ctrl.scheduler.init_importance_threshold, float)
+                    assert isinstance(self.compression_ctrl.scheduler._init_importance_threshold, float)
 
         trainer = build_compression_trainer(tmp_path, compression_ctrl, compressed_model,
                                             train_dataset=recipe.generate_mock_dataset(steps_per_epoch),

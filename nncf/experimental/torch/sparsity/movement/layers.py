@@ -25,7 +25,6 @@ from nncf.torch.layer_utils import CompressionParameter
 from nncf.torch.sparsity.functions import apply_binary_mask as apply_binary_mask_impl
 from nncf.torch.sparsity.layers import BinaryMask
 from nncf.torch.utils import is_tracing_state
-from nncf.torch.utils import no_jit_trace
 
 
 class SparseStructure(str, Enum):
