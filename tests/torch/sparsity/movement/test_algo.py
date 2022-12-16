@@ -65,7 +65,7 @@ from transformers.trainer_callback import TrainerState
 
 FACTOR_NAME_IN_MOVEMENT_STAT = 'movement_sparsity/importance_regularization_factor'
 THRESHOLD_NAME_IN_MOVEMENT_STAT = 'movement_sparsity/importance_threshold'
-RELA_SPARSITY_NAME_IN_MOVEMENT_STAT = 'movement_sparsity/relative_sparsity'
+LINEAR_LAYER_SPARSITY_NAME_IN_MOVEMENT_STAT = 'movement_sparsity/linear_layer_sparsity'
 MODEL_SPARSITY_NAME_IN_MOVEMENT_STAT = 'movement_sparsity/model_sparsity'
 
 
@@ -341,7 +341,7 @@ class TestControllerStats:
 
         for key in [FACTOR_NAME_IN_MOVEMENT_STAT,
                     THRESHOLD_NAME_IN_MOVEMENT_STAT,
-                    RELA_SPARSITY_NAME_IN_MOVEMENT_STAT,
+                    LINEAR_LAYER_SPARSITY_NAME_IN_MOVEMENT_STAT,
                     MODEL_SPARSITY_NAME_IN_MOVEMENT_STAT]:
             stat = [log[key] for log in log_by_step.values()]
             assert is_roughly_non_decreasing(stat[:warmup_end_step], atol=1e-2)
@@ -364,7 +364,7 @@ class TestControllerStats:
         log_by_step = trainer.compression_callback.get_compression_log()
         warmup_end_step = recipe.scheduler_params.steps_per_epoch * recipe.scheduler_params.warmup_end_epoch
 
-        for key in [RELA_SPARSITY_NAME_IN_MOVEMENT_STAT,
+        for key in [LINEAR_LAYER_SPARSITY_NAME_IN_MOVEMENT_STAT,
                     MODEL_SPARSITY_NAME_IN_MOVEMENT_STAT]:
             stat = [log[key] for log in log_by_step.values()]
             if enable_structured_masking is True:

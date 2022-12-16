@@ -248,7 +248,6 @@ class BertRunRecipe(BaseMockRunRecipe):
                  log_dir=None) -> None:
         super().__init__(model_config, algo_config, log_dir)
         extra_model_keys = {'mhsa_qkv_bias', 'mhsa_o_bias', 'ffn_bias'}
-        self._model_keys = self._model_keys.union(extra_model_keys)
         for key in extra_model_keys:
             value = getattr(self.model_config, key, True)
             setattr(self.model_config, key, value)
