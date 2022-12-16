@@ -146,15 +146,15 @@ class TestControllerCreation:
         SwinRunRecipe.from_default(depths=[1, 1], num_heads=[2, 4], mlp_ratio=1.5, qkv_bias=False)
     ], ids=['bert', 'bert_no_ffn_bias', 'bert_with_compression_lr_multiplier', 'swin_no_qkv_bias'])
     def test_can_create_movement_sparsity_layers(self, sparse_structure_by_scopes, recipe: BaseMockRunRecipe):
-        recipe.set(sparse_structure_by_scopes=sparse_structure_by_scopes)
+        recipe.algo_config.sparse_structure_by_scopes = sparse_structure_by_scopes
         compression_ctrl, compressed_model = create_compressed_model(recipe.model,
                                                                      recipe.nncf_config,
                                                                      dump_graphs=False)
         assert isinstance(compression_ctrl, MovementSparsityController)
         assert isinstance(compression_ctrl.scheduler, MovementPolynomialThresholdScheduler)
 
-        configs = recipe.get('sparse_structure_by_scopes')
-        compression_lr_multiplier = recipe.get('compression_lr_multiplier')
+        configs = recipe.algo_config.sparse_structure_by_scopes
+        compression_lr_multiplier = recipe.algo_config.compression_lr_multiplier
         sparse_configs_by_scopes = [SparseConfigByScope.from_config(c) for c in configs]
         for scope, module in compressed_model.get_nncf_modules().items():
             if not hasattr(module, 'pre_ops'):
@@ -169,7 +169,7 @@ class TestControllerCreation:
                             sparse_config = sparse_config_by_scope.sparse_config
                             break
                     self._check_sparsified_layer_mode(op.operand, module, sparse_config, compression_lr_multiplier)
-            if should_consider_scope(str(scope), recipe.get('ignored_scopes')) and \
+            if should_consider_scope(str(scope), recipe.algo_config.ignored_scopes) and \
                     isinstance(module, tuple(SUPPORTED_NNCF_MODULES)):
                 assert count_movement_op == 1
             else:
