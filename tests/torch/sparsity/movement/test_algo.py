@@ -21,6 +21,7 @@ from onnx import numpy_helper
 import onnxruntime
 import pytest
 from pytest import approx
+from scipy.special import softmax
 import torch
 
 from nncf.api.compression import CompressionStage
@@ -419,7 +420,12 @@ class TestModelSaving:
         Wav2Vec2RunRecipe.from_default(),
         SwinRunRecipe.from_default(),
         LinearRunRecipe.from_default(),
-        Conv2dPlusLinearRunRecipe.from_default()
+        Conv2dPlusLinearRunRecipe.from_default(),
+        SwinRunRecipe.from_default(image_size=384, patch_size=4, window_size=12,
+                                   embed_dim=192, mlp_ratio=4,
+                                   depths=(2, 2, 5, 2), num_heads=(6, 12, 24, 48),
+                                   num_classes=32,
+                                   enable_structured_masking=False),
     ])
     def test_same_outputs_in_torch_and_exported_onnx(self, tmp_path: Path, recipe: BaseMockRunRecipe):
         num_samples = 4
@@ -439,7 +445,8 @@ class TestModelSaving:
         compression_ctrl.export_model(onnx_model_path)
         onnx_output_dict = self._get_onnx_model_inference_outputs(onnx_model_path, dataset, recipe)
         onnx_outputs = next(iter(onnx_output_dict.values()))
-        assert np.allclose(onnx_outputs, torch_outputs, atol=1e-6)
+        assert np.allclose(softmax(onnx_outputs, axis=-1),
+                           softmax(torch_outputs, axis=-1), atol=1e-6)
 
     def _get_onnx_model_inference_outputs(self, onnx_model_path: str,
                                           dataset: Dataset,

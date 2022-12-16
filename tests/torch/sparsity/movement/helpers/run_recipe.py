@@ -392,6 +392,7 @@ class SwinRunRecipe(BaseMockRunRecipe):
         mlp_ratio=3 / 4,
         num_labels=2,
         qkv_bias=True,
+        num_classes=2,
     )
     default_algo_config = NNCFAlgoConfig(
         sparse_structure_by_scopes=[
