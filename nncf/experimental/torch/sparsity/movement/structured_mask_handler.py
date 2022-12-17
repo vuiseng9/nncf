@@ -131,6 +131,10 @@ class StructuredMaskContext:
 
     @torch.no_grad()
     def update_independent_structured_mask_from_operand(self):
+        """
+        Gets the current unstructured binary mask from operand, resolves it to the independent structured one, and
+        stores in `self.independent_structured_mask` for later use in `StructuredMaskHandler`.
+        """
         weight_binary_mask = self.sparsifier_operand.weight_ctx.binary_mask.detach().clone()
         mask_by_grid = F.max_pool2d(
             weight_binary_mask.unsqueeze(0), kernel_size=self.grid_size, stride=self.grid_size).squeeze(0)
@@ -148,12 +152,20 @@ class StructuredMaskContext:
         return structured_mask
 
     def populate_dependent_structured_mask_to_operand(self):
+        """
+        Updates the actual binary masks in operand with `self.dependent_structured_mask`.
+        """
         structured_mask_inflated = self._inflate_structured_mask(self.dependent_structured_mask, self.grid_size)
         self.sparsifier_operand.weight_ctx.binary_mask = structured_mask_inflated
         if self.sparsifier_operand.prune_bias is True:
             self.sparsifier_operand.bias_ctx.binary_mask = structured_mask_inflated.amax(dim=1)
 
     def gather_statistics_from_operand(self) -> StructuredMaskContextStatistics:
+        """
+        Collects the structured mask statistics from the binary masks in operand.
+
+        :return: A `StructuredMaskContextStatistics` object.
+        """
         node = self.sparsifier_operand.target_module_node
         assert isinstance(node.layer_attributes, tuple(EXPECTED_NODE_LAYER_ATTRS))
         weight_shape: Tuple[int, int] = tuple(list(node.layer_attributes.get_weight_shape()))
@@ -238,7 +250,7 @@ class StructuredMaskHandler:
         :param compressed_model: The wrapped compressed model.
         :param sparsified_module_info_list: List of `SparsifiedModuleInfo` in the
             controller of `compressed_model`.
-        :param strategy: Strategy of structured masking for the `compressed_model`.
+        :param strategy: Strategy of resolving structured masks for the `compressed_model`.
         """
         self.strategy = strategy
         self.rules_by_group_type = strategy.rules_by_group_type
@@ -252,11 +264,18 @@ class StructuredMaskHandler:
             nncf_logger.debug('%s', structured_mask_ctx_group)
 
     def update_independent_structured_mask(self):
+        """
+        Asks all contexts in `self._structured_mask_ctx_groups` to calculate the independent structured mask.
+        """
         for group in self._structured_mask_ctx_groups:
             for ctx in group.structured_mask_context_list:
                 ctx.update_independent_structured_mask_from_operand()
 
     def resolve_dependent_structured_mask(self):
+        """
+        Within each context group, it reads the independent structured masks of related layers and
+        resolves the structured masks based on dependency rules defined in `self.rules_by_group_type`.
+        """
         for group in self._structured_mask_ctx_groups:
             group_type = group.group_type
             if group_type not in self.rules_by_group_type:
@@ -274,6 +293,9 @@ class StructuredMaskHandler:
                     ctx.dependent_structured_mask = coarse_mask.t()
 
     def populate_dependent_structured_mask_to_operand(self):
+        """
+        Asks all contexts in `self._structured_mask_ctx_groups` to update the actual binary masks in operand.
+        """
         for group in self._structured_mask_ctx_groups:
             for ctx in group.structured_mask_context_list:
                 ctx.populate_dependent_structured_mask_to_operand()
@@ -281,9 +303,20 @@ class StructuredMaskHandler:
     def report_structured_sparsity(self,
                                    save_dir: str,
                                    file_name: str = 'structured_sparsity',
-                                   to_csv: bool = False,
-                                   to_markdown: bool = True,
+                                   to_csv: bool = True,
+                                   to_markdown: bool = False,
                                    max_num_of_kept_heads_to_report: int = 20) -> pd.DataFrame:
+        """
+        Generates a report file that describes the structured mask statistics for each context group.
+
+        :param save_dir: The folder to save the report file.
+        :param file_name: File name of the report.
+        :param to_csv: Whether to dump the report file in csv format.
+        :param to_markdown: Whether to dump the report file in markdown format.
+        :param max_num_of_kept_heads_to_report: The max number of heads or channels to display that are
+            preserved after structured masking. Used to avoid showing too many elements in the list.
+        :return: The structured mask statistics in `pandas.DataFrame` format.
+        """
         df = self._gather_statistics_dataframe(max_num_of_kept_heads_to_report)
         if to_csv:
             df.to_csv(Path(save_dir, f'{file_name}.csv'))

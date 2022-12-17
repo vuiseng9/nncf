@@ -152,14 +152,21 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
     @property
     def current_stage(self) -> MovementSchedulerStage:
         if self._steps_per_epoch is None or \
-                self.current_step < self._params.warmup_start_epoch * self._steps_per_epoch:
+                self.current_step < int(self._params.warmup_start_epoch * self._steps_per_epoch):
             return MovementSchedulerStage.PRE_WARMUP
-        if self.current_step < self._params.warmup_end_epoch * self._steps_per_epoch:
+        if self.current_step < int(self._params.warmup_end_epoch * self._steps_per_epoch):
             return MovementSchedulerStage.IN_WARMUP
         return MovementSchedulerStage.POST_WARMUP
 
     @property
     def current_importance_regularization_factor(self) -> float:
+        """
+        Calculates the value of importance regularization factor per the current state. The factor
+        stays zero before warmup stage, and gradually increases during warmup, and stays at
+        the fixed value after warmup.
+
+        :return: The value of importance regularization factor.
+        """
         current_stage = self.current_stage
         if current_stage == MovementSchedulerStage.PRE_WARMUP:
             return 0.
@@ -169,6 +176,13 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
 
     @property
     def current_importance_threshold(self) -> float:
+        """
+        Calculates the value of importance threshold per the current state. The threshold
+        stays `-math.inf` before warmup stage, and gradually increases from `self._init_importance_threshold`
+        during warmup, and finally stays fixed at the specified final value.
+
+        :return: The value of importance threshold.
+        """
         current_stage = self.current_stage
         if current_stage == MovementSchedulerStage.PRE_WARMUP:
             return -math.inf
@@ -192,7 +206,7 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
         self._steps_in_current_epoch += 1
         if self._should_skip:
             return
-        self._schedule_operand_threshold()
+        self._schedule_controller()
 
     def get_state(self) -> Dict[str, Any]:
         state = super().get_state()
@@ -208,7 +222,13 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
         else:
             self._steps_in_current_epoch = self._current_step % self._steps_per_epoch + 1
 
-    def _schedule_operand_threshold(self):
+    def _schedule_controller(self):
+        """
+        Asks and updates the controller during training steps. It (1) updates the importance threshold
+        and importance regularization factor in the operand at each step; (2) freezes the controller
+        after warmup; (3) Calculates the initial importance threshold if unspecified; (4) Conduct
+        structured masking if supported.
+        """
         if self._init_importance_threshold is None and \
                 self.current_stage == MovementSchedulerStage.IN_WARMUP:
             adaptive_init_threshold = self._calc_init_threshold_from_controller(target_sparsity=0.001)
@@ -230,7 +250,7 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
     def _calc_current_scheduled_value(self, start_value: float, end_value: float) -> float:
         assert self.current_stage == MovementSchedulerStage.IN_WARMUP
         assert self._steps_per_epoch is not None
-        schedule_current_step = self.current_step - self._params.warmup_start_epoch * self._steps_per_epoch
+        schedule_current_step = self.current_step - int(self._params.warmup_start_epoch * self._steps_per_epoch)
         schedule_epoch = schedule_current_step // self._steps_per_epoch
         schedule_step = schedule_current_step % self._steps_per_epoch
         scale = self._schedule(schedule_epoch, schedule_step, self._steps_per_epoch)
