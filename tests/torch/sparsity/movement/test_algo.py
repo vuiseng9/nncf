@@ -11,6 +11,7 @@
  limitations under the License.
 """
 from collections import defaultdict
+from copy import deepcopy
 import math
 from pathlib import Path
 from typing import Optional
@@ -43,6 +44,7 @@ from nncf.torch import create_compressed_model
 from nncf.torch.layer_utils import CompressionParameter
 from nncf.torch.layers import NNCFLinear
 from nncf.torch.module_operations import UpdateWeightAndBias
+from tests.torch.helpers import PTTensorListComparator
 from tests.torch.sparsity.movement.helpers import BaseMockRunRecipe
 from tests.torch.sparsity.movement.helpers import BertRunRecipe
 from tests.torch.sparsity.movement.helpers import CompressionCallback
@@ -424,6 +426,35 @@ class TestModelSaving:
         Wav2Vec2RunRecipe.from_default(),
         SwinRunRecipe.from_default(),
         LinearRunRecipe.from_default(),
+    ])
+    def test_can_export_compressed_model(self, recipe: BaseMockRunRecipe, tmp_path):
+        recipe.set_log_dir(tmp_path)
+        compression_ctrl, compressed_model = create_compressed_model(recipe.model,
+                                                                     recipe.nncf_config,
+                                                                     dump_graphs=False)
+        onnx_path = str(tmp_path / 'model.onnx')
+        compression_ctrl.export_model(onnx_path)
+        assert Path(onnx_path).exists()
+
+    def test_no_weight_override_on_export(tmp_path):
+        recipe = LinearRunRecipe.from_default(log_dir=tmp_path)
+        onnx_path = str(tmp_path / 'model.onnx')
+        compression_ctrl, compressed_model = create_compressed_model(recipe.model,
+                                                                     recipe.nncf_config,
+                                                                     dump_graphs=False)
+        for minfo in enumerate(compression_ctrl.sparsified_module_info):
+            initialize_sparsifier_parameters_by_linspace(minfo.operand, -1, 0.)
+            force_update_sparsifier_binary_masks_by_threshold(minfo.operand, 1.)  # all-zero masks
+        state_before = deepcopy(compressed_model.state_dict())
+        compression_ctrl.export_model(onnx_path)
+        state_after = compressed_model.state_dict()
+        PTTensorListComparator.check_equal(list(state_before.values()), list(state_after.values()))
+
+    @pytest.mark.parametrize('recipe', [
+        BertRunRecipe.from_default(),
+        Wav2Vec2RunRecipe.from_default(),
+        SwinRunRecipe.from_default(),
+        LinearRunRecipe.from_default(),
         Conv2dPlusLinearRunRecipe.from_default(),
         SwinRunRecipe.from_default(image_size=384, patch_size=4, window_size=12,
                                    embed_dim=192, mlp_ratio=4,
@@ -516,7 +547,7 @@ class TestModelSaving:
                     return True
         return False
 
-    def test_model_state_dict(self):
+    def test_compressed_model_state_dict_follows_original_torch_model(self):
         linear_recipe = LinearRunRecipe.from_default(bias=True)
         model = linear_recipe.model
         original_state_dict = model.state_dict()

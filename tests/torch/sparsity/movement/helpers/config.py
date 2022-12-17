@@ -11,6 +11,7 @@
  limitations under the License.
 """
 from typing import Any, Dict, List, Optional
+
 from nncf.experimental.torch.sparsity.movement.scheduler import MovementSchedulerParams
 
 
