@@ -752,7 +752,7 @@ class TestComponentUpdateInTraining:
             def on_step_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
                 super().on_step_end(args, state, control, **kwargs)
                 assert isinstance(self.compression_ctrl.loss, ImportanceLoss)
-                for layer in self.compression_ctrl.loss.sparse_layers:
+                for layer in self.compression_ctrl.loss.operands:
                     assert isinstance(layer, MovementSparsifier)
                 loss = self.compression_ctrl.loss()
                 assert state.epoch is not None
