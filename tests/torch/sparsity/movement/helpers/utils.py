@@ -68,10 +68,10 @@ def force_update_sparsifier_binary_masks_by_threshold(operand: MovementSparsifie
             operand._calc_training_binary_mask(is_bias=True)
 
 
-def is_roughly_non_decreasing(x_list, atol: float = 0.01) -> bool:
+def is_roughly_non_decreasing(x_list, rtol: float = 1e-5, atol: float = 1e-8) -> bool:
     x_list = list(x_list)
-    assert atol >= 0
-    return all(a <= b + atol for a, b in zip(x_list[:-1], x_list[1:]))
+    assert rtol >= 0 and atol >= 0
+    return all(a <= b + atol + rtol * abs(b) for a, b in zip(x_list[:-1], x_list[1:]))
 
 
 def is_roughly_of_same_value(x_list, atol: float = 1e-6) -> bool:

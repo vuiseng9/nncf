@@ -337,14 +337,18 @@ class TestControllerStats:
                                             learning_rate=0.10)
         trainer.train()
         log_by_step = trainer.compression_callback.get_compression_log()
-        warmup_end_step = recipe.scheduler_params.steps_per_epoch * recipe.scheduler_params.warmup_end_epoch
+        warmup_start_step = int(recipe.scheduler_params.steps_per_epoch * recipe.scheduler_params.warmup_start_epoch)
+        warmup_end_step = int(recipe.scheduler_params.steps_per_epoch * recipe.scheduler_params.warmup_end_epoch)
+
+        threshold_stat = [log[THRESHOLD_NAME_IN_MOVEMENT_STAT] for log in log_by_step.values()]
+        assert all(np.isneginf(threshold_stat[:warmup_start_step]))
+        assert is_roughly_non_decreasing(threshold_stat[warmup_start_step: warmup_end_step], rtol=1e-2)
 
         for key in [FACTOR_NAME_IN_MOVEMENT_STAT,
-                    THRESHOLD_NAME_IN_MOVEMENT_STAT,
                     LINEAR_LAYER_SPARSITY_NAME_IN_MOVEMENT_STAT,
                     MODEL_SPARSITY_NAME_IN_MOVEMENT_STAT]:
             stat = [log[key] for log in log_by_step.values()]
-            assert is_roughly_non_decreasing(stat[:warmup_end_step], atol=1e-2)
+            assert is_roughly_non_decreasing(stat[:warmup_end_step], rtol=1e-2)
 
     @pytest.mark.parametrize('enable_structured_masking', [True, False])
     def test_fixed_sparsity_stats_after_warmup_ends(self, tmp_path, enable_structured_masking: bool):

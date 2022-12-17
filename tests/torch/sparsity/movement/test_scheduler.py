@@ -169,7 +169,7 @@ class TestSchedulerStatus:
         scheduler = MovementPolynomialThresholdScheduler(controller=MagicMock(), params=desc['params'])
         if desc['params'].init_importance_threshold is None:
             mocker.patch.object(scheduler, '_calc_init_threshold_from_controller',
-                                return_value=desc['mock_init_importance_threshold'])
+                                side_effect=[desc['mock_init_importance_threshold']])
         threshold, factor = [], []
         for _ in range(5):
             scheduler.epoch_step()
@@ -258,7 +258,7 @@ class TestSchedulerStepAction:
                                                          params=desc['params'])
         if desc['params'].init_importance_threshold is None:
             mocker.patch.object(scheduler, '_calc_init_threshold_from_controller',
-                                return_value=desc['mock_init_importance_threshold'])
+                                side_effect=[desc['mock_init_importance_threshold']])
         threshold_dict = defaultdict(list)
         factor_dict = defaultdict(list)
         for _ in range(5):
@@ -381,6 +381,21 @@ class TestSchedulerAdaptiveInitThreshold:
         stat = compression_ctrl.statistics().movement_sparsity
         assert stat.model_statistics.sparsity_level_for_layers == approx(ref_sparsity, abs=1e-4)
         assert stat.importance_threshold == approx(ref_threshold, abs=1e-4)
+
+    def test_calc_init_threshold_called_once(self, tmp_path, mocker):
+        recipe = BertRunRecipe.from_default(log_dir=tmp_path)
+        recipe.scheduler_params.init_importance_threshold = None
+        compression_ctrl, _ = create_compressed_model(recipe.model,
+                                                      recipe.nncf_config,
+                                                      dump_graphs=False)
+        func = mocker.patch.object(compression_ctrl.scheduler,
+                                   '_calc_init_threshold_from_controller',
+                                   return_value=-1)
+        for _ in range(6):
+            compression_ctrl.scheduler.epoch_step()
+            for _ in range(4):
+                compression_ctrl.scheduler.step()
+        func.assert_called_once()
 
     @pytest.mark.parametrize(('target_sparsity', 'ref_threshold'),
                              [(0.001, 1.), (0.5, 500.), (0.6, 600.), (0.999, 999.)])
