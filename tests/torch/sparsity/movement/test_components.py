@@ -12,14 +12,10 @@
 """
 from typing import Any, Dict, Tuple
 from unittest.mock import MagicMock
-from unittest.mock import call
 
 import pytest
-from pytest import approx
 import torch
 
-from nncf.torch import create_compressed_model
-from nncf.torch.layers import NNCFLinear
 from nncf.common.sparsity.statistics import MovementSparsityStatistics
 from nncf.common.sparsity.statistics import SparsifiedLayerSummary
 from nncf.common.sparsity.statistics import SparsifiedModelStatistics
@@ -31,6 +27,8 @@ from nncf.experimental.torch.sparsity.movement.layers import SparseConfig
 from nncf.experimental.torch.sparsity.movement.layers import SparseConfigByScope
 from nncf.experimental.torch.sparsity.movement.layers import SparseStructure
 from nncf.experimental.torch.sparsity.movement.loss import ImportanceLoss
+from nncf.torch import create_compressed_model
+from nncf.torch.layers import NNCFLinear
 from tests.torch.sparsity.movement.helpers import LinearRunRecipe
 from tests.torch.sparsity.movement.helpers import initialize_sparsifier_parameters_by_linspace
 from tests.torch.sparsity.movement.helpers import mock_linear_nncf_node
