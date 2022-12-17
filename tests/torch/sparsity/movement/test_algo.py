@@ -429,7 +429,7 @@ class TestModelSaving:
     ])
     def test_can_export_compressed_model(self, recipe: BaseMockRunRecipe, tmp_path):
         recipe.set_log_dir(tmp_path)
-        compression_ctrl, compressed_model = create_compressed_model(recipe.model,
+        compression_ctrl, _ = create_compressed_model(recipe.model,
                                                                      recipe.nncf_config,
                                                                      dump_graphs=False)
         onnx_path = str(tmp_path / 'model.onnx')
@@ -763,7 +763,7 @@ class TestComponentUpdateInTraining:
                     assert loss.requires_grad is True
                     assert loss > 0.
                 else:
-                    assert (not loss.is_nonzero())
+                    assert not loss.is_nonzero()
 
         trainer = build_compression_trainer(tmp_path, compression_ctrl, compressed_model,
                                             train_dataset=recipe.generate_mock_dataset(steps_per_epoch),
