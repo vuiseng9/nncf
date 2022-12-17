@@ -401,7 +401,7 @@ class TestStructuredMaskHandler:
                                                       dump_graphs=False)
         handler, _ = self._get_handler_from_ctrl(compression_ctrl)
         df = handler.report_structured_sparsity(
-            tmp_path, file_name=file_name, to_csv=True, to_markdown=True,
+            tmp_path, file_name=file_name, to_csv=True,
             max_num_of_kept_heads_to_report=max_num_of_kept_heads_to_report)
         assert isinstance(df, pd.DataFrame)
         columns = df.columns.to_list()
@@ -416,7 +416,6 @@ class TestStructuredMaskHandler:
                 assert isinstance(item, str)
                 assert re.fullmatch(r'\[[0-9]+ items\]', item) is not None
         assert Path(tmp_path, f'{file_name}.csv').is_file()
-        assert Path(tmp_path, f'{file_name}.md').is_file()
 
     # pylint: disable=protected-access
     def _get_handler_from_ctrl(self, compression_ctrl) -> Tuple[StructuredMaskHandler,
