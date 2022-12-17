@@ -23,7 +23,7 @@ The json configuration to enable Movement Sparsity is as follows. It is also pos
         "warmup_start_epoch": 1,
         "warmup_end_epoch": 6,
         "importance_regularization_factor": 0.1,
-        "enable_structured_masking": false
+        "enable_structured_masking": true
       },
       "sparse_structure_by_scopes": [
         {
@@ -41,7 +41,7 @@ The json configuration to enable Movement Sparsity is as follows. It is also pos
           "target_scopes": "{re}.*intermediate.*"
         }
       ],
-      "ignored_scopes": ["{re}.*pooler.*", "{re}.*classifier.*"]
+      "ignored_scopes": ["{re}.*pooler.*", "{re}.*classifier.*"],
     },
     ...(other algorithms)
   ]
@@ -58,7 +58,7 @@ Note: currently only `torch.nn.Linear` layers are supported by Movement Sparsity
 
 - `importance_regularization_factor`: The regularization factor on weight importance scores. With a larger positive value, more model weights will be regarded as less important and thus be sparsified. The appropriate value range of this argument can be quite different per model and task.
 
-- `enable_structured_masking`: Optional. A boolean to decide whether to do structured mask resolution after warmup stage. Currently, we only support structured masking on multi-head self-attention blocks and feed-forward networks in BERT, Swin and Wav2vec2 implemented in [Transformers](https://github.com/huggingface/transformers). If it is set to `false`, the output model is instead with unstructured sparsity. Default is `false`.
+- `enable_structured_masking`: Optional. A boolean to decide whether to do structured mask resolution after warmup stage. Currently, we only support structured masking on multi-head self-attention blocks and feed-forward networks in BERT, Swin and Wav2vec2 implemented in [Transformers](https://github.com/huggingface/transformers). If it is set to `false`, the output model is instead with unstructured sparsity. Default is `true`.
 
 - `sparse_structure_by_scopes`: Describes how each supported layer will be sparsified. This argument is a list, where each entry dictionary must specify `mode` and `target_scopes`, together with some extra arguments for a certain mode (e.g., `sparse_factors` for "block", and `axis` for "per_dim").
 

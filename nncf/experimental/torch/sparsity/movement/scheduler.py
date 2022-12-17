@@ -19,6 +19,9 @@ import torch
 from nncf.common.logging import nncf_logger
 from nncf.common.schedulers import BaseCompressionScheduler
 from nncf.common.schedulers import PolynomialDecaySchedule
+from nncf.config.schemata.experimental_schema import MOVEMENT_ENABLE_STRUCTURED_MASKING
+from nncf.config.schemata.experimental_schema import MOVEMENT_FINAL_IMPORTANCE_THRESHOLD
+from nncf.config.schemata.experimental_schema import MOVEMENT_POWER
 
 
 class MovementSchedulerStage(IntEnum):
@@ -73,13 +76,15 @@ class MovementSchedulerParams:
         :param params: Dict with parameters of movement sparsity scheduler.
         :return: The `MovementSchedulerParams` object.
         """
-        power: float = params.get('power', 3.)
-        init_importance_threshold: Optional[float] = params.get('init_importance_threshold', None)
-        final_importance_threshold: float = params.get('final_importance_threshold', 0.)
         warmup_start_epoch: int = params.get('warmup_start_epoch', None)
         warmup_end_epoch: int = params.get('warmup_end_epoch', None)
         importance_regularization_factor: float = params.get('importance_regularization_factor', None)
-        enable_structured_masking: bool = params.get('enable_structured_masking', True)
+        enable_structured_masking: bool = params.get('enable_structured_masking',
+                                                     MOVEMENT_ENABLE_STRUCTURED_MASKING)
+        power: float = params.get('power', MOVEMENT_POWER)
+        init_importance_threshold: Optional[float] = params.get('init_importance_threshold', None)
+        final_importance_threshold: float = params.get('final_importance_threshold',
+                                                       MOVEMENT_FINAL_IMPORTANCE_THRESHOLD)
         steps_per_epoch = params.get('steps_per_epoch', None)
 
         if None in [warmup_start_epoch, warmup_end_epoch, importance_regularization_factor]:
