@@ -404,16 +404,16 @@ class TestImportanceLoss:
         if (not torch.cuda.is_available()) and use_cuda:
             pytest.skip("Skipping CUDA test cases for CPU only setups")
         device = torch.device('cuda' if use_cuda else 'cpu')
-        sparse_layers = []
+        operands = []
         for loss_val in desc['sparse_layers_loss']:
-            layer = MovementSparsifier(mock_linear_nncf_node(), frozen=False)
+            operand = MovementSparsifier(mock_linear_nncf_node(), frozen=False)
             if use_cuda:
-                layer = layer.cuda()
+                operand = operand.cuda()
             loss_tensor = torch.tensor(loss_val, requires_grad=requires_grad, device=device)
-            layer.loss = MagicMock(return_value=loss_tensor)
-            sparse_layers.append(layer)
+            operand.loss = MagicMock(return_value=loss_tensor)
+            operands.append(operand)
 
-        loss_module = ImportanceLoss(sparse_layers)
+        loss_module = ImportanceLoss(operands)
         if desc['disable']:
             loss_module.disable()
         output = loss_module()
@@ -422,8 +422,8 @@ class TestImportanceLoss:
             assert output.requires_grad is False
             assert torch.allclose(output, torch.zeros_like(output))
         else:
-            for sparse_layer in sparse_layers:
-                sparse_layer.loss.assert_called_once()
+            for operand in operands:
+                operand.loss.assert_called_once()
             assert output.requires_grad is requires_grad
             assert torch.allclose(output, torch.tensor(desc['ref_output']))
 
