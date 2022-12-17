@@ -183,12 +183,12 @@ class TestSparsifier:
         has_bias = desc['init_bias_importance'] is not None
         recipe = LinearRunRecipe.from_default(
             input_size=4,
-            num_classes=4,
+            num_labels=4,
             bias=has_bias,
             sparse_structure_by_scopes=desc['sparse_structure_by_scopes'])
-        model = recipe.model
+        model = recipe.model()
         compression_ctrl, compressed_model = create_compressed_model(model,
-                                                                     recipe.nncf_config,
+                                                                     recipe.nncf_config(),
                                                                      dump_graphs=False)
         compressed_model.train()
         minfo = compression_ctrl.sparsified_module_info[0]
@@ -242,8 +242,8 @@ class TestSparsifier:
     def test_layer_actual_behavior_matches_sparsifier_mask(self, sparse_structure_by_scopes, model_bias: bool):
         recipe = LinearRunRecipe.from_default(bias=model_bias,
                                               sparse_structure_by_scopes=sparse_structure_by_scopes)
-        compression_ctrl, _ = create_compressed_model(recipe.model,
-                                                      recipe.nncf_config,
+        compression_ctrl, _ = create_compressed_model(recipe.model(),
+                                                      recipe.nncf_config(),
                                                       dump_graphs=False)
         module_info = compression_ctrl.sparsified_module_info[0]
         operand = module_info.operand

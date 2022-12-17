@@ -330,8 +330,8 @@ class TestStructuredMaskHandler:
     @pytest.mark.parametrize('run_recipe', STRUCTURED_MASK_SUPPORTED_RECIPES,
                              ids=[r.model_family for r in STRUCTURED_MASK_SUPPORTED_RECIPES])
     def test_create_ctx_groups(self, run_recipe):
-        compression_ctrl, _ = create_compressed_model(run_recipe.model,
-                                                      run_recipe.nncf_config,
+        compression_ctrl, _ = create_compressed_model(run_recipe.model(),
+                                                      run_recipe.nncf_config(),
                                                       dump_graphs=False)
         handler, _ = self._get_handler_from_ctrl(compression_ctrl)
         num_transformer_blocks = sum(tbinfo.num_hidden_layers for tbinfo in run_recipe.transformer_block_info)
@@ -350,8 +350,8 @@ class TestStructuredMaskHandler:
 
     def test_update_independent_structured_mask(self, mocker):
         run_recipe = STRUCTURED_MASK_SUPPORTED_RECIPES[0]
-        compression_ctrl, _ = create_compressed_model(run_recipe.model,
-                                                      run_recipe.nncf_config,
+        compression_ctrl, _ = create_compressed_model(run_recipe.model(),
+                                                      run_recipe.nncf_config(),
                                                       dump_graphs=False)
         handler, all_ctxes = self._get_handler_from_ctrl(compression_ctrl)
         mock_methods = [mocker.patch.object(ctx, 'update_independent_structured_mask_from_operand')
@@ -364,8 +364,8 @@ class TestStructuredMaskHandler:
                              ids=desc_test_resolve_dependent_structured.keys())
     def test_resolve_dependent_structured_mask(self, desc):
         run_recipe = STRUCTURED_MASK_SUPPORTED_RECIPES[0]
-        compression_ctrl, compressed_model = create_compressed_model(run_recipe.model,
-                                                                     run_recipe.nncf_config,
+        compression_ctrl, compressed_model = create_compressed_model(run_recipe.model(),
+                                                                     run_recipe.nncf_config(),
                                                                      dump_graphs=False)
         handler, all_ctxes = self._get_handler_from_ctrl(compression_ctrl)
         module_dict = run_recipe.get_nncf_modules_in_transformer_block_order(compressed_model)[0]
@@ -382,8 +382,8 @@ class TestStructuredMaskHandler:
 
     def test_populate_dependent_structured_mask_to_operand(self, mocker):
         run_recipe = STRUCTURED_MASK_SUPPORTED_RECIPES[0]
-        compression_ctrl, _ = create_compressed_model(run_recipe.model,
-                                                      run_recipe.nncf_config,
+        compression_ctrl, _ = create_compressed_model(run_recipe.model(),
+                                                      run_recipe.nncf_config(),
                                                       dump_graphs=False)
         handler, all_ctxes = self._get_handler_from_ctrl(compression_ctrl)
         mock_methods = [mocker.patch.object(ctx, 'populate_dependent_structured_mask_to_operand')
@@ -396,8 +396,8 @@ class TestStructuredMaskHandler:
     def test_report_structured_sparsity(self, tmp_path, mocker, max_num_of_kept_heads_to_report):
         file_name = 'structured_report'
         run_recipe = STRUCTURED_MASK_SUPPORTED_RECIPES[0]
-        compression_ctrl, _ = create_compressed_model(run_recipe.model,
-                                                      run_recipe.nncf_config,
+        compression_ctrl, _ = create_compressed_model(run_recipe.model(),
+                                                      run_recipe.nncf_config(),
                                                       dump_graphs=False)
         handler, _ = self._get_handler_from_ctrl(compression_ctrl)
         df = handler.report_structured_sparsity(
@@ -431,7 +431,7 @@ class TestStructuredMaskStrategy:
     @pytest.mark.parametrize('run_recipe', STRUCTURED_MASK_SUPPORTED_RECIPES)
     def test_detect_supported_model_family(self, run_recipe: BaseMockRunRecipe):
         empty_nncf_config = NNCFConfig(input_info=run_recipe.model_input_info)
-        _, compressed_model = create_compressed_model(run_recipe.model,
+        _, compressed_model = create_compressed_model(run_recipe.model(),
                                                       empty_nncf_config,
                                                       dump_graphs=False)
         retval = detect_supported_model_family(compressed_model)
@@ -444,7 +444,7 @@ class TestStructuredMaskStrategy:
     @pytest.mark.parametrize('run_recipe', STRUCTURED_MASK_SUPPORTED_RECIPES)
     def test_create_strategy(self, run_recipe: BaseMockRunRecipe):
         empty_nncf_config = NNCFConfig(input_info=run_recipe.model_input_info)
-        _, compressed_model = create_compressed_model(run_recipe.model,
+        _, compressed_model = create_compressed_model(run_recipe.model(),
                                                       empty_nncf_config,
                                                       dump_graphs=False)
         strategy_cls = STRUCTURED_MASK_STRATEGY.get(run_recipe.model_family)
@@ -461,7 +461,7 @@ class TestStructuredMaskStrategy:
     def test_error_on_unsupported_swin_models(self):
         run_recipe = SwinRunRecipe.from_default(depths=[1, 1], num_heads=[2, 2])
         empty_nncf_config = NNCFConfig(input_info=run_recipe.model_input_info)
-        _, compressed_model = create_compressed_model(run_recipe.model,
+        _, compressed_model = create_compressed_model(run_recipe.model(),
                                                       empty_nncf_config,
                                                       dump_graphs=False)
         strategy_cls = STRUCTURED_MASK_STRATEGY.get(run_recipe.model_family)

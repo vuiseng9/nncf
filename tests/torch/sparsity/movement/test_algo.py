@@ -149,8 +149,8 @@ class TestControllerCreation:
     ], ids=['bert', 'bert_no_ffn_bias', 'bert_with_compression_lr_multiplier', 'swin_no_qkv_bias'])
     def test_can_create_movement_sparsity_layers(self, sparse_structure_by_scopes, recipe: BaseMockRunRecipe):
         recipe.algo_config.sparse_structure_by_scopes = sparse_structure_by_scopes
-        compression_ctrl, compressed_model = create_compressed_model(recipe.model,
-                                                                     recipe.nncf_config,
+        compression_ctrl, compressed_model = create_compressed_model(recipe.model(),
+                                                                     recipe.nncf_config(),
                                                                      dump_graphs=False)
         assert isinstance(compression_ctrl, MovementSparsityController)
         assert isinstance(compression_ctrl.scheduler, MovementPolynomialThresholdScheduler)
@@ -222,7 +222,7 @@ class TestControllerCreation:
     def test_error_on_wrong_sparse_structure_by_scopes(self, desc: dict):
         recipe = BertRunRecipe.from_default(sparse_structure_by_scopes=desc['sparse_structure_by_scopes'])
         with pytest.raises(desc['error'], match=desc['match']):
-            create_compressed_model(recipe.model, recipe.nncf_config, dump_graphs=False)
+            create_compressed_model(recipe.model(), recipe.nncf_config(), dump_graphs=False)
 
     @pytest.mark.parametrize('recipe', [
         Conv2dRunRecipe.from_default(),
@@ -230,7 +230,7 @@ class TestControllerCreation:
     ])
     def test_error_on_no_supported_layers(self, recipe: BaseMockRunRecipe):
         with pytest.raises(RuntimeError, match='No sparsifiable layer'):
-            create_compressed_model(recipe.model, recipe.nncf_config, dump_graphs=False)
+            create_compressed_model(recipe.model(), recipe.nncf_config(), dump_graphs=False)
 
     @pytest.mark.parametrize('enable_structured_masking', [True, False])
     @pytest.mark.parametrize('run_recipe_cls',
@@ -240,8 +240,8 @@ class TestControllerCreation:
         recipe = run_recipe_cls.from_default(enable_structured_masking=enable_structured_masking)
         if enable_structured_masking is True:
             if recipe.supports_structured_masking:
-                compression_ctrl, _ = create_compressed_model(recipe.model,
-                                                              recipe.nncf_config,
+                compression_ctrl, _ = create_compressed_model(recipe.model(),
+                                                              recipe.nncf_config(),
                                                               dump_graphs=False)
                 assert hasattr(compression_ctrl, '_structured_mask_handler')
                 handler = getattr(compression_ctrl, '_structured_mask_handler')
@@ -249,10 +249,10 @@ class TestControllerCreation:
                 assert isinstance(handler.strategy, STRUCTURED_MASK_STRATEGY.get(recipe.model_family))
             else:
                 with pytest.raises(RuntimeError, match=r'no supported model'):
-                    create_compressed_model(recipe.model, recipe.nncf_config, dump_graphs=False)
+                    create_compressed_model(recipe.model(), recipe.nncf_config(), dump_graphs=False)
         else:
-            compression_ctrl, _ = create_compressed_model(recipe.model,
-                                                          recipe.nncf_config,
+            compression_ctrl, _ = create_compressed_model(recipe.model(),
+                                                          recipe.nncf_config(),
                                                           dump_graphs=False)
             assert (not hasattr(compression_ctrl, '_structured_mask_handler')
                     ) or getattr(compression_ctrl, '_structured_mask_handler') is None
@@ -261,12 +261,12 @@ class TestControllerCreation:
 class TestControllerStats:
     def test_calculate_sparsity(self):
         recipe = Conv2dPlusLinearRunRecipe.from_default()
-        model = recipe.model
+        model = recipe.model()
         for p in model.parameters():
             torch.nn.init.constant_(p, 1.)
         conv_numel, linear_numel = 56, 6
         compression_ctrl, _ = create_compressed_model(model,
-                                                      recipe.nncf_config,
+                                                      recipe.nncf_config(),
                                                       dump_graphs=False)
         minfo = compression_ctrl.sparsified_module_info[0]
         initialize_sparsifier_parameters_by_linspace(minfo.operand, -1, 1)
@@ -294,8 +294,8 @@ class TestControllerStats:
                                               importance_regularization_factor=importance_regularization_factor,
                                               steps_per_epoch=steps_per_epoch,
                                               log_dir=tmp_path)
-        compression_ctrl, compressed_model = create_compressed_model(recipe.model,
-                                                                     recipe.nncf_config,
+        compression_ctrl, compressed_model = create_compressed_model(recipe.model(),
+                                                                     recipe.nncf_config(),
                                                                      dump_graphs=False)
         callback = CompressionCallback(compression_ctrl)
         mock_dataset = recipe.generate_mock_dataset(batch_size * steps_per_epoch)
@@ -327,8 +327,8 @@ class TestControllerStats:
                                             enable_structured_masking=enable_structured_masking,
                                             log_dir=tmp_path)
         recipe.scheduler_params.steps_per_epoch = 5
-        compression_ctrl, compressed_model = create_compressed_model(recipe.model,
-                                                                     recipe.nncf_config,
+        compression_ctrl, compressed_model = create_compressed_model(recipe.model(),
+                                                                     recipe.nncf_config(),
                                                                      dump_graphs=False)
 
         assert isinstance(compression_ctrl.statistics().movement_sparsity, MovementSparsityStatistics)
@@ -358,8 +358,8 @@ class TestControllerStats:
                                             enable_structured_masking=enable_structured_masking,
                                             log_dir=tmp_path)
         recipe.scheduler_params.steps_per_epoch = 5
-        compression_ctrl, compressed_model = create_compressed_model(recipe.model,
-                                                                     recipe.nncf_config,
+        compression_ctrl, compressed_model = create_compressed_model(recipe.model(),
+                                                                     recipe.nncf_config(),
                                                                      dump_graphs=False)
         trainer = build_compression_trainer(tmp_path, compression_ctrl, compressed_model,
                                             batch_size=4,
@@ -385,8 +385,8 @@ class TestControllerCompressionInfo:
         recipe = LinearRunRecipe.from_default(warmup_start_epoch=1,
                                               warmup_end_epoch=2,
                                               steps_per_epoch=None)
-        compression_ctrl, _ = create_compressed_model(recipe.model,
-                                                      recipe.nncf_config,
+        compression_ctrl, _ = create_compressed_model(recipe.model(),
+                                                      recipe.nncf_config(),
                                                       dump_graphs=False)
         assert compression_ctrl.compression_stage() is CompressionStage.UNCOMPRESSED
         # epoch 0
@@ -408,8 +408,8 @@ class TestControllerCompressionInfo:
 
     def test_controller_compression_ratio(self, mocker):
         recipe = LinearRunRecipe.from_default()
-        compression_ctrl, _ = create_compressed_model(recipe.model,
-                                                      recipe.nncf_config,
+        compression_ctrl, _ = create_compressed_model(recipe.model(),
+                                                      recipe.nncf_config(),
                                                       dump_graphs=False)
         mock_stat = NNCFStatistics()
         mock_stat.register('movement_sparsity',
@@ -428,8 +428,8 @@ class TestModelSaving:
     ])
     def test_can_export_compressed_model(self, recipe: BaseMockRunRecipe, tmp_path):
         recipe.set_log_dir(tmp_path)
-        compression_ctrl, _ = create_compressed_model(recipe.model,
-                                                      recipe.nncf_config,
+        compression_ctrl, _ = create_compressed_model(recipe.model(),
+                                                      recipe.nncf_config(),
                                                       dump_graphs=False)
         onnx_path = str(tmp_path / 'model.onnx')
         compression_ctrl.export_model(onnx_path)
@@ -438,8 +438,8 @@ class TestModelSaving:
     def test_no_weight_override_on_export(self, tmp_path):
         recipe = LinearRunRecipe.from_default(log_dir=tmp_path)
         onnx_path = str(tmp_path / 'model.onnx')
-        compression_ctrl, compressed_model = create_compressed_model(recipe.model,
-                                                                     recipe.nncf_config,
+        compression_ctrl, compressed_model = create_compressed_model(recipe.model(),
+                                                                     recipe.nncf_config(),
                                                                      dump_graphs=False)
         for minfo in compression_ctrl.sparsified_module_info:
             initialize_sparsifier_parameters_by_linspace(minfo.operand, -1, 0.)
@@ -458,13 +458,13 @@ class TestModelSaving:
         SwinRunRecipe.from_default(image_size=384, patch_size=4, window_size=12,
                                    embed_dim=192, mlp_ratio=4,
                                    depths=(2, 2, 5, 2), num_heads=(6, 12, 24, 48),
-                                   num_classes=32,
+                                   num_labels=32,
                                    enable_structured_masking=False),
     ])
     def test_same_outputs_in_torch_and_exported_onnx(self, tmp_path: Path, recipe: BaseMockRunRecipe):
         num_samples = 4
-        compression_ctrl, compressed_model = create_compressed_model(recipe.model,
-                                                                     recipe.nncf_config,
+        compression_ctrl, compressed_model = create_compressed_model(recipe.model(),
+                                                                     recipe.nncf_config(),
                                                                      dump_graphs=False)
         dataset = recipe.generate_mock_dataset(num_samples, seed=42)
         for i, minfo in enumerate(compression_ctrl.sparsified_module_info):
@@ -505,8 +505,8 @@ class TestModelSaving:
         Conv2dPlusLinearRunRecipe.from_default(bias=False)
     ])
     def test_exported_onnx_has_sparsified_param(self, tmp_path: Path, linear_recipe: BaseMockRunRecipe):
-        compression_ctrl, _ = create_compressed_model(linear_recipe.model,
-                                                      linear_recipe.nncf_config,
+        compression_ctrl, _ = create_compressed_model(linear_recipe.model(),
+                                                      linear_recipe.nncf_config(),
                                                       dump_graphs=False)
 
         assert len(compression_ctrl.sparsified_module_info) == 1
@@ -548,7 +548,7 @@ class TestModelSaving:
 
     def test_compressed_model_state_dict_follows_original_torch_model(self):
         linear_recipe = LinearRunRecipe.from_default(bias=True)
-        model = linear_recipe.model
+        model = linear_recipe.model()
         original_state_dict = model.state_dict()
         ref_state_dict = {}
         for name, value in original_state_dict.items():
@@ -564,7 +564,7 @@ class TestModelSaving:
                     ref_state_dict[mask_name] = torch.ones_like(value, dtype=torch.float)
 
         _, compressed_model = create_compressed_model(model,
-                                                      linear_recipe.nncf_config,
+                                                      linear_recipe.nncf_config(),
                                                       dump_graphs=False)
         compressed_state_dict = compressed_model.state_dict()
         assert sorted(ref_state_dict) == sorted(compressed_state_dict)
@@ -803,8 +803,8 @@ class TestComponentUpdateInTraining:
         ffn_bias = (desc['unstructured_binary_mask']['ffn_i']['bias'] is not None)
         recipe = BertRunRecipe.from_default(log_dir=tmp_path, mhsa_qkv_bias=mhsa_qkv_bias,
                                             mhsa_o_bias=mhsa_o_bias, ffn_bias=ffn_bias)
-        compression_ctrl, compressed_model = create_compressed_model(recipe.model,
-                                                                     recipe.nncf_config,
+        compression_ctrl, compressed_model = create_compressed_model(recipe.model(),
+                                                                     recipe.nncf_config(),
                                                                      dump_graphs=False)
         compressed_model.train()
         module_dict = recipe.get_nncf_modules_in_transformer_block_order(compressed_model)[0]
@@ -833,8 +833,8 @@ class TestComponentUpdateInTraining:
         batch_size = 2
         steps_per_epoch = 2
         recipe = LinearRunRecipe.from_default(steps_per_epoch=steps_per_epoch, log_dir=tmp_path)
-        compression_ctrl, compressed_model = create_compressed_model(recipe.model,
-                                                                     recipe.nncf_config,
+        compression_ctrl, compressed_model = create_compressed_model(recipe.model(),
+                                                                     recipe.nncf_config(),
                                                                      dump_graphs=False)
 
         class CheckImportanceScoreCallback(CompressionCallback):
@@ -859,8 +859,8 @@ class TestComponentUpdateInTraining:
     def test_compression_loss_update(self, tmp_path):
         steps_per_epoch = 2
         recipe = LinearRunRecipe.from_default(steps_per_epoch=steps_per_epoch, log_dir=tmp_path)
-        compression_ctrl, compressed_model = create_compressed_model(recipe.model,
-                                                                     recipe.nncf_config,
+        compression_ctrl, compressed_model = create_compressed_model(recipe.model(),
+                                                                     recipe.nncf_config(),
                                                                      dump_graphs=False)
 
         class CheckCompressionLossCallback(CompressionCallback):
@@ -894,8 +894,8 @@ class TestComponentUpdateInTraining:
         steps_per_epoch = 5
         recipe.scheduler_params.steps_per_epoch = steps_per_epoch
         recipe.set_log_dir(tmp_path)
-        compression_ctrl, compressed_model = create_compressed_model(recipe.model,
-                                                                     recipe.nncf_config,
+        compression_ctrl, compressed_model = create_compressed_model(recipe.model(),
+                                                                     recipe.nncf_config(),
                                                                      dump_graphs=False)
 
         class CheckBinaryMaskCallback(CompressionCallback):
@@ -933,8 +933,8 @@ class TestComponentUpdateInTraining:
                                               init_importance_threshold=None,
                                               steps_per_epoch=steps_per_epoch,
                                               log_dir=tmp_path)
-        compression_ctrl, compressed_model = create_compressed_model(recipe.model,
-                                                                     recipe.nncf_config,
+        compression_ctrl, compressed_model = create_compressed_model(recipe.model(),
+                                                                     recipe.nncf_config(),
                                                                      dump_graphs=False)
 
         class CheckInitImportanceThresholdCallback(CompressionCallback):
