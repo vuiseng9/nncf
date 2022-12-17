@@ -42,22 +42,23 @@ class MovementSchedulerParams:
                  warmup_start_epoch: int,
                  warmup_end_epoch: int,
                  importance_regularization_factor: float,
+                 enable_structured_masking: bool = True,
                  init_importance_threshold: Optional[float] = None,
                  final_importance_threshold: float = 0.,
                  power: float = 3,
                  steps_per_epoch: Optional[int] = None,
-                 enable_structured_masking: bool = True):
+                 ):
         """
         Initializes and validates the params for scheduler.
 
         :param warmup_start_epoch: Index of the starting epoch (include) for warmup stage.
         :param warmup_end_epoch: Index of the end epoch (exclude) for warmup stage.
         :param importance_regularization_factor: The regularization factor on weight importance scores.
+        :param enable_structured_masking: Whether to do structured mask resolution after warmup stage.
         :param init_importance_threshold: The initial value of importance threshold during warmup stage.
         :param final_importance_threshold: The final value of importance threshold during warmup stage.
         :param power: The power value of polynomial decay for threshold update during warmup stage.
         :param steps_per_epoch: Number of training steps in one epoch.
-        :param enable_structured_masking: Whether to do structured mask resolution after warmup stage.
         """
         self.power = power
         self.warmup_start_epoch = warmup_start_epoch
@@ -81,10 +82,10 @@ class MovementSchedulerParams:
         importance_regularization_factor: float = params.get('importance_regularization_factor', None)
         enable_structured_masking: bool = params.get('enable_structured_masking',
                                                      MOVEMENT_ENABLE_STRUCTURED_MASKING)
-        power: float = params.get('power', MOVEMENT_POWER)
         init_importance_threshold: Optional[float] = params.get('init_importance_threshold', None)
         final_importance_threshold: float = params.get('final_importance_threshold',
                                                        MOVEMENT_FINAL_IMPORTANCE_THRESHOLD)
+        power: float = params.get('power', MOVEMENT_POWER)
         steps_per_epoch = params.get('steps_per_epoch', None)
 
         if None in [warmup_start_epoch, warmup_end_epoch, importance_regularization_factor]:
@@ -110,11 +111,11 @@ class MovementSchedulerParams:
             warmup_start_epoch=warmup_start_epoch,
             warmup_end_epoch=warmup_end_epoch,
             importance_regularization_factor=importance_regularization_factor,
+            enable_structured_masking=enable_structured_masking,
             init_importance_threshold=init_importance_threshold,
             final_importance_threshold=final_importance_threshold,
             power=power,
             steps_per_epoch=steps_per_epoch,
-            enable_structured_masking=enable_structured_masking,
         )
 
 
