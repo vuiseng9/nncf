@@ -11,7 +11,8 @@
  limitations under the License.
 """
 
-import os
+import sys
+from copy import deepcopy
 from typing import Any
 
 import torch
@@ -183,7 +184,7 @@ def get_module(params, per_tensor_scale_shape):
 
 
 if __name__ == '__main__':
-    file_name = 'benchmark_quantize_layers_result.csv' if len(os.argv) == 1 else os.argv[1]
+    file_name = 'benchmark_quantize_layers_result.csv' if len(sys.argv) == 1 else sys.argv[1]
     print(f'Benchmark results will be saved to file {file_name}')
 
     benchmark_data = []
@@ -207,10 +208,11 @@ if __name__ == '__main__':
         else:
             call_fn(module, input_size, params['device'], runs,
                     dtype=params['dtype'], output=benchmark_data)
-        batch_data = params.pop('batch')
+        log_params = deepcopy(params)
+        batch_data = log_params.pop('batch')
         batch_data.update({'runs': batch_data['runs'][params['device']]})
-        params.update(batch_data)
-        benchmark_data[-1] = {**params, **benchmark_data[-1]}
+        log_params.update(batch_data)
+        benchmark_data[-1] = {**log_params, **benchmark_data[-1]}
 
     df = pd.DataFrame(benchmark_data)
 
