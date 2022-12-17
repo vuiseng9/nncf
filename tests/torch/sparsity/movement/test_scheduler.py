@@ -26,6 +26,7 @@ from nncf.experimental.torch.sparsity.movement.scheduler import MovementPolynomi
 from nncf.experimental.torch.sparsity.movement.scheduler import MovementSchedulerParams
 from nncf.experimental.torch.sparsity.movement.scheduler import MovementSchedulerStage
 from nncf.torch.model_creation import create_compressed_model
+from tests.shared.logging import nncf_caplog  # pylint:disable=unused-import
 from tests.torch.sparsity.movement.helpers import BaseMockRunRecipe
 from tests.torch.sparsity.movement.helpers import BertRunRecipe
 from tests.torch.sparsity.movement.helpers import LinearRunRecipe
@@ -88,11 +89,10 @@ class TestSchedulerParams:
                          importance_regularization_factor=1),
              match='`init_importance_threshold` is equal to or greater'),
     ])
-    def test_warn_on_improper_config(self, desc: dict, mocker, caplog):
-        with caplog.at_level(logging.WARNING, logger=nncf_logger.name):
-            mocker.patch.object(nncf_logger, 'propagate', True)
+    def test_warn_on_improper_config(self, desc: dict, nncf_caplog):  # pylint:disable=redefined-outer-name
+        with nncf_caplog.at_level(logging.WARNING, logger=nncf_logger.name):
             _ = MovementSchedulerParams.from_dict(desc['params'])
-        assert desc['match'] in caplog.text
+        assert desc['match'] in nncf_caplog.text
 
 
 desc_current_importance_threshold_and_regularization_factor = {

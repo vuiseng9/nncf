@@ -34,6 +34,7 @@ from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import S
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import StructuredMaskRule
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import detect_supported_model_family
 from nncf.torch import create_compressed_model
+from tests.shared.logging import nncf_caplog  # pylint:disable=unused-import
 from tests.torch.sparsity.movement.helpers import BaseMockRunRecipe
 from tests.torch.sparsity.movement.helpers import BertRunRecipe
 from tests.torch.sparsity.movement.helpers import SwinRunRecipe
@@ -181,18 +182,18 @@ class TestStructuredMaskContext:
 
     @pytest.mark.parametrize('is_dependent_mask', [True, False],
                              ids=['dependent', 'independent'])
-    def test_structured_mask_setter_with_device_change(self, is_dependent_mask: bool, mocker, caplog):
+    def test_structured_mask_setter_with_device_change(self, is_dependent_mask: bool,
+                                                       nncf_caplog):  # pylint: disable=redefined-outer-name
         mask_name = 'dependent_structured_mask' if is_dependent_mask else 'independent_structured_mask'
         operand = MovementSparsifier(mock_linear_nncf_node(1, 1))
         ctx = StructuredMaskContext(operand, 'linear', (1, 1), True)
         setattr(ctx, mask_name, torch.ones((1, 1)))
         # use 'meta' device for check since it does not need gpus
         mock_meta_mask = torch.ones((1, 1), device=torch.device('meta'))
-        with caplog.at_level(logging.DEBUG, logger=nncf_logger.name):
-            mocker.patch.object(nncf_logger, 'propagate', True)
+        with nncf_caplog.at_level(logging.DEBUG, logger=nncf_logger.name):
             setattr(ctx, mask_name, mock_meta_mask)
             assert getattr(ctx, mask_name).device == torch.device('meta')
-        assert f'Changing {mask_name} device' in caplog.text
+        assert f'Changing {mask_name} device' in nncf_caplog.text
 
     @pytest.mark.parametrize('desc', desc_test_update_independent_structured_mask.values(),
                              ids=desc_test_update_independent_structured_mask.keys())
