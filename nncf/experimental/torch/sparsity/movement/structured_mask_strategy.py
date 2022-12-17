@@ -24,7 +24,7 @@ STRUCTURED_MASK_STRATEGY = Registry('structured_mask_strategy')
 
 def detect_supported_model_family(model: NNCFNetwork) -> Optional[str]:
     """
-    Returns the model family if the model is supported by movement sparsity to conduct structured
+    Returns the model family name if the model is supported by movement sparsity to conduct structured
     masking. Such name can be used as the key in `STRUCTURED_MASK_STRATEGY` to get the corresponding
     structured mask strategy.
 
