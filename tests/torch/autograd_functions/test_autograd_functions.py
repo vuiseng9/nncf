@@ -36,6 +36,11 @@ class STThresholdTestCase:
 @pytest.mark.parametrize("use_cuda", [True, False])
 @pytest.mark.parametrize("requires_grad", [True, False])
 class TestAutogradFunction:
+    @pytest.fixture(autouse=True)
+    def check_cuda(self, use_cuda: bool):
+        if use_cuda and (not torch.cuda.is_available()):
+            pytest.skip("Skipping CUDA test cases for CPU only setups.")
+
     @pytest.mark.parametrize('test_case', [
         STRoundTestCase(
             input_tensor=torch.tensor([[1.2, -3.4], [5.6, 7.89]]),
@@ -63,8 +68,6 @@ class TestAutogradFunction:
         )
     ])
     def test_STRound(self, test_case: STRoundTestCase, use_cuda: bool, requires_grad: bool):
-        if not torch.cuda.is_available() and use_cuda is True:
-            pytest.skip("Skipping CUDA test cases for CPU only setups")
         device = torch.device('cuda' if use_cuda else 'cpu')
         input_tensor = test_case.input_tensor.clone().to(device).requires_grad_(requires_grad)
         output_tensor = STRound.apply(input_tensor)
@@ -111,8 +114,6 @@ class TestAutogradFunction:
         )
     ])
     def test_STThreshold(self, test_case: STThresholdTestCase, use_cuda: bool, requires_grad: bool):
-        if not torch.cuda.is_available() and use_cuda is True:
-            pytest.skip("Skipping CUDA test cases for CPU only setups")
         device = torch.device('cuda' if use_cuda else 'cpu')
         input_tensor = test_case.input_tensor.clone().to(device).requires_grad_(requires_grad)
         output_tensor = STThreshold.apply(input_tensor, test_case.threshold)
