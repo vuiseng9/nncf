@@ -365,8 +365,8 @@ class TestSchedulerAdaptiveInitThreshold:
             steps_per_epoch=10, importance_regularization_factor=1.,
             enable_structured_masking=False,
             init_importance_threshold=None, final_importance_threshold=1e3)
-        compression_ctrl, _ = create_compressed_model(recipe.model,
-                                                      recipe.nncf_config,
+        compression_ctrl, _ = create_compressed_model(recipe.model(),
+                                                      recipe.nncf_config(),
                                                       dump_graphs=False)
         for i, minfo in enumerate(sorted(compression_ctrl.sparsified_module_info,
                                          key=lambda x: x.module_node_name)):
@@ -385,8 +385,8 @@ class TestSchedulerAdaptiveInitThreshold:
     def test_calc_init_threshold_called_once(self, tmp_path, mocker):
         recipe = BertRunRecipe.from_default(log_dir=tmp_path)
         recipe.scheduler_params.init_importance_threshold = None
-        compression_ctrl, _ = create_compressed_model(recipe.model,
-                                                      recipe.nncf_config,
+        compression_ctrl, _ = create_compressed_model(recipe.model(),
+                                                      recipe.nncf_config(),
                                                       dump_graphs=False)
         func = mocker.patch.object(compression_ctrl.scheduler,
                                    '_calc_init_threshold_from_controller',
@@ -403,8 +403,8 @@ class TestSchedulerAdaptiveInitThreshold:
         recipe = LinearRunRecipe.from_default(input_size=500, bias=False,
                                               init_importance_threshold=None,
                                               steps_per_epoch=None)  # 2x50 shape linear weight
-        compression_ctrl, _ = create_compressed_model(recipe.model,
-                                                      recipe.nncf_config,
+        compression_ctrl, _ = create_compressed_model(recipe.model(),
+                                                      recipe.nncf_config(),
                                                       dump_graphs=False)
         for minfo in compression_ctrl.sparsified_module_info:
             initialize_sparsifier_parameters_by_linspace(minfo.operand, 0., 999.)
