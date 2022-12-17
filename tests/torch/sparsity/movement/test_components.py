@@ -11,7 +11,7 @@
  limitations under the License.
 """
 from typing import Any, Dict, Tuple
-from unittest.mock import Mock
+from unittest.mock import MagicMock
 from unittest.mock import call
 
 import pytest
@@ -398,30 +398,45 @@ class TestImportanceLoss:
             disable=True,
             sparse_layers_loss=(1.,),
             ref_output=1.
-        ),
-        dict(
-            disable=False,
-            sparse_layers_loss=(),
-            ref_output=0.
-        ),
+        )
     ])
     @pytest.mark.parametrize('requires_grad', [True, False])
-    def test_importance_loss_forward(self, desc, requires_grad: bool):
-        sparse_layers = [Mock(loss=Mock(return_value=torch.tensor(loss_val, requires_grad=requires_grad)))
-                         for loss_val in desc['sparse_layers_loss']]
-        loss = ImportanceLoss(sparse_layers)
-        if desc['disable']:
-            loss.disable()
-        output = loss()
+    @pytest.mark.parametrize('use_cuda', [True, False])
+    def test_importance_loss_forward(self, desc, requires_grad: bool, use_cuda: bool):
+        if (not torch.cuda.is_available()) and use_cuda:
+            pytest.skip("Skipping CUDA test cases for CPU only setups")
+        device = torch.device('cuda' if use_cuda else 'cpu')
+        sparse_layers = []
+        for loss_val in desc['sparse_layers_loss']:
+            layer = MovementSparsifier(mock_linear_nncf_node(), frozen=False)
+            if use_cuda:
+                layer = layer.cuda()
+            loss_tensor = torch.tensor(loss_val, requires_grad=requires_grad, device=device)
+            layer.loss = MagicMock(return_value=loss_tensor)
+            sparse_layers.append(layer)
 
-        if desc['disable'] or not desc['sparse_layers_loss']:
-            assert isinstance(output, float) and output == approx(0.)
+        loss_module = ImportanceLoss(sparse_layers)
+        if desc['disable']:
+            loss_module.disable()
+        output = loss_module()
+        assert isinstance(output, torch.Tensor) and output.device.type == device.type
+        if desc['disable']:
+            assert output.requires_grad is False
+            assert torch.allclose(output, torch.zeros_like(output))
         else:
             for sparse_layer in sparse_layers:
-                assert sparse_layer.method_calls == [call.loss()]
-            assert isinstance(output, torch.Tensor)
+                sparse_layer.loss.assert_called_once()
             assert output.requires_grad is requires_grad
             assert torch.allclose(output, torch.tensor(desc['ref_output']))
+
+    def test_importance_loss_adapts_to_device_change(self):
+        sparsifier = MovementSparsifier(mock_linear_nncf_node(), frozen=False)
+        loss_module = ImportanceLoss([sparsifier])
+        loss_cpu = loss_module()
+        assert loss_cpu.device.type == 'cpu'
+        sparsifier.cuda()
+        loss_cuda = loss_module()
+        assert loss_cuda.device.type == 'cuda'
 
 
 class TestMovementSparsityStatistics:
