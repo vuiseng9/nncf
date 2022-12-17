@@ -304,7 +304,6 @@ class StructuredMaskHandler:
                                    save_dir: str,
                                    file_name: str = 'structured_sparsity',
                                    to_csv: bool = True,
-                                   to_markdown: bool = False,
                                    max_num_of_kept_heads_to_report: int = 20) -> pd.DataFrame:
         """
         Generates a report file that describes the structured mask statistics for each context group.
@@ -312,7 +311,6 @@ class StructuredMaskHandler:
         :param save_dir: The folder to save the report file.
         :param file_name: File name of the report.
         :param to_csv: Whether to dump the report file in csv format.
-        :param to_markdown: Whether to dump the report file in markdown format.
         :param max_num_of_kept_heads_to_report: The max number of heads or channels to display that are
             preserved after structured masking. Used to avoid showing too many elements in the list.
         :return: The structured mask statistics in `pandas.DataFrame` format.
@@ -320,8 +318,6 @@ class StructuredMaskHandler:
         df = self._gather_statistics_dataframe(max_num_of_kept_heads_to_report)
         if to_csv:
             df.to_csv(Path(save_dir, f'{file_name}.csv'))
-        if to_markdown:
-            df.to_markdown(Path(save_dir, f'{file_name}.md'))
         return df
 
     def _gather_statistics_dataframe(self, max_num_of_kept_heads_to_report: int = 20) -> pd.DataFrame:
