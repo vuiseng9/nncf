@@ -436,13 +436,13 @@ class TestModelSaving:
         compression_ctrl.export_model(onnx_path)
         assert Path(onnx_path).exists()
 
-    def test_no_weight_override_on_export(tmp_path):
+    def test_no_weight_override_on_export(self, tmp_path):
         recipe = LinearRunRecipe.from_default(log_dir=tmp_path)
         onnx_path = str(tmp_path / 'model.onnx')
         compression_ctrl, compressed_model = create_compressed_model(recipe.model,
                                                                      recipe.nncf_config,
                                                                      dump_graphs=False)
-        for minfo in enumerate(compression_ctrl.sparsified_module_info):
+        for minfo in compression_ctrl.sparsified_module_info:
             initialize_sparsifier_parameters_by_linspace(minfo.operand, -1, 0.)
             force_update_sparsifier_binary_masks_by_threshold(minfo.operand, 1.)  # all-zero masks
         state_before = deepcopy(compressed_model.state_dict())
@@ -755,17 +755,15 @@ class TestComponentUpdateInTraining:
                 for layer in self.compression_ctrl.loss.sparse_layers:
                     assert isinstance(layer, MovementSparsifier)
                 loss = self.compression_ctrl.loss()
-                # check gradient
                 assert state.epoch is not None
+                assert isinstance(loss, torch.Tensor)
                 if recipe.scheduler_params.warmup_start_epoch < state.epoch and \
                         state.epoch <= recipe.scheduler_params.warmup_end_epoch and \
                         self.compression_ctrl.scheduler.current_importance_regularization_factor > 0:
-                    assert isinstance(loss, torch.Tensor)
                     assert loss.requires_grad is True
                     assert loss > 0.
                 else:
-                    assert (isinstance(loss, float) and loss == 0.) or \
-                        (isinstance(loss, torch.Tensor) and not loss.is_nonzero())
+                    assert (not loss.is_nonzero())
 
         trainer = build_compression_trainer(tmp_path, compression_ctrl, compressed_model,
                                             train_dataset=recipe.generate_mock_dataset(steps_per_epoch),
