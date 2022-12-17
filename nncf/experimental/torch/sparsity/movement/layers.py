@@ -27,7 +27,7 @@ from nncf.torch.sparsity.layers import BinaryMask
 from nncf.torch.utils import is_tracing_state
 
 
-class SparseStructure(str, Enum):
+class SparseStructure(Enum):
     FINE = 'fine'
     BLOCK = 'block'
     PER_DIM = 'per_dim'
@@ -43,7 +43,7 @@ class SparseConfig:
                  sparse_factors: Optional[Tuple[int, int]] = None,
                  sparse_axis: Optional[int] = None):
         """
-        Parses and validates the sparse structure for movement sparsity.
+        Parses and validates the sparse structure of a certain layer for movement sparsity.
 
         :param mode: The sparse structure mode.
         :param sparse_factors: Block shape to sparsify as a whole in a weight. Required when `mode` is "block".
@@ -89,6 +89,8 @@ class SparseConfig:
     def from_config(cls, config: Dict[str, Any]) -> 'SparseConfig':
         """
         Creates the object from its config.
+
+        :param config: A dict that describes the sparse structure.
         """
         mode_str = config.get('mode', SparseStructure.FINE.value)
         mode = SparseStructure(mode_str)
@@ -103,10 +105,16 @@ class SparseConfig:
 class SparseConfigByScope:
     """
     Defines an entry for `sparse_structure_by_scopes` in movement sparsity configuration.
-    It includes the sparse config, and the target scopes it is applied to.
+    It includes the sparse structure config, and the target scopes it is applied to.
     """
 
     def __init__(self, sparse_config: SparseConfig, target_scopes: Union[str, List[str]]):
+        """
+        Initializes the object that describes the sparse structure and the layers it matches.
+
+        :param sparse_config: `SparseConfig` object that describes the sparse structure config.
+        :param target_scopes: The scopes to match with this `sparse_config`.
+        """
         self.sparse_config = sparse_config
         self.target_scopes = target_scopes
 
@@ -114,6 +122,8 @@ class SparseConfigByScope:
     def from_config(cls, config: Dict[str, Any]) -> 'SparseConfigByScope':
         """
         Creates the object from its representation.
+
+        :param config: A dict that describes the sparse structure.
         """
         error_prefix = f'Invalid sparse structure by scopes {config}.'
         target_scopes = config.get('target_scopes')
@@ -148,7 +158,7 @@ class MovementSparsifier(nn.Module):
         """
         super().__init__()
         self.target_module_node = target_module_node
-        self.prune_bias = (target_module_node.layer_attributes.bias not in (False, None))
+        self.prune_bias = bool(target_module_node.layer_attributes.bias)
         self.frozen = frozen
         self.layerwise_loss_lambda = layerwise_loss_lambda
         self._importance_threshold = -math.inf
@@ -217,6 +227,12 @@ class MovementSparsifier(nn.Module):
         return ctx.apply_binary_mask(param_tensor)
 
     def get_importance(self, is_bias: bool = False, expanded: bool = True) -> torch.Tensor:
+        """
+        Gets the importance score parameter of the operand.
+
+        :param is_bias: If true, will return the bias importance. Otherwise will return the weight importance.
+        :param expanded: Whether should expand the importance to the same shape as module weight or bias.
+        """
         if is_bias and (not self.prune_bias):
             raise ValueError('The layer to sparsify does not contain bias.')
         importance = self.bias_importance if is_bias else self.weight_importance

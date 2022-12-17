@@ -146,14 +146,23 @@ class MovementSparsityController(BaseSparsityAlgoController):
         return self.statistics().movement_sparsity.model_statistics.sparsity_level
 
     def reset_independent_structured_mask(self):
+        """
+        Asks the structured mask handler to gather independent masks in the model.
+        """
         assert self._scheduler.enable_structured_masking is True
         self._structured_mask_handler.update_independent_structured_mask()
 
     def resolve_structured_mask(self):
+        """
+        Asks the structured mask handler to resolve dependent masks in the model.
+        """
         assert self._scheduler.enable_structured_masking is True
         self._structured_mask_handler.resolve_dependent_structured_mask()
 
     def populate_structured_mask(self):
+        """
+        Asks the structured mask handler to update structured binary masks in model operands.
+        """
         assert self._scheduler.enable_structured_masking is True
         self._structured_mask_handler.populate_dependent_structured_mask_to_operand()
         self._structured_mask_handler.report_structured_sparsity(self._config.get('log_dir', '.'))
