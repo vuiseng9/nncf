@@ -134,28 +134,43 @@ desc_test_sparsifier_forward = {
         sparse_structure_by_scopes=[{'mode': 'block', 'sparse_factors': [2, 2], 'target_scopes': '{re}model'}],
         init_weight_importance=torch.FloatTensor([[0, 1], [0, 1]]),
         init_bias_importance=torch.FloatTensor([1, 0]),
-        ref_masked_weight=torch.FloatTensor([[0, 0, 2, 3], [0, 0, 6, 7], [0, 0, 10, 11], [0, 0, 14, 15]]),
+        ref_masked_weight=torch.FloatTensor([[0, 0, 2, 3],
+                                             [0, 0, 6, 7],
+                                             [0, 0, 10, 11],
+                                             [0, 0, 14, 15]]),
         ref_masked_bias=torch.FloatTensor([0, 1, 0, 0]),
     ),
     'per_row': dict(
         sparse_structure_by_scopes=[{'mode': 'per_dim', 'axis': 0, 'target_scopes': '{re}model'}],
         init_weight_importance=torch.FloatTensor([[0], [1], [0], [1]]),
         init_bias_importance=torch.FloatTensor([1, 1, 0, 0]),
-        ref_masked_weight=torch.FloatTensor([[0] * 4, [4, 5, 6, 7], [0] * 4, [12, 13, 14, 15]]),
+        ref_masked_weight=torch.FloatTensor([[0, 0, 0, 0],
+                                             [4, 5, 6, 7],
+                                             [0, 0, 0, 0],
+                                             [12, 13, 14, 15]]),
         ref_masked_bias=torch.FloatTensor([0, 1, 0, 0]),
     ),
     'per_column': dict(
         sparse_structure_by_scopes=[{'mode': 'per_dim', 'axis': 1, 'target_scopes': '{re}model'}],
         init_weight_importance=torch.FloatTensor([0, 1, 0, 1]),
         init_bias_importance=torch.FloatTensor([0]),
-        ref_masked_weight=torch.FloatTensor([[0, 1, 0, 3], [0, 5, 0, 7], [0, 9, 0, 11], [0, 13, 0, 15]]),
+        ref_masked_weight=torch.FloatTensor([[0, 1, 0, 3],
+                                             [0, 5, 0, 7],
+                                             [0, 9, 0, 11],
+                                             [0, 13, 0, 15]]),
         ref_masked_bias=torch.FloatTensor([0, 0, 0, 0]),
     ),
     'fine': dict(
         sparse_structure_by_scopes=[{'mode': 'fine', 'sparse_factors': [1, 1], 'target_scopes': '{re}model'}],
-        init_weight_importance=torch.FloatTensor([[0, 1, 1, 1], [0, 1, 1, 1], [1] * 4, [0] * 4]),
+        init_weight_importance=torch.FloatTensor([[0, 1, 1, 1],
+                                                  [0, 1, 1, 1],
+                                                  [1, 1, 1, 1],
+                                                  [0, 0, 0, 0]]),
         init_bias_importance=torch.FloatTensor([0, 0, 0, 1]),
-        ref_masked_weight=torch.FloatTensor([[0, 1, 2, 3], [0, 5, 6, 7], [8, 9, 10, 11], [0] * 4]),
+        ref_masked_weight=torch.FloatTensor([[0, 1, 2, 3],
+                                             [0, 5, 6, 7],
+                                             [8, 9, 10, 11],
+                                             [0, 0, 0, 0]]),
         ref_masked_bias=torch.FloatTensor([0, 0, 0, 3]),
     ),
 }
@@ -224,7 +239,7 @@ class TestSparsifier:
         }],
     ])
     @pytest.mark.parametrize('model_bias', [True, False])
-    def test_layer_actual_behavior_matches_sparsifer_mask(self, sparse_structure_by_scopes, model_bias: bool):
+    def test_layer_actual_behavior_matches_sparsifier_mask(self, sparse_structure_by_scopes, model_bias: bool):
         recipe = LinearRunRecipe.from_default(bias=model_bias,
                                               sparse_structure_by_scopes=sparse_structure_by_scopes)
         compression_ctrl, _ = create_compressed_model(recipe.model,
@@ -262,9 +277,9 @@ class TestSparsifier:
         ref_masked_weight = torch.Tensor([[0., 2], [0, 4]])
         assert torch.allclose(masked_weight, ref_masked_weight)
         bias = torch.Tensor([1., 2])
-        mssked_bias = operand.apply_binary_mask(bias, is_bias=True)
+        masked_bias = operand.apply_binary_mask(bias, is_bias=True)
         ref_masked_bias = torch.Tensor([0., 2])
-        assert torch.allclose(mssked_bias, ref_masked_bias)
+        assert torch.allclose(masked_bias, ref_masked_bias)
 
     @pytest.mark.parametrize('layerwise_loss_lambda', [0.5, 2.0])
     @pytest.mark.parametrize('importance_regularization_factor', [0., 1.])

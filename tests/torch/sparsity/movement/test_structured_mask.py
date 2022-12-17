@@ -55,25 +55,33 @@ STRUCTURED_MASK_SUPPORTED_RECIPES = [
 
 desc_test_update_independent_structured_mask = {
     'prune1row': dict(
-        weight_binary_mask=torch.FloatTensor([[1, 1, 0], [1, 1, 0], [0, 0, 0]]),
+        weight_binary_mask=torch.FloatTensor([[1, 1, 0],
+                                              [1, 1, 0],
+                                              [0, 0, 0]]),
         bias_binary_mask=torch.FloatTensor([1, 0, 0]),
         prune_grid=(1, 3),
         ref_independent_structured_mask=torch.FloatTensor([[1], [1], [0]])
     ),
     'prune1col': dict(
-        weight_binary_mask=torch.FloatTensor([[1, 1, 0], [1, 1, 0], [0, 0, 0]]),
+        weight_binary_mask=torch.FloatTensor([[1, 1, 0],
+                                              [1, 1, 0],
+                                              [0, 0, 0]]),
         bias_binary_mask=torch.FloatTensor([1, 0, 0]),
         prune_grid=(3, 1),
         ref_independent_structured_mask=torch.FloatTensor([[1, 1, 0]])
     ),
     'prune1col_nobias': dict(
-        weight_binary_mask=torch.FloatTensor([[1, 1, 0], [1, 1, 0], [0, 0, 0]]),
+        weight_binary_mask=torch.FloatTensor([[1, 1, 0],
+                                              [1, 1, 0],
+                                              [0, 0, 0]]),
         bias_binary_mask=None,
         prune_grid=(3, 1),
         ref_independent_structured_mask=torch.FloatTensor([[1, 1, 0]])
     ),
-    'not_pruneable': dict(
-        weight_binary_mask=torch.FloatTensor([[1, 1, 0], [1, 1, 0], [0, 0, 0]]),
+    'not_prunable': dict(
+        weight_binary_mask=torch.FloatTensor([[1, 1, 0],
+                                              [1, 1, 0],
+                                              [0, 0, 0]]),
         bias_binary_mask=torch.FloatTensor([1, 1, 1]),
         prune_grid=(1, 3),
         ref_independent_structured_mask=torch.FloatTensor([[1], [1], [1]])

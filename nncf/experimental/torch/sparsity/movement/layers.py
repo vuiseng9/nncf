@@ -56,33 +56,32 @@ class SparseConfig:
         if self.mode == SparseStructure.FINE:
             if not ((isinstance(sparse_factors, (tuple, list)) and tuple(sparse_factors) == (1, 1)) or
                     sparse_factors is None):
-                raise ValueError(
-                    f'{error_prefix} Fine sparse structure expects `sparse_factors` to be [1, 1] or unspecified.')
+                raise ValueError(f'{error_prefix} Fine sparse structure expects `sparse_factors` '
+                                 'to be [1, 1] or unspecified.')
             if sparse_axis is not None:
-                raise ValueError(
-                    f'{error_prefix} Fine sparse structure does not expect specified `axis`.')
+                raise ValueError(f'{error_prefix} Fine sparse structure does not expect '
+                                 'specified `axis`.')
             self.sparse_factors = (1, 1)
 
         if self.mode == SparseStructure.BLOCK:
             if sparse_factors is None:
-                raise ValueError(
-                    f'{error_prefix} Missing `sparse_factors`. Block sparsity structure expects it specified.')
+                raise ValueError(f'{error_prefix} Missing `sparse_factors`. Block sparsity '
+                                 'structure expects it specified.')
             if not (isinstance(sparse_factors, (tuple, list)) and len(sparse_factors) == 2):
-                raise ValueError(
-                    f'{error_prefix} Invalid format of `sparse_factors. '
-                    'Block sparsity structure expects tuple of two numbers.')
+                raise ValueError(f'{error_prefix} Invalid format of `sparse_factors. '
+                                 'Block sparsity structure expects tuple of two numbers.')
             if sparse_axis is not None:
-                raise ValueError(
-                    f'{error_prefix} Block sparse structure does not expect specified `axis`.')
+                raise ValueError(f'{error_prefix} Block sparse structure does not expect '
+                                 'specified `axis`.')
             self.sparse_factors = tuple(sparse_factors)
 
         if self.mode == SparseStructure.PER_DIM:
             if sparse_axis is None:
-                raise ValueError(
-                    f'{error_prefix} Missing `axis`. Per-dim sparsity structure expects it specified.')
+                raise ValueError(f'{error_prefix} Missing `axis`. Per-dim sparsity structure '
+                                 'expects it to be specified.')
             if sparse_factors is not None:
-                raise ValueError(
-                    f'{error_prefix} Per-dim sparsity structure does not expect specified `sparse_factors`.')
+                raise ValueError(f'{error_prefix} Per-dim sparsity structure does not expect '
+                                 'specified `sparse_factors`.')
             self.sparse_axis = int(sparse_axis)
 
     @classmethod
@@ -171,7 +170,8 @@ class MovementSparsifier(nn.Module):
         self.sparse_structure = sparse_cfg.mode
 
         weight_importance_shape = self._get_weight_importance_shape(
-            weight_shape, self.sparse_factors, self.sparse_structure)
+            weight_shape, self.sparse_factors, self.sparse_structure
+        )
         self.weight_importance = CompressionParameter(
             torch.zeros(weight_importance_shape),
             requires_grad=not self.frozen,
@@ -267,8 +267,10 @@ class MovementSparsifier(nn.Module):
         ctx = self.bias_ctx if is_bias else self.weight_ctx
         if (not self.training) or self.frozen:
             return ctx.binary_mask
-        mask = binary_mask_by_threshold(self.get_importance(is_bias, expanded=True),
-                                        self.importance_threshold)
+        mask = binary_mask_by_threshold(
+            input_tensor=self.get_importance(is_bias, expanded=True),
+            threshold=self.importance_threshold
+        )
         ctx.binary_mask = mask
         return mask
 
