@@ -218,11 +218,13 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
 
     def get_state(self) -> Dict[str, Any]:
         state = super().get_state()
+        state['_init_importance_threshold'] = self._init_importance_threshold
         state['_steps_per_epoch'] = self._steps_per_epoch
         return state
 
     def load_state(self, state: Dict[str, Any]) -> None:
         super().load_state(state)
+        self._init_importance_threshold = state['_init_importance_threshold']
         self._steps_per_epoch = state['_steps_per_epoch']
         if self._steps_per_epoch is None:  # It is the first epoch and `steps_per_epoch` not specified
             self._steps_in_current_epoch = self._current_step + 1

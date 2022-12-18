@@ -42,6 +42,7 @@ from nncf.experimental.torch.sparsity.movement.scheduler import MovementSchedule
 from nncf.experimental.torch.sparsity.movement.structured_mask_handler import StructuredMaskHandler
 from nncf.experimental.torch.sparsity.movement.structured_mask_strategy import STRUCTURED_MASK_STRATEGY
 from nncf.torch import create_compressed_model
+from nncf.torch.checkpoint_loading import load_state
 from nncf.torch.layer_utils import CompressionParameter
 from nncf.torch.layers import NNCFLinear
 from nncf.torch.module_operations import UpdateWeightAndBias
@@ -69,6 +70,7 @@ from datasets import Dataset  # pylint: disable=no-name-in-module
 from transformers import TrainingArguments
 from transformers.trainer_callback import TrainerControl
 from transformers.trainer_callback import TrainerState
+from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 
 desc_sparse_structures = {
     'explicit_mixed': [
@@ -418,7 +420,7 @@ class TestControllerCompressionInfo:
         assert compression_ctrl.compression_rate == 0.6
 
 
-class TestModelSaving:
+class TestModelSavingAndResuming:
     @pytest.mark.parametrize('recipe', [
         BertRunRecipe(),
         Wav2Vec2RunRecipe(),
@@ -570,6 +572,82 @@ class TestModelSaving:
         assert sorted(ref_state_dict) == sorted(compressed_state_dict)
         for name, ref_value in ref_state_dict.items():
             assert torch.allclose(compressed_state_dict[name], ref_value)
+
+    def test_can_load_state_dict(self, tmp_path):
+        recipe = LinearRunRecipe(log_dir=tmp_path)
+        compression_ctrl, compressed_model = create_compressed_model(recipe.model(init_seed=0),
+                                                                     recipe.nncf_config(),
+                                                                     dump_graphs=False)
+        for minfo in compression_ctrl.sparsified_module_info:
+            initialize_sparsifier_parameters_by_linspace(minfo.operand)
+            force_update_sparsifier_binary_masks_by_threshold(minfo.operand)
+        state_dict = deepcopy(compressed_model.state_dict())
+
+        _, new_compressed_model = create_compressed_model(recipe.model(init_seed=1),
+                                                          recipe.nncf_config(),
+                                                          dump_graphs=False)
+        new_compressed_model.load_state_dict(state_dict)
+        PTTensorListComparator.check_equal(new_compressed_model.state_dict().values(),
+                                           state_dict.values())
+
+        _, new_compressed_model = create_compressed_model(recipe.model(init_seed=2),
+                                                          recipe.nncf_config(),
+                                                          dump_graphs=False)
+        assert load_state(new_compressed_model, state_dict, is_resume=True) == len(state_dict)
+        PTTensorListComparator.check_equal(new_compressed_model.state_dict().values(),
+                                           state_dict.values())
+
+    def test_can_load_compression_state(self, tmp_path):
+        recipe = LinearRunRecipe(log_dir=tmp_path).scheduler_params_(steps_per_epoch=4)
+        compression_ctrl, compressed_model = create_compressed_model(recipe.model(init_seed=1),
+                                                                     recipe.nncf_config())
+        trainer = build_compression_trainer(tmp_path, compression_ctrl, compressed_model,
+                                            train_dataset=recipe.generate_mock_dataset(num_samples=16),
+                                            batch_size=4, num_train_epochs=4)
+        trainer.train()
+        ref_compression_state = compression_ctrl.get_compression_state()
+        compression_ctrl, _ = create_compressed_model(recipe.model(init_seed=2),
+                                                      recipe.nncf_config(),
+                                                      compression_state=ref_compression_state)
+        assert compression_ctrl.get_compression_state() == ref_compression_state
+
+    @pytest.mark.parametrize('resume_step', [2, 7, 15, 17], ids=['epoch0', 'epoch1', 'ecpoh2_end', 'epoch3'])
+    @pytest.mark.parametrize('steps_per_epoch', [5, None])
+    def test_can_resume_training_from_compression_state(self, tmp_path, resume_step: int, steps_per_epoch: int):
+        recipe = LinearRunRecipe(log_dir=tmp_path).model_config_(intermediate_size=6)
+        recipe.scheduler_params_(warmup_start_epoch=1, warmup_end_epoch=3,
+                                 steps_per_epoch=steps_per_epoch, init_importance_threshold=None)
+        actual_steps_per_epoch = steps_per_epoch or 5
+        batch_size = 4
+        num_train_epochs = 5
+        dataset = recipe.generate_mock_dataset(num_samples=batch_size * actual_steps_per_epoch)
+        # train from beginning
+        compression_ctrl, compressed_model = create_compressed_model(
+            recipe.model(init_seed=1), recipe.nncf_config(), dump_graphs=False
+        )
+        trainer = build_compression_trainer(
+            output_dir=tmp_path / 'from_beginning',
+            compression_ctrl=compression_ctrl,
+            compressed_model=compressed_model,
+            train_dataset=dataset, batch_size=batch_size,
+            num_train_epochs=num_train_epochs, save_steps=resume_step)
+        trainer.train()
+
+        # resume training
+        resumed_compression_ctrl, resumed_compressed_model = create_compressed_model(
+            recipe.model(init_seed=2), recipe.nncf_config(), dump_graphs=False
+        )
+        resumed_trainer = build_compression_trainer(
+            output_dir=tmp_path / 'resumed',
+            compression_ctrl=resumed_compression_ctrl,
+            compressed_model=resumed_compressed_model,
+            train_dataset=dataset, batch_size=batch_size,
+            num_train_epochs=num_train_epochs)
+        resume_folder = Path(tmp_path, 'from_beginning', f'{PREFIX_CHECKPOINT_DIR}-{resume_step}')
+        resumed_trainer.train(str(resume_folder))
+
+        PTTensorListComparator.check_equal(list(compressed_model.state_dict().values()),
+                                           list(resumed_compressed_model.state_dict().values()))
 
 
 desc_test_controller_structured_mask_resolution = {

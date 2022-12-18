@@ -15,8 +15,10 @@ from pathlib import Path
 from typing import List, Optional
 
 import numpy as np
+import torch
 
 from nncf.api.compression import CompressionAlgorithmController
+from nncf.common.compression import BaseCompressionAlgorithmController
 from nncf.common.utils.tensorboard import prepare_for_tensorboard
 from nncf.torch.nncf_network import NNCFNetwork
 
@@ -26,6 +28,10 @@ from transformers.trainer import Trainer
 from transformers.trainer_callback import TrainerCallback
 from transformers.trainer_callback import TrainerControl
 from transformers.trainer_callback import TrainerState
+from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
+
+CTRL_STATE_NAME = BaseCompressionAlgorithmController.CONTROLLER_STATE
+NNCF_COMPRESSION_STATE_NAME = 'nncf_compression_state.pt'
 
 
 class CompressionTrainer(Trainer):
@@ -54,14 +60,29 @@ class CompressionTrainer(Trainer):
             loss = loss + loss_compress
         return (loss, outputs) if return_outputs else loss
 
+    def _load_from_checkpoint(self, resume_from_checkpoint, model=None):
+        super()._load_from_checkpoint(resume_from_checkpoint, model)
+        state_path = Path(str(resume_from_checkpoint), NNCF_COMPRESSION_STATE_NAME)
+        if self.compression_ctrl is not None and state_path.is_file():
+            compression_state = torch.load(state_path)
+            self.compression_ctrl.load_state(compression_state.get(CTRL_STATE_NAME, {}))
+        len_dataloader = len(self.get_train_dataloader())
+        steps_per_epoch = max(1, len_dataloader // self.args.gradient_accumulation_steps)
+        if (self.compression_ctrl.scheduler.current_step + 1) % steps_per_epoch != 0:
+            # The beginning of an incomplete epoch when resume
+            self.compression_callback.should_skip_next_epoch_step()
+
 
 class CompressionCallback(TrainerCallback):
     def __init__(self, compression_ctrl: CompressionAlgorithmController) -> None:
         self.compression_ctrl = compression_ctrl
         self._compression_log_by_step = OrderedDict()
+        self._skip_next_epoch_step = False
 
     def on_epoch_begin(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
-        self.compression_ctrl.scheduler.epoch_step()
+        if not self._skip_next_epoch_step:
+            self.compression_ctrl.scheduler.epoch_step()
+        self._skip_next_epoch_step = False
 
     def on_step_begin(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
         self.compression_ctrl.scheduler.step()
@@ -71,6 +92,13 @@ class CompressionCallback(TrainerCallback):
         stat_dict = prepare_for_tensorboard(stats)
         stat_dict.update(step=state.global_step, epoch=state.epoch)
         self._compression_log_by_step[state.global_step] = stat_dict
+
+    def on_save(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+        compression_state = self.compression_ctrl.get_compression_state()
+        save_path = Path(args.output_dir, f'{PREFIX_CHECKPOINT_DIR}-{state.global_step}',
+                         NNCF_COMPRESSION_STATE_NAME)
+        save_path.parent.mkdir(exist_ok=True, parents=True)
+        torch.save(compression_state, save_path)
 
     def on_train_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
         self._training_log = state.log_history
@@ -82,6 +110,9 @@ class CompressionCallback(TrainerCallback):
 
     def get_train_log(self):
         return self._training_log
+
+    def should_skip_next_epoch_step(self):
+        self._skip_next_epoch_step = True
 
 
 def build_compression_trainer(output_dir,
@@ -98,6 +129,9 @@ def build_compression_trainer(output_dir,
         output_dir=Path(output_dir),
         label_names=['labels'],
         evaluation_strategy=evaluation_strategy,
+        save_strategy='steps',
+        logging_strategy='steps',
+        save_steps=500,
         logging_steps=1,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,

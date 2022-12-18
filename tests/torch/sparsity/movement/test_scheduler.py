@@ -11,9 +11,10 @@
  limitations under the License.
 """
 from collections import defaultdict
+from copy import deepcopy
 import logging
 import math
-from typing import Optional
+from typing import Any, Dict, Optional
 from unittest.mock import MagicMock
 from unittest.mock import Mock
 
@@ -181,66 +182,97 @@ class TestSchedulerStatus:
         assert np.allclose(factor, desc['ref_factor'], atol=1e-4)
 
     @pytest.mark.parametrize('steps_per_epoch', [None, 2])
-    def test_get_state(self, steps_per_epoch: Optional[int]):
-        params = MovementSchedulerParams(warmup_start_epoch=1, warmup_end_epoch=3,
-                                         importance_regularization_factor=1,
-                                         init_importance_threshold=-0.1,
-                                         steps_per_epoch=steps_per_epoch)
+    @pytest.mark.parametrize('adaptive_init_threshold', [True, False])
+    def test_get_state(self, steps_per_epoch: Optional[int], adaptive_init_threshold: bool, mocker):
         actual_steps_per_epoch = steps_per_epoch or 2
+        actual_init_threshold = -0.1
+        warmup_start_epoch = 1
+        params = MovementSchedulerParams(
+            warmup_start_epoch=warmup_start_epoch,
+            warmup_end_epoch=3,
+            importance_regularization_factor=1,
+            enable_structured_masking=False,
+            init_importance_threshold=None if adaptive_init_threshold else actual_init_threshold,
+            steps_per_epoch=steps_per_epoch
+        )
         scheduler = MovementPolynomialThresholdScheduler(controller=MagicMock(), params=params)
+        if adaptive_init_threshold:
+            mocker.patch.object(scheduler, '_calc_init_threshold_from_controller',
+                                side_effect=[actual_init_threshold])
+        ref_init_importance_threshold = params.init_importance_threshold
         assert scheduler.get_state() == {'current_epoch': -1,
                                          'current_step': -1,
+                                         '_init_importance_threshold': ref_init_importance_threshold,
                                          '_steps_per_epoch': params.steps_per_epoch}
         for epoch in range(4):
             scheduler.epoch_step()
             ref_steps_per_epoch = actual_steps_per_epoch if epoch >= 1 else params.steps_per_epoch
             assert scheduler.get_state() == {'current_epoch': epoch,
                                              'current_step': epoch * actual_steps_per_epoch - 1,
+                                             '_init_importance_threshold': ref_init_importance_threshold,
                                              '_steps_per_epoch': ref_steps_per_epoch}
             for batch in range(actual_steps_per_epoch):
                 scheduler.step()
+                if epoch >= warmup_start_epoch:
+                    ref_init_importance_threshold = actual_init_threshold
                 assert scheduler.get_state() == {'current_epoch': epoch,
                                                  'current_step': epoch * actual_steps_per_epoch + batch,
+                                                 '_init_importance_threshold': ref_init_importance_threshold,
                                                  '_steps_per_epoch': ref_steps_per_epoch}
 
+    # pylint: disable=protected-access
     @pytest.mark.parametrize('steps_per_epoch', [2, 4, 9, None],
                              ids=['epoch3', 'epoch1', 'epoch0', 'epoch0_unknown_steps_per_epoch'])
-    def test_load_state(self, steps_per_epoch: Optional[int]):
-        params = MovementSchedulerParams(warmup_start_epoch=1, warmup_end_epoch=3,
-                                         init_importance_threshold=-0.1, importance_regularization_factor=0.1,
-                                         steps_per_epoch=steps_per_epoch)
+    @pytest.mark.parametrize('adaptive_init_threshold', [True, False])
+    def test_load_state(self, steps_per_epoch: Optional[int], adaptive_init_threshold: bool, mocker):
+        actual_steps_per_epoch = steps_per_epoch or 8
+        actual_init_threshold = -0.1
         reload_step = 6
-        steps_per_epoch = params.steps_per_epoch or 8
-
+        params = MovementSchedulerParams(
+            warmup_start_epoch=1,
+            warmup_end_epoch=3,
+            importance_regularization_factor=1,
+            enable_structured_masking=False,
+            init_importance_threshold=None if adaptive_init_threshold else actual_init_threshold,
+            steps_per_epoch=steps_per_epoch
+        )
         ref_scheduler = MovementPolynomialThresholdScheduler(controller=MagicMock(), params=params)
+        if adaptive_init_threshold:
+            mocker.patch.object(ref_scheduler, '_calc_init_threshold_from_controller',
+                                side_effect=[actual_init_threshold])
+
         ref_threshold, ref_factor = [], []
+        ref_state: Dict[str, Any] = {}
         for _ in range(5):
             ref_scheduler.epoch_step()
-            for _ in range(steps_per_epoch):
+            for _ in range(actual_steps_per_epoch):
                 ref_scheduler.step()
-                if ref_scheduler.current_step > reload_step:
+                if ref_scheduler.current_step == reload_step:
+                    ref_state = deepcopy(ref_scheduler.get_state())
+                elif ref_scheduler.current_step > reload_step:
                     ref_threshold.append(ref_scheduler.current_importance_threshold)
                     ref_factor.append(ref_scheduler.current_importance_regularization_factor)
 
-        # check state dict is loaded
+        # check state is loaded
         scheduler = MovementPolynomialThresholdScheduler(controller=MagicMock(), params=params)
-        ref_state = {'current_epoch': reload_step // steps_per_epoch,
-                     'current_step': reload_step,
-                     '_steps_per_epoch': params.steps_per_epoch}
+        if adaptive_init_threshold:
+            mocker.patch.object(scheduler, '_calc_init_threshold_from_controller',
+                                side_effect=[actual_init_threshold])
         scheduler.load_state(ref_state)
         assert scheduler.current_epoch == ref_state['current_epoch']
         assert scheduler.current_step == ref_state['current_step']
-        assert scheduler._steps_per_epoch == ref_state['_steps_per_epoch']  # pylint: disable=protected-access
+        assert scheduler._init_importance_threshold == ref_state['_init_importance_threshold']
+        assert scheduler._steps_per_epoch == ref_state['_steps_per_epoch']
 
         # check can resume and continue
         threshold, factor = [], []
-        for _ in range(steps_per_epoch - (reload_step + 1) % steps_per_epoch):  # rest batch
+        for _ in range(actual_steps_per_epoch - (reload_step + 1) % actual_steps_per_epoch):  # rest batch
             scheduler.step()
             threshold.append(scheduler.current_importance_threshold)
             factor.append(scheduler.current_importance_regularization_factor)
         for _ in range(ref_state['current_epoch'] + 1, 5):
             scheduler.epoch_step()
-            for _ in range(steps_per_epoch):
+            for _ in range(actual_steps_per_epoch):
                 scheduler.step()
                 threshold.append(scheduler.current_importance_threshold)
                 factor.append(scheduler.current_importance_regularization_factor)
