@@ -38,20 +38,20 @@ from tests.shared.logging import nncf_caplog  # pylint:disable=unused-import
 from tests.torch.sparsity.movement.helpers import BaseMockRunRecipe
 from tests.torch.sparsity.movement.helpers import BertRunRecipe
 from tests.torch.sparsity.movement.helpers import SwinRunRecipe
-from tests.torch.sparsity.movement.helpers import TransformerBlockItemOrderedDict
+from tests.torch.sparsity.movement.helpers import TransformerBlockItem
 from tests.torch.sparsity.movement.helpers import Wav2Vec2RunRecipe
 from tests.torch.sparsity.movement.helpers import mock_linear_nncf_node
 
 STRUCTURED_MASK_SUPPORTED_RECIPES = [
-    BertRunRecipe.from_default(hidden_size=4, intermediate_size=3),
-    BertRunRecipe.from_default(hidden_size=4, intermediate_size=3, mhsa_qkv_bias=False),
-    BertRunRecipe.from_default(hidden_size=4, intermediate_size=3, mhsa_o_bias=False),
-    BertRunRecipe.from_default(hidden_size=4, intermediate_size=3, ffn_bias=False),
-    BertRunRecipe.from_default(hidden_size=4, intermediate_size=3,
-                               mhsa_qkv_bias=False, mhsa_o_bias=False, ffn_bias=False),
-    Wav2Vec2RunRecipe.from_default(hidden_size=4, intermediate_size=3),
-    SwinRunRecipe.from_default(embed_dim=4, mlp_ratio=0.75, qkv_bias=False),
-    SwinRunRecipe.from_default(embed_dim=4, mlp_ratio=0.75, depths=[1], num_heads=[2])
+    BertRunRecipe().model_config_(hidden_size=4, intermediate_size=3),
+    BertRunRecipe().model_config_(hidden_size=4, intermediate_size=3, mhsa_qkv_bias=False),
+    BertRunRecipe().model_config_(hidden_size=4, intermediate_size=3, mhsa_o_bias=False),
+    BertRunRecipe().model_config_(hidden_size=4, intermediate_size=3, ffn_bias=False),
+    BertRunRecipe().model_config_(hidden_size=4, intermediate_size=3,
+                                  mhsa_qkv_bias=False, mhsa_o_bias=False, ffn_bias=False),
+    Wav2Vec2RunRecipe().model_config_(hidden_size=4, intermediate_size=3),
+    SwinRunRecipe().model_config_(embed_dim=4, mlp_ratio=0.75, qkv_bias=False),
+    SwinRunRecipe().model_config_(embed_dim=4, mlp_ratio=0.75, depths=[1], num_heads=[2])
 ]
 
 desc_test_update_independent_structured_mask = {
@@ -287,7 +287,7 @@ class TestStructuredMaskRule:
 
 desc_test_resolve_dependent_structured = {
     'prune_1head_1channel': dict(
-        independent_structured=TransformerBlockItemOrderedDict(
+        independent_structured=TransformerBlockItem(
             mhsa_q=torch.FloatTensor([[1], [0]]),
             mhsa_k=torch.FloatTensor([[1], [0]]),
             mhsa_v=torch.FloatTensor([[1], [0]]),
@@ -295,7 +295,7 @@ desc_test_resolve_dependent_structured = {
             ffn_i=torch.FloatTensor([[1], [1], [0]]),
             ffn_o=torch.FloatTensor([[1, 1, 0]]),
         ),
-        dependent_structured=TransformerBlockItemOrderedDict(
+        dependent_structured=TransformerBlockItem(
             mhsa_q=torch.FloatTensor([[1], [0]]),
             mhsa_k=torch.FloatTensor([[1], [0]]),
             mhsa_v=torch.FloatTensor([[1], [0]]),
@@ -305,7 +305,7 @@ desc_test_resolve_dependent_structured = {
         ),
     ),
     'prune_0head_0channel': dict(
-        independent_structured=TransformerBlockItemOrderedDict(
+        independent_structured=TransformerBlockItem(
             mhsa_q=torch.FloatTensor([[1], [0]]),
             mhsa_k=torch.FloatTensor([[1], [0]]),
             mhsa_v=torch.FloatTensor([[0], [1]]),
@@ -313,7 +313,7 @@ desc_test_resolve_dependent_structured = {
             ffn_i=torch.FloatTensor([[1], [1], [0]]),
             ffn_o=torch.FloatTensor([[1, 0, 1]]),
         ),
-        dependent_structured=TransformerBlockItemOrderedDict(
+        dependent_structured=TransformerBlockItem(
             mhsa_q=torch.FloatTensor([[1], [1]]),
             mhsa_k=torch.FloatTensor([[1], [1]]),
             mhsa_v=torch.FloatTensor([[1], [1]]),
@@ -372,12 +372,12 @@ class TestStructuredMaskHandler:
         module_vs_node_name_map = {minfo.module: minfo.module_node_name
                                    for minfo in compression_ctrl.sparsified_module_info}
         node_name_vs_context_map = {ctx.module_node_name: ctx for ctx in all_ctxes}
-        ctxes = [node_name_vs_context_map[module_vs_node_name_map[m]] for m in module_dict.values()]
-        for ctx, param in zip(ctxes, desc['independent_structured'].values()):
+        ctxes = [node_name_vs_context_map[module_vs_node_name_map[m]] for m in module_dict.__dict__.values()]
+        for ctx, param in zip(ctxes, desc['independent_structured'].__dict__.values()):
             ctx.independent_structured_mask = param
 
         handler.resolve_dependent_structured_mask()
-        for ctx, ref_param in zip(ctxes, desc['dependent_structured'].values()):
+        for ctx, ref_param in zip(ctxes, desc['dependent_structured'].__dict__.values()):
             assert torch.allclose(ctx.dependent_structured_mask, ref_param)
 
     def test_populate_dependent_structured_mask_to_operand(self, mocker):
@@ -430,7 +430,7 @@ class TestStructuredMaskHandler:
 class TestStructuredMaskStrategy:
     @pytest.mark.parametrize('run_recipe', STRUCTURED_MASK_SUPPORTED_RECIPES)
     def test_detect_supported_model_family(self, run_recipe: BaseMockRunRecipe):
-        empty_nncf_config = NNCFConfig(input_info=run_recipe.model_input_info)
+        empty_nncf_config = NNCFConfig(input_info=run_recipe.dumps_model_input_info())
         _, compressed_model = create_compressed_model(run_recipe.model(),
                                                       empty_nncf_config,
                                                       dump_graphs=False)
@@ -443,7 +443,7 @@ class TestStructuredMaskStrategy:
 
     @pytest.mark.parametrize('run_recipe', STRUCTURED_MASK_SUPPORTED_RECIPES)
     def test_create_strategy(self, run_recipe: BaseMockRunRecipe):
-        empty_nncf_config = NNCFConfig(input_info=run_recipe.model_input_info)
+        empty_nncf_config = NNCFConfig(input_info=run_recipe.dumps_model_input_info())
         _, compressed_model = create_compressed_model(run_recipe.model(),
                                                       empty_nncf_config,
                                                       dump_graphs=False)
@@ -459,8 +459,8 @@ class TestStructuredMaskStrategy:
                 assert isinstance(rule, StructuredMaskRule)
 
     def test_error_on_unsupported_swin_models(self):
-        run_recipe = SwinRunRecipe.from_default(depths=[1, 1], num_heads=[2, 2])
-        empty_nncf_config = NNCFConfig(input_info=run_recipe.model_input_info)
+        run_recipe = SwinRunRecipe().model_config_(depths=[1, 1], num_heads=[2, 2])
+        empty_nncf_config = NNCFConfig(input_info=run_recipe.dumps_model_input_info())
         _, compressed_model = create_compressed_model(run_recipe.model(),
                                                       empty_nncf_config,
                                                       dump_graphs=False)

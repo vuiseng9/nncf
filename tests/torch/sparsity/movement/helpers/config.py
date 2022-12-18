@@ -33,15 +33,15 @@ class MovementAlgoConfig:
         steps_per_epoch=4,
     )
 
-    def __init__(self, sparse_structure_by_scopes: Optional[List[Dict]] = None,
+    def __init__(self, scheduler_params: Optional[MovementSchedulerParams] = None,
+                 sparse_structure_by_scopes: Optional[List[Dict]] = None,
                  ignored_scopes: Optional[List[str]] = None,
-                 compression_lr_multiplier: Optional[float] = None,
-                 scheduler_params: Optional[MovementSchedulerParams] = None):
+                 compression_lr_multiplier: Optional[float] = None):
+        self.scheduler_params = scheduler_params or \
+            deepcopy(MovementAlgoConfig.default_scheduler_params)
         self.sparse_structure_by_scopes = sparse_structure_by_scopes or []
         self.ignored_scopes = ignored_scopes or []
         self.compression_lr_multiplier = compression_lr_multiplier
-        self.scheduler_params = scheduler_params or \
-            deepcopy(MovementAlgoConfig.default_scheduler_params)
 
     def to_dict(self) -> Dict[str, Any]:
         result = {

@@ -181,11 +181,9 @@ class TestSparsifier:
                              ids=desc_test_sparsifier_forward.keys())
     def test_sparsifier_forward(self, tmp_path, desc):
         has_bias = desc['init_bias_importance'] is not None
-        recipe = LinearRunRecipe.from_default(
-            input_size=4,
-            num_labels=4,
-            bias=has_bias,
-            sparse_structure_by_scopes=desc['sparse_structure_by_scopes'])
+        recipe = LinearRunRecipe(log_dir=tmp_path)
+        recipe.algo_config_(sparse_structure_by_scopes=desc['sparse_structure_by_scopes'])
+        recipe.model_config_(input_size=4, num_labels=4, bias=has_bias)
         model = recipe.model()
         compression_ctrl, compressed_model = create_compressed_model(model,
                                                                      recipe.nncf_config(),
@@ -240,8 +238,9 @@ class TestSparsifier:
     ])
     @pytest.mark.parametrize('model_bias', [True, False])
     def test_layer_actual_behavior_matches_sparsifier_mask(self, sparse_structure_by_scopes, model_bias: bool):
-        recipe = LinearRunRecipe.from_default(bias=model_bias,
-                                              sparse_structure_by_scopes=sparse_structure_by_scopes)
+        recipe = LinearRunRecipe()
+        recipe.model_config_(bias=model_bias)
+        recipe.algo_config_(sparse_structure_by_scopes=sparse_structure_by_scopes)
         compression_ctrl, _ = create_compressed_model(recipe.model(),
                                                       recipe.nncf_config(),
                                                       dump_graphs=False)

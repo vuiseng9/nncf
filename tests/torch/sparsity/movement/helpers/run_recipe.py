@@ -16,7 +16,7 @@ from collections import OrderedDict
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import torch
 import torch.nn
@@ -24,9 +24,9 @@ import torch.nn.functional as F
 import torch.utils.data
 
 from nncf import NNCFConfig
+from nncf.experimental.torch.sparsity.movement.scheduler import MovementSchedulerParams
 from nncf.torch.dynamic_graph.graph_tracer import ModelInputInfo
 from nncf.torch.nncf_network import NNCFNetwork
-from nncf.experimental.torch.sparsity.movement.scheduler import MovementSchedulerParams
 from tests.torch.sparsity.movement.helpers.config import MovementAlgoConfig
 
 from datasets import Dataset  # pylint: disable=no-name-in-module
@@ -58,6 +58,17 @@ class TransformerBlockItem:
     ffn_o: Any
 
 
+class _MISSING_TYPE:
+    """
+    A sentinel class used to detect if some arguments are not provided in a
+    function call. Useful when `None` is an acceptable value for arguments.
+    """
+    pass
+
+
+MISSING = _MISSING_TYPE()
+
+
 class BaseMockRunRecipe(ABC):
     model_family: str
     supports_structured_masking: bool
@@ -85,6 +96,54 @@ class BaseMockRunRecipe(ABC):
     def scheduler_params(self) -> MovementSchedulerParams:
         return self.algo_config.scheduler_params
 
+    def algo_config_(
+        self, sparse_structure_by_scopes: Union[List[Dict[str, Any]], _MISSING_TYPE] = MISSING,
+        ignored_scopes: Union[List[str], _MISSING_TYPE] = MISSING,
+        compression_lr_multiplier: Union[float, None, _MISSING_TYPE] = MISSING,
+    ):
+        if sparse_structure_by_scopes is not MISSING:
+            self.algo_config.sparse_structure_by_scopes = sparse_structure_by_scopes
+        if ignored_scopes is not MISSING:
+            self.algo_config.ignored_scopes = ignored_scopes
+        if compression_lr_multiplier is not MISSING:
+            self.algo_config.compression_lr_multiplier = compression_lr_multiplier
+        return self
+
+    def scheduler_params_(
+        self, warmup_start_epoch: Union[int, _MISSING_TYPE] = MISSING,
+        warmup_end_epoch: Union[int, _MISSING_TYPE] = MISSING,
+        importance_regularization_factor: Union[float, _MISSING_TYPE] = MISSING,
+        enable_structured_masking: Union[bool, _MISSING_TYPE] = MISSING,
+        init_importance_threshold: Union[float, None, _MISSING_TYPE] = MISSING,
+        final_importance_threshold: Union[float, _MISSING_TYPE] = MISSING,
+        power: Union[float, _MISSING_TYPE] = MISSING,
+        steps_per_epoch: Union[int, None, _MISSING_TYPE] = MISSING,
+    ):
+        if warmup_start_epoch is not MISSING:
+            self.algo_config.scheduler_params.warmup_start_epoch = warmup_start_epoch
+        if warmup_end_epoch is not MISSING:
+            self.algo_config.scheduler_params.warmup_end_epoch = warmup_end_epoch
+        if importance_regularization_factor is not MISSING:
+            self.algo_config.scheduler_params.importance_regularization_factor = importance_regularization_factor
+        if enable_structured_masking is not MISSING:
+            self.algo_config.scheduler_params.enable_structured_masking = enable_structured_masking
+        if init_importance_threshold is not MISSING:
+            self.algo_config.scheduler_params.init_importance_threshold = init_importance_threshold
+        if final_importance_threshold is not MISSING:
+            self.algo_config.scheduler_params.final_importance_threshold = final_importance_threshold
+        if power is not MISSING:
+            self.algo_config.scheduler_params.power = power
+        if steps_per_epoch is not MISSING:
+            self.algo_config.scheduler_params.steps_per_epoch = steps_per_epoch
+        return self
+
+    def model_config_(self, **kwargs):
+        # There are too many keywords in `PretrainedConfig`. Not reasonable to
+        # specify them all as arguments of this function.
+        for key, value in kwargs.items():
+            setattr(self.model_config, key, value)
+        return self
+
     def model(self) -> torch.nn.Module:
         torch_model = self._create_model()
         g = torch.Generator()
@@ -96,7 +155,7 @@ class BaseMockRunRecipe(ABC):
 
     def nncf_config(self) -> NNCFConfig:
         config_dict = {
-            'input_info': self._get_model_input_info_dict(self.model_input_info),
+            'input_info': self.dumps_model_input_info(self.model_input_info),
             'compression': self.algo_config.to_dict()}
         if self.log_dir is not None:
             config_dict['log_dir'] = str(self.log_dir)
@@ -139,10 +198,12 @@ class BaseMockRunRecipe(ABC):
     def _create_model(self) -> torch.nn.Module:
         pass
 
-    @staticmethod
-    def _get_model_input_info_dict(model_input_infos: List[ModelInputInfo]) -> List[Dict[str, Any]]:
+    def dumps_model_input_info(self, model_input_info: Optional[List[ModelInputInfo]] = None
+                               ) -> List[Dict[str, Any]]:
+        if model_input_info is None:
+            model_input_info = self.model_input_info
         result = []
-        for info in model_input_infos:
+        for info in model_input_info:
             item = {'sample_size': info.shape,
                     'type': info.torch_type_to_string(info.type)}
             if info.keyword is not None:
@@ -151,21 +212,6 @@ class BaseMockRunRecipe(ABC):
                 item['filler'] = info.filler
             result.append(item)
         return result
-
-
-class Wav2Vec2ModelConfig(Wav2Vec2Config):
-    hidden_size = 4
-    num_hidden_layers = 1
-    num_attention_heads = 2
-    intermediate_size = 3
-    conv_dim = (4, 4)
-    conv_stride = (1, 1)
-    conv_kernel = (3, 3)
-    num_conv_pos_embeddings = 3
-    num_conv_pos_embedding_groups = 1
-    proj_codevector_dim = 4
-    classifier_proj_size = 3
-    num_labels = 2
 
 
 class Wav2Vec2RunRecipe(BaseMockRunRecipe):
@@ -185,7 +231,6 @@ class Wav2Vec2RunRecipe(BaseMockRunRecipe):
         classifier_proj_size=3,
         num_labels=2,
     )
-
     default_algo_config = MovementAlgoConfig(
         sparse_structure_by_scopes=[
             {'mode': 'block', 'sparse_factors': [2, 2], 'target_scopes': '{re}Wav2Vec2Attention'},
@@ -252,25 +297,16 @@ class BertRunRecipe(BaseMockRunRecipe):
         ignored_scopes=['{re}embedding', '{re}pooler', '{re}classifier'],
     )
 
-    def __init__(self, model_config: BertConfig,
-                 algo_config: MovementAlgoConfig,
-                 log_dir=None) -> None:
-        super().__init__(model_config, algo_config, log_dir)
-        extra_model_keys = {'mhsa_qkv_bias', 'mhsa_o_bias', 'ffn_bias'}
-        for key in extra_model_keys:
-            value = getattr(self.model_config, key, True)
-            setattr(self.model_config, key, value)
-
     def _create_model(self) -> torch.nn.Module:
         model = AutoModelForSequenceClassification.from_config(self.model_config)
         for block in model.bert.encoder.layer:
-            if not self.model_config.mhsa_qkv_bias:
+            if not getattr(self.model_config, 'mhsa_qkv_bias', True):
                 block.attention.self.query.bias = None
                 block.attention.self.key.bias = None
                 block.attention.self.value.bias = None
-            if not self.model_config.mhsa_o_bias:
+            if not getattr(self.model_config, 'mhsa_o_bias', True):
                 block.attention.output.dense.bias = None
-            if not self.model_config.ffn_bias:
+            if not getattr(self.model_config, 'ffn_bias', True):
                 block.intermediate.dense.bias = None
                 block.output.dense.bias = None
         return model
@@ -425,7 +461,11 @@ class LinearRunRecipe(BaseMockRunRecipe):
         bias=True
     )
     default_algo_config = MovementAlgoConfig(
-        enable_structured_masking=False
+        MovementSchedulerParams(warmup_start_epoch=1, warmup_end_epoch=3,
+                                importance_regularization_factor=0.1,
+                                enable_structured_masking=False,
+                                init_importance_threshold=-1.0,
+                                steps_per_epoch=4)
     )
 
     def _create_model(self) -> torch.nn.Module:
@@ -456,9 +496,6 @@ class Conv2dRunRecipe(LinearRunRecipe):
         input_size=4,
         bias=True
     )
-    default_algo_config = MovementAlgoConfig(
-        enable_structured_masking=False
-    )
 
     def _create_model(self) -> torch.nn.Module:
         model_config = self.model_config
@@ -481,9 +518,6 @@ class Conv2dPlusLinearRunRecipe(LinearRunRecipe):
         num_labels=2,
         input_size=4,
         bias=True
-    )
-    default_algo_config = MovementAlgoConfig(
-        enable_structured_masking=False
     )
 
     def _create_model(self) -> torch.nn.Module:
