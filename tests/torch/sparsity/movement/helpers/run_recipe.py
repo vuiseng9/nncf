@@ -148,10 +148,10 @@ class BaseMockRunRecipe(ABC):
             Path(log_dir).mkdir(exist_ok=True, parents=True)
         return self
 
-    def model(self) -> torch.nn.Module:
+    def model(self, init_seed: int = 42) -> torch.nn.Module:
         torch_model = self._create_model()
         g = torch.Generator()
-        g.manual_seed(42)
+        g.manual_seed(init_seed)
         with torch.no_grad():
             for _, parameter in torch_model.named_parameters():
                 parameter.normal_(generator=g)
