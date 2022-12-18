@@ -582,14 +582,14 @@ class TestModelSavingAndResuming:
             initialize_sparsifier_parameters_by_linspace(minfo.operand)
             force_update_sparsifier_binary_masks_by_threshold(minfo.operand)
         state_dict = deepcopy(compressed_model.state_dict())
-
+        # load state dict with torch api
         _, new_compressed_model = create_compressed_model(recipe.model(init_seed=1),
                                                           recipe.nncf_config(),
                                                           dump_graphs=False)
         new_compressed_model.load_state_dict(state_dict)
-        PTTensorListComparator.check_equal(new_compressed_model.state_dict().values(),
-                                           state_dict.values())
-
+        PTTensorListComparator.check_equal(list(new_compressed_model.state_dict().values()),
+                                           list(state_dict.values()))
+        # load state dict with nncf api
         _, new_compressed_model = create_compressed_model(recipe.model(init_seed=2),
                                                           recipe.nncf_config(),
                                                           dump_graphs=False)
