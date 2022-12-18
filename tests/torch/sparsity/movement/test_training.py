@@ -26,6 +26,7 @@ from tests.shared.paths import TEST_ROOT
 from tests.torch.helpers import Command
 from tests.torch.sample_test_validator import BaseSampleTestCaseDescriptor
 from tests.torch.sample_test_validator import BaseSampleValidator
+from tests.torch.sparsity.movement.helpers import LINEAR_LAYER_SPARSITY_NAME_IN_MOVEMENT_STAT
 
 
 class MovementGlueHandler:
@@ -343,5 +344,5 @@ class TestMovementTraining:
         if desc.expected_eval_f1_ is not None:
             assert metrics['eval_f1'] == approx(desc.expected_eval_f1_)
         if desc.expected_rela_sparsity_ is not None:
-            assert metrics['movement_sparsity/linear_layer_sparsity'] == approx(
-                desc.expected_rela_sparsity_)
+            assert metrics[LINEAR_LAYER_SPARSITY_NAME_IN_MOVEMENT_STAT] == \
+                approx(desc.expected_rela_sparsity_)

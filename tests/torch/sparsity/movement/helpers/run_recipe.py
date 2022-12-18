@@ -48,14 +48,11 @@ class TransformerBlockInfo:
     dim_per_head: int
 
 
-@dataclass
-class TransformerBlockItem:
-    mhsa_q: Any
-    mhsa_k: Any
-    mhsa_v: Any
-    mhsa_o: Any
-    ffn_i: Any
-    ffn_o: Any
+class TransformerBlockItem(OrderedDict):
+    def __init__(self, mhsa_q: Any, mhsa_k: Any, mhsa_v: Any,
+                 mhsa_o: Any, ffn_i: Any, ffn_o: Any) -> None:
+        super().__init__(mhsa_q=mhsa_q, mhsa_k=mhsa_k, mhsa_v=mhsa_v,
+                         mhsa_o=mhsa_o, ffn_i=ffn_i, ffn_o=ffn_o)
 
 
 class _MISSING_TYPE:
@@ -63,7 +60,6 @@ class _MISSING_TYPE:
     A sentinel class used to detect if some arguments are not provided in a
     function call. Useful when `None` is an acceptable value for arguments.
     """
-    pass
 
 
 MISSING = _MISSING_TYPE()
@@ -483,8 +479,8 @@ class LinearRunRecipe(BaseMockRunRecipe):
         return []
 
     @staticmethod
-    def get_nncf_modules_in_transformer_block_order(
-            compressed_model: NNCFNetwork) -> List[TransformerBlockItem]:
+    def get_nncf_modules_in_transformer_block_order(compressed_model: NNCFNetwork
+                                                    ) -> List[TransformerBlockItem]:
         return []
 
 
@@ -505,10 +501,8 @@ class Conv2dRunRecipe(LinearRunRecipe):
 
     @property
     def model_input_info(self) -> List[ModelInputInfo]:
-        return [
-            ModelInputInfo(shape=[1, 3, self.model_config.input_size, self.model_config.input_size],
-                           keyword='tensor')
-        ]
+        input_size = self.model_config.input_size
+        return [ModelInputInfo(shape=[1, 3, input_size, input_size], keyword='tensor')]
 
 
 class Conv2dPlusLinearRunRecipe(LinearRunRecipe):
@@ -528,7 +522,5 @@ class Conv2dPlusLinearRunRecipe(LinearRunRecipe):
 
     @property
     def model_input_info(self) -> List[ModelInputInfo]:
-        return [
-            ModelInputInfo(shape=[1, 3, self.model_config.input_size, self.model_config.input_size],
-                           keyword='tensor')
-        ]
+        input_size = self.model_config.input_size
+        return [ModelInputInfo(shape=[1, 3, input_size, input_size], keyword='tensor')]
