@@ -341,12 +341,12 @@ class TestStructuredMaskHandler:
             group_ff = handler._structured_mask_ctx_groups[i]
             assert isinstance(group_ff, StructuredMaskContextGroup)
             assert group_ff.group_type == BuildingBlockType.FF
-            assert len(group_ff.structured_mask_context_list) == 2
+            assert len(group_ff.structured_mask_contexts) == 2
         for i in range(num_transformer_blocks, num_transformer_blocks * 2):
             group_mhsa = handler._structured_mask_ctx_groups[i]
             assert isinstance(group_mhsa, StructuredMaskContextGroup)
             assert group_mhsa.group_type == BuildingBlockType.MHSA
-            assert len(group_mhsa.structured_mask_context_list) == 4
+            assert len(group_mhsa.structured_mask_contexts) == 4
 
     def test_update_independent_structured_mask(self, mocker):
         run_recipe = STRUCTURED_MASK_SUPPORTED_RECIPES[0]
@@ -423,7 +423,7 @@ class TestStructuredMaskHandler:
         handler = compression_ctrl._structured_mask_handler
         all_ctxes = []
         for group in handler._structured_mask_ctx_groups:
-            all_ctxes.extend(group.structured_mask_context_list)
+            all_ctxes.extend(group.structured_mask_contexts)
         return handler, all_ctxes
 
 

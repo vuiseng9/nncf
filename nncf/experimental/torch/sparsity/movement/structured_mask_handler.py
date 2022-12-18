@@ -216,18 +216,18 @@ class StructuredMaskContext:
 class StructuredMaskContextGroup:
     def __init__(self, group_id: int,
                  group_type: BuildingBlockType,
-                 structured_mask_context_list: List[StructuredMaskContext]) -> None:
+                 structured_mask_contexts: List[StructuredMaskContext]) -> None:
         self.group_id = group_id
         self.group_type = group_type
-        self.structured_mask_context_list = structured_mask_context_list
+        self.structured_mask_contexts = structured_mask_contexts
 
     def __str__(self) -> str:
-        if not self.structured_mask_context_list:
-            ctx_list_str = '[]'
+        if not self.structured_mask_contexts:
+            ctxes_str = '[]'
         else:
-            ctxes = (f'\n\t{ctx}' for ctx in self.structured_mask_context_list)
-            ctx_list_str = '[{}\n]'.format(''.join(ctxes))
-        return f'{self.__class__.__name__}[{self.group_id}]({self.group_type}): {ctx_list_str}'
+            ctxes = (f'\n\t{ctx}' for ctx in self.structured_mask_contexts)
+            ctxes_str = '[{}\n]'.format(''.join(ctxes))
+        return f'{self.__class__.__name__}[{self.group_id}]({self.group_type}): {ctxes_str}'
 
 
 class StructuredMaskHandler:
@@ -269,7 +269,7 @@ class StructuredMaskHandler:
         Asks all contexts in `self._structured_mask_ctx_groups` to calculate the independent structured mask.
         """
         for group in self._structured_mask_ctx_groups:
-            for ctx in group.structured_mask_context_list:
+            for ctx in group.structured_mask_contexts:
                 ctx.update_independent_structured_mask_from_operand()
 
     def resolve_dependent_structured_mask(self):
@@ -281,7 +281,7 @@ class StructuredMaskHandler:
             group_type = group.group_type
             if group_type not in self.rules_by_group_type:
                 raise ValueError(f'No structured mask strategy for group_type="{group_type}"')
-            ctxes = group.structured_mask_context_list
+            ctxes = group.structured_mask_contexts
             row_prune_ctxes = list(filter(lambda ctx: ctx.prune_by_row, ctxes))
             col_prune_ctxes = list(filter(lambda ctx: not ctx.prune_by_row, ctxes))
             independent_masks = [ctx.independent_structured_mask for ctx in row_prune_ctxes] + \
@@ -298,7 +298,7 @@ class StructuredMaskHandler:
         Asks all contexts in `self._structured_mask_ctx_groups` to update the actual binary masks in operand.
         """
         for group in self._structured_mask_ctx_groups:
-            for ctx in group.structured_mask_context_list:
+            for ctx in group.structured_mask_contexts:
                 ctx.populate_dependent_structured_mask_to_operand()
 
     def report_structured_sparsity(self,
@@ -325,7 +325,7 @@ class StructuredMaskHandler:
         module_vs_name_map = {module: name for name, module in self.compressed_model.named_modules()}
         entry_list = []
         for group in self._structured_mask_ctx_groups:
-            ctxes = sorted(group.structured_mask_context_list,
+            ctxes = sorted(group.structured_mask_contexts,
                            key=lambda ctx: ctx.sparsifier_operand.target_module_node.node_id)
             for ctx in ctxes:
                 stats = ctx.gather_statistics_from_operand()
