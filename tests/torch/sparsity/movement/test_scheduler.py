@@ -431,7 +431,7 @@ class TestSchedulerAdaptiveInitThreshold:
 
     @pytest.mark.parametrize(('target_sparsity', 'ref_threshold'),
                              [(0.001, 1.), (0.5, 500.), (0.6, 600.), (0.999, 999.)])
-    def test_calculate_threshold_value_function(self, target_sparsity: float, ref_threshold: float):
+    def test_calc_init_threshold_correctness(self, target_sparsity: float, ref_threshold: float):
         recipe = LinearRunRecipe().model_config_(input_size=500, bias=False)  # 2x50 shape linear weight
         recipe.scheduler_params_(init_importance_threshold=None, steps_per_epoch=None)
         compression_ctrl, _ = create_compressed_model(recipe.model(),
