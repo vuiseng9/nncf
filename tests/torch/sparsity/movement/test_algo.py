@@ -51,13 +51,13 @@ from tests.torch.sparsity.movement.helpers import BertRunRecipe
 from tests.torch.sparsity.movement.helpers import CompressionCallback
 from tests.torch.sparsity.movement.helpers import Conv2dPlusLinearRunRecipe
 from tests.torch.sparsity.movement.helpers import Conv2dRunRecipe
+from tests.torch.sparsity.movement.helpers import DictInTransformerBlockOrder
 from tests.torch.sparsity.movement.helpers import FACTOR_NAME_IN_MOVEMENT_STAT
 from tests.torch.sparsity.movement.helpers import LINEAR_LAYER_SPARSITY_NAME_IN_MOVEMENT_STAT
 from tests.torch.sparsity.movement.helpers import LinearRunRecipe
 from tests.torch.sparsity.movement.helpers import MODEL_SPARSITY_NAME_IN_MOVEMENT_STAT
 from tests.torch.sparsity.movement.helpers import SwinRunRecipe
 from tests.torch.sparsity.movement.helpers import THRESHOLD_NAME_IN_MOVEMENT_STAT
-from tests.torch.sparsity.movement.helpers import TransformerBlockItem
 from tests.torch.sparsity.movement.helpers import Wav2Vec2RunRecipe
 from tests.torch.sparsity.movement.helpers import build_compression_trainer
 from tests.torch.sparsity.movement.helpers import force_update_sparsifier_binary_masks_by_threshold
@@ -426,7 +426,7 @@ class TestModelSaving:
         LinearRunRecipe(),
     ])
     def test_can_export_compressed_model(self, recipe: BaseMockRunRecipe, tmp_path):
-        recipe.set_log_dir(tmp_path)
+        recipe.log_dir_(tmp_path)
         compression_ctrl, _ = create_compressed_model(recipe.model(),
                                                       recipe.nncf_config(),
                                                       dump_graphs=False)
@@ -462,7 +462,7 @@ class TestModelSaving:
     ])
     def test_same_outputs_in_torch_and_exported_onnx(self, tmp_path: Path, recipe: BaseMockRunRecipe):
         num_samples = 4
-        recipe.set_log_dir(tmp_path)
+        recipe.log_dir_(tmp_path)
         compression_ctrl, compressed_model = create_compressed_model(recipe.model(),
                                                                      recipe.nncf_config(),
                                                                      dump_graphs=False)
@@ -574,7 +574,7 @@ class TestModelSaving:
 
 desc_test_controller_structured_mask_resolution = {
     'prune_1head_1channel': dict(
-        unstructured_binary_mask=TransformerBlockItem(
+        unstructured_binary_mask=DictInTransformerBlockOrder(
             mhsa_q=dict(weight=torch.FloatTensor([[1, 0, 0, 0],
                                                   [1, 0, 0, 0],
                                                   [0, 0, 0, 0],
@@ -605,7 +605,7 @@ desc_test_controller_structured_mask_resolution = {
                                                  [1, 1, 0]]),
                        bias=torch.FloatTensor([0, 0, 0, 0]))
         ),
-        ref_structured_binary_mask=TransformerBlockItem(
+        ref_structured_binary_mask=DictInTransformerBlockOrder(
             mhsa_q=dict(weight=torch.FloatTensor([[1, 1, 1, 1],
                                                   [1, 1, 1, 1],
                                                   [0, 0, 0, 0],
@@ -638,7 +638,7 @@ desc_test_controller_structured_mask_resolution = {
         )
     ),
     'prune_1head_1channel_no_mhsa_qkv_bias': dict(
-        unstructured_binary_mask=TransformerBlockItem(
+        unstructured_binary_mask=DictInTransformerBlockOrder(
             mhsa_q=dict(weight=torch.FloatTensor([[0, 0, 0, 0],
                                                   [0, 0, 0, 0],
                                                   [1, 0, 0, 0],
@@ -669,7 +669,7 @@ desc_test_controller_structured_mask_resolution = {
                                                  [1, 1, 0]]),
                        bias=torch.FloatTensor([0, 0, 0, 0])),
         ),
-        ref_structured_binary_mask=TransformerBlockItem(
+        ref_structured_binary_mask=DictInTransformerBlockOrder(
             mhsa_q=dict(weight=torch.FloatTensor([[0, 0, 0, 0],
                                                   [0, 0, 0, 0],
                                                   [1, 1, 1, 1],
@@ -702,7 +702,7 @@ desc_test_controller_structured_mask_resolution = {
         )
     ),
     'prune_1channel_no_mhsa_o_bias': dict(
-        unstructured_binary_mask=TransformerBlockItem(
+        unstructured_binary_mask=DictInTransformerBlockOrder(
             mhsa_q=dict(weight=torch.FloatTensor([[0, 0, 0, 0],
                                                   [0, 0, 0, 0],
                                                   [1, 0, 0, 0],
@@ -733,7 +733,7 @@ desc_test_controller_structured_mask_resolution = {
                                                  [1, 1, 0]]),
                        bias=torch.FloatTensor([0, 0, 0, 0])),
         ),
-        ref_structured_binary_mask=TransformerBlockItem(
+        ref_structured_binary_mask=DictInTransformerBlockOrder(
             mhsa_q=dict(weight=torch.ones((4, 4)), bias=torch.ones(4)),
             mhsa_k=dict(weight=torch.ones((4, 4)), bias=torch.ones(4)),
             mhsa_v=dict(weight=torch.ones((4, 4)), bias=torch.ones(4)),
@@ -750,7 +750,7 @@ desc_test_controller_structured_mask_resolution = {
         )
     ),
     'prune_none_no_ffn_bias': dict(
-        unstructured_binary_mask=TransformerBlockItem(
+        unstructured_binary_mask=DictInTransformerBlockOrder(
             mhsa_q=dict(weight=torch.FloatTensor([[1, 0, 0, 0],
                                                   [0, 0, 0, 0],
                                                   [0, 0, 0, 0],
@@ -781,7 +781,7 @@ desc_test_controller_structured_mask_resolution = {
                                                  [1, 1, 0]]),
                        bias=None)
         ),
-        ref_structured_binary_mask=TransformerBlockItem(
+        ref_structured_binary_mask=DictInTransformerBlockOrder(
             mhsa_q=dict(weight=torch.ones((4, 4)), bias=torch.ones(4)),
             mhsa_k=dict(weight=torch.ones((4, 4)), bias=torch.ones(4)),
             mhsa_v=dict(weight=torch.ones((4, 4)), bias=torch.ones(4)),
@@ -798,9 +798,9 @@ class TestComponentUpdateInTraining:
     @pytest.mark.parametrize('desc', desc_test_controller_structured_mask_resolution.values(),
                              ids=desc_test_controller_structured_mask_resolution.keys())
     def test_controller_structured_mask_resolution(self, tmp_path: Path, desc: dict):
-        mhsa_qkv_bias = (desc['unstructured_binary_mask'].mhsa_q['bias'] is not None)
-        mhsa_o_bias = (desc['unstructured_binary_mask'].mhsa_o['bias'] is not None)
-        ffn_bias = (desc['unstructured_binary_mask'].ffn_i['bias'] is not None)
+        mhsa_qkv_bias = (desc['unstructured_binary_mask']['mhsa_q']['bias'] is not None)
+        mhsa_o_bias = (desc['unstructured_binary_mask']['mhsa_o']['bias'] is not None)
+        ffn_bias = (desc['unstructured_binary_mask']['ffn_i']['bias'] is not None)
         recipe = BertRunRecipe(log_dir=tmp_path).model_config_(
             mhsa_qkv_bias=mhsa_qkv_bias, mhsa_o_bias=mhsa_o_bias, ffn_bias=ffn_bias
         )
@@ -894,7 +894,7 @@ class TestComponentUpdateInTraining:
     def test_binary_mask_update(self, tmp_path, recipe: BaseMockRunRecipe):
         steps_per_epoch = 5
         recipe.scheduler_params.steps_per_epoch = steps_per_epoch
-        recipe.set_log_dir(tmp_path)
+        recipe.log_dir_(tmp_path)
         compression_ctrl, compressed_model = create_compressed_model(recipe.model(),
                                                                      recipe.nncf_config(),
                                                                      dump_graphs=False)

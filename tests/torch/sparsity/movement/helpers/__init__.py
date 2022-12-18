@@ -19,7 +19,7 @@ from tests.torch.sparsity.movement.helpers.run_recipe import Conv2dPlusLinearRun
 from tests.torch.sparsity.movement.helpers.run_recipe import Conv2dRunRecipe
 from tests.torch.sparsity.movement.helpers.run_recipe import LinearRunRecipe
 from tests.torch.sparsity.movement.helpers.run_recipe import SwinRunRecipe
-from tests.torch.sparsity.movement.helpers.run_recipe import TransformerBlockItem
+from tests.torch.sparsity.movement.helpers.run_recipe import DictInTransformerBlockOrder
 from tests.torch.sparsity.movement.helpers.run_recipe import Wav2Vec2RunRecipe
 from tests.torch.sparsity.movement.helpers.trainer import CompressionCallback
 from tests.torch.sparsity.movement.helpers.trainer import CompressionTrainer
