@@ -241,7 +241,7 @@ class MovementPolynomialThresholdScheduler(BaseCompressionScheduler):
                 self.current_stage == MovementSchedulerStage.IN_WARMUP:
             adaptive_init_threshold = self._calc_init_threshold_from_controller(target_sparsity=0.001)
             nncf_logger.info('Movement sparsity automatically calculates `init_importance_threshold` as '
-                             f'{adaptive_init_threshold} so that warmup starts from ~0.1% relative sparsity.')
+                             f'{adaptive_init_threshold} so that warmup starts from ~0.1% linear layer sparsity.')
             if adaptive_init_threshold >= self._params.final_importance_threshold:
                 nncf_logger.warning('The auto-calculated `init_importance_threshold` is equal to or greater than '
                                     '`final_importance_threshold`. Movement sparsity may not work as expected.')

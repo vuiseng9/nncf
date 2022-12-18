@@ -80,7 +80,7 @@ Note: currently only `torch.nn.Linear` layers are supported by Movement Sparsity
 
 Usually we do not need to manually set the following arguments, but you can specify them for a more flexible sparsification strategy.
 
-- `initial_importance_threshold` & `final_importance_threshold`: Optional. In Movement Sparsity, a weight will be sparsified if the corresponding importance score is lower than threshold. The threshold gradually increases from `initial_importance_threshold` to `final_importance_threshold` during warmup stage. By default, `final_importance_threshold` is set to 0, and `initial_importance_threshold` is adaptively decided during training (usually a negative number) so that the model is with about 0.1% relative sparsity on involved layers at the beginning of warmup stage. User can let the threshold start from or end at a customized value.
+- `initial_importance_threshold` & `final_importance_threshold`: Optional. In Movement Sparsity, a weight will be sparsified if the corresponding importance score is lower than threshold. The threshold gradually increases from `initial_importance_threshold` to `final_importance_threshold` during warmup stage. By default, `final_importance_threshold` is set to 0, and `initial_importance_threshold` is adaptively decided during training (usually a negative number) so that the model is with about 0.1% linear layer sparsity on involved layers at the beginning of warmup stage. User can let the threshold start from or end at a customized value.
 
 - `power`: Optional. The threshold updates during warmup follow the concave polynomial decay with a certain `power`. Default is 3.
 
