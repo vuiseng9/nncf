@@ -67,7 +67,9 @@ class TestONNXExport:
         state_before = deepcopy(compressed_model.state_dict())
         compression_ctrl.export_model(onnx_path)
         state_after = compressed_model.state_dict()
-        PTTensorListComparator.check_equal(list(state_before.values()), list(state_after.values()))
+        PTTensorListComparator.check_equal(
+            list(state_before.values()), list(state_after.values())
+        )
 
     @pytest.mark.parametrize('recipe', [
         BertRunRecipe(),
@@ -208,15 +210,19 @@ class TestStateDict:
                                                           recipe.nncf_config(),
                                                           dump_graphs=False)
         new_compressed_model.load_state_dict(state_dict)
-        PTTensorListComparator.check_equal(list(new_compressed_model.state_dict().values()),
-                                           list(state_dict.values()))
+        PTTensorListComparator.check_equal(
+            list(new_compressed_model.state_dict().values()),
+            list(state_dict.values())
+        )
         # load state dict with nncf api
         _, new_compressed_model = create_compressed_model(recipe.model(init_seed=2),
                                                           recipe.nncf_config(),
                                                           dump_graphs=False)
         assert load_state(new_compressed_model, state_dict, is_resume=True) == len(state_dict)
-        PTTensorListComparator.check_equal(list(new_compressed_model.state_dict().values()),
-                                           list(state_dict.values()))
+        PTTensorListComparator.check_equal(
+            list(new_compressed_model.state_dict().values()),
+            list(state_dict.values())
+        )
 
 
 class TestCompressionState:
@@ -274,5 +280,7 @@ class TestCompressionState:
         resume_folder = Path(tmp_path, 'from_beginning', f'{PREFIX_CHECKPOINT_DIR}-{resume_step}')
         resumed_trainer.train(str(resume_folder))
 
-        PTTensorListComparator.check_equal(list(compressed_model.state_dict().values()),
-                                           list(resumed_compressed_model.state_dict().values()))
+        PTTensorListComparator.check_equal(
+            list(compressed_model.state_dict().values()),
+            list(resumed_compressed_model.state_dict().values())
+        )

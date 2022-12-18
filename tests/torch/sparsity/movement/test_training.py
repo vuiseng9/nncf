@@ -173,7 +173,7 @@ class MovementTrainingValidator(BaseSampleValidator):
             CUDA_ENV_KEY = 'CUDA_VISIBLE_DEVICES'
             n_card = self._desc.n_card
             if CUDA_ENV_KEY not in os.environ:
-                dev_ids = list(map(str, range(n_card)))
+                dev_ids = [str(i) for i in range(n_card)]
             else:
                 all_dev_ids = os.environ[CUDA_ENV_KEY].split(',')
                 dev_ids = all_dev_ids[:n_card]
@@ -298,14 +298,14 @@ def finalize_desc(desc: MovementTrainingTestDescriptor, is_long_training: bool,
 
 
 @pytest.fixture(name='movement_desc_long', scope='module', params=MOVEMENT_DESCRIPTORS.values(),
-                ids=list(MOVEMENT_DESCRIPTORS.keys()))
+                ids=MOVEMENT_DESCRIPTORS.keys())
 def fixture_movement_desc_long(request, dataset_dir, tmp_path_factory, weekly_models_path):
     desc: MovementTrainingTestDescriptor = request.param
     return finalize_desc(desc, True, dataset_dir, tmp_path_factory, weekly_models_path)
 
 
 @pytest.fixture(name='movement_desc_short', scope='module', params=MOVEMENT_DESCRIPTORS.values(),
-                ids=list(MOVEMENT_DESCRIPTORS.keys()))
+                ids=MOVEMENT_DESCRIPTORS.keys())
 def fixture_movement_desc_short(request, dataset_dir, tmp_path_factory, weekly_models_path):
     desc: MovementTrainingTestDescriptor = request.param
     desc = deepcopy(desc).quick_check()
