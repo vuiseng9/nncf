@@ -242,19 +242,20 @@ class TestCompressionState:
 
     @pytest.mark.parametrize('resume_step', [2, 7, 15, 17],
                              ids=['epoch0', 'epoch1', 'epoch2_end', 'epoch3'])
-    @pytest.mark.parametrize('steps_per_epoch', [5, None])
+    @pytest.mark.parametrize('infer_steps_per_epoch', [True, False])
     @pytest.mark.parametrize('adaptive_init_threshold', [True, False])
     def test_can_resume_training_from_compression_state(
-        self, tmp_path, resume_step: int, steps_per_epoch: int, adaptive_init_threshold: bool
+        self, tmp_path, resume_step: int, infer_steps_per_epoch: bool, adaptive_init_threshold: bool
     ):
-        recipe = BertRunRecipe(log_dir=tmp_path).model_config_(intermediate_size=6)
-        recipe.scheduler_params_(warmup_start_epoch=1, warmup_end_epoch=3,
-                                 steps_per_epoch=steps_per_epoch,
-                                 init_importance_threshold=None if adaptive_init_threshold else -0.01)
-        actual_steps_per_epoch = steps_per_epoch or 5
+        actual_steps_per_epoch = 5
         batch_size = 4
         num_train_epochs = 5
+        recipe = BertRunRecipe(log_dir=tmp_path).model_config_(intermediate_size=6)
+        recipe.scheduler_params_(warmup_start_epoch=1, warmup_end_epoch=3,
+                                 steps_per_epoch=None if infer_steps_per_epoch else actual_steps_per_epoch,
+                                 init_importance_threshold=None if adaptive_init_threshold else -0.01)
         dataset = recipe.generate_mock_dataset(num_samples=batch_size * actual_steps_per_epoch)
+
         # train from beginning
         compression_ctrl, compressed_model = create_compressed_model(
             recipe.model(init_seed=1), recipe.nncf_config(), dump_graphs=False
