@@ -23,11 +23,15 @@ from nncf.common.graph.graph import NNCFGraph
 from nncf.common.graph.graph import NNCFNode
 from nncf.common.graph.layer_attributes import LinearLayerAttributes
 from nncf.experimental.torch.sparsity.movement.algo import MovementSparsifier
+from tests.shared.paths import TEST_ROOT
 
 FACTOR_NAME_IN_MOVEMENT_STAT = 'movement_sparsity/importance_regularization_factor'
 THRESHOLD_NAME_IN_MOVEMENT_STAT = 'movement_sparsity/importance_threshold'
 LINEAR_LAYER_SPARSITY_NAME_IN_MOVEMENT_STAT = 'movement_sparsity/linear_layer_sparsity'
 MODEL_SPARSITY_NAME_IN_MOVEMENT_STAT = 'movement_sparsity/model_sparsity'
+
+TRAINING_SCRIPTS_PATH = TEST_ROOT.joinpath('torch', 'sparsity', 'movement', 'training_scripts')
+MRPC_CONFIG_FILE_NAME = 'bert_tiny_uncased_mrpc_movement.json'
 
 
 def mock_linear_nncf_node(in_features: int = 1, out_features: int = 1,
