@@ -91,6 +91,7 @@ def build_compression_trainer(output_dir,
                               eval_dataset: Optional[Dataset] = None,
                               callback: Optional[CompressionCallback] = None,
                               batch_size: int = 1,
+                              num_train_epochs: int = 6,
                               **training_kwargs) -> CompressionTrainer:
     evaluation_strategy = 'no' if eval_dataset is None else 'epoch'
     training_args = dict(
@@ -100,7 +101,7 @@ def build_compression_trainer(output_dir,
         logging_steps=1,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
-        num_train_epochs=6,
+        num_train_epochs=num_train_epochs,
         learning_rate=1e-3,
         optim='adamw_torch',
         remove_unused_columns=False,

@@ -343,16 +343,16 @@ class TestSchedulerInferStepsPerEpoch:
 
 class TestSchedulerAdaptiveInitThreshold:
     @pytest.mark.parametrize('desc', [
-        dict(recipe=BertRunRecipe.from_default(),
+        dict(recipe=BertRunRecipe(),
              ref_threshold=0.,
              ref_sparsity=0.0541),
-        dict(recipe=BertRunRecipe.from_default(num_hidden_layers=24, num_attention_heads=16,
-                                               intermediate_size=4096, hidden_size=1024),
+        dict(recipe=BertRunRecipe().model_config_(num_hidden_layers=24, num_attention_heads=16,
+                                                  intermediate_size=4096, hidden_size=1024),
              ref_threshold=0.2879,
              ref_sparsity=0.0010),
-        dict(recipe=SwinRunRecipe.from_default(image_size=384, patch_size=4, window_size=12,
-                                               embed_dim=192, mlp_ratio=4,
-                                               depths=(2, 2, 18, 2), num_heads=(6, 12, 24, 48)),
+        dict(recipe=SwinRunRecipe().model_config_(image_size=384, patch_size=4, window_size=12,
+                                                  embed_dim=192, mlp_ratio=4,
+                                                  depths=(2, 2, 18, 2), num_heads=(6, 12, 24, 48)),
              ref_threshold=8.3142,
              ref_sparsity=0.0010),
     ], ids=['bert_toy', 'bert_large', 'swin_large'])
@@ -383,8 +383,8 @@ class TestSchedulerAdaptiveInitThreshold:
         assert stat.importance_threshold == approx(ref_threshold, abs=1e-4)
 
     def test_calc_init_threshold_called_once(self, tmp_path, mocker):
-        recipe = BertRunRecipe.from_default(log_dir=tmp_path)
-        recipe.scheduler_params.init_importance_threshold = None
+        recipe = BertRunRecipe(log_dir=tmp_path)
+        recipe.scheduler_params_(init_importance_threshold=None)
         compression_ctrl, _ = create_compressed_model(recipe.model(),
                                                       recipe.nncf_config(),
                                                       dump_graphs=False)
@@ -400,9 +400,8 @@ class TestSchedulerAdaptiveInitThreshold:
     @pytest.mark.parametrize(('target_sparsity', 'ref_threshold'),
                              [(0.001, 1.), (0.5, 500.), (0.6, 600.), (0.999, 999.)])
     def test_calculate_threshold_value_function(self, target_sparsity: float, ref_threshold: float):
-        recipe = LinearRunRecipe.from_default(input_size=500, bias=False,
-                                              init_importance_threshold=None,
-                                              steps_per_epoch=None)  # 2x50 shape linear weight
+        recipe = LinearRunRecipe().model_config_(input_size=500, bias=False)  # 2x50 shape linear weight
+        recipe.scheduler_params_(init_importance_threshold=None, steps_per_epoch=None)
         compression_ctrl, _ = create_compressed_model(recipe.model(),
                                                       recipe.nncf_config(),
                                                       dump_graphs=False)
