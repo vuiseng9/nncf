@@ -48,7 +48,7 @@ class TransformerBlockInfo:
     dim_per_head: int
 
 
-class TransformerBlockItem(OrderedDict):
+class DictInTransformerBlockOrder(OrderedDict):
     def __init__(self, mhsa_q: Any, mhsa_k: Any, mhsa_v: Any,
                  mhsa_o: Any, ffn_i: Any, ffn_o: Any) -> None:
         super().__init__(mhsa_q=mhsa_q, mhsa_k=mhsa_k, mhsa_v=mhsa_v,
@@ -76,7 +76,7 @@ class BaseMockRunRecipe(ABC):
                  log_dir=None) -> None:
         self.model_config = model_config or deepcopy(self.default_model_config)
         self.algo_config = algo_config or deepcopy(self.default_algo_config)
-        self.set_log_dir(log_dir)
+        self.log_dir_(log_dir)
 
     @property
     @abstractmethod
@@ -140,6 +140,14 @@ class BaseMockRunRecipe(ABC):
             setattr(self.model_config, key, value)
         return self
 
+    def log_dir_(self, log_dir=None):
+        if log_dir is None:
+            self.log_dir = None
+        else:
+            self.log_dir = str(log_dir)
+            Path(log_dir).mkdir(exist_ok=True, parents=True)
+        return self
+
     def model(self) -> torch.nn.Module:
         torch_model = self._create_model()
         g = torch.Generator()
@@ -151,18 +159,11 @@ class BaseMockRunRecipe(ABC):
 
     def nncf_config(self) -> NNCFConfig:
         config_dict = {
-            'input_info': self.dumps_model_input_info(self.model_input_info),
+            'input_info': self.dumps_model_input_info(),
             'compression': self.algo_config.to_dict()}
         if self.log_dir is not None:
             config_dict['log_dir'] = str(self.log_dir)
         return NNCFConfig.from_dict(config_dict)
-
-    def set_log_dir(self, log_dir=None):
-        if log_dir is None:
-            self.log_dir = None
-        else:
-            self.log_dir = str(log_dir)
-            Path(log_dir).mkdir(exist_ok=True, parents=True)
 
     def generate_mock_dataset(self, num_samples: int = 16,
                               float_low: float = -1., float_high: float = 1.,
@@ -187,7 +188,7 @@ class BaseMockRunRecipe(ABC):
     @staticmethod
     @abstractmethod
     def get_nncf_modules_in_transformer_block_order(
-            compressed_model: NNCFNetwork) -> List[TransformerBlockItem]:
+            compressed_model: NNCFNetwork) -> List[DictInTransformerBlockOrder]:
         pass
 
     @abstractmethod
@@ -255,10 +256,10 @@ class Wav2Vec2RunRecipe(BaseMockRunRecipe):
 
     @staticmethod
     def get_nncf_modules_in_transformer_block_order(
-            compressed_model: NNCFNetwork) -> List[TransformerBlockItem]:
+            compressed_model: NNCFNetwork) -> List[DictInTransformerBlockOrder]:
         modules = []
         for block in compressed_model.nncf_module.wav2vec2.encoder.layers:
-            modules.append(TransformerBlockItem(
+            modules.append(DictInTransformerBlockOrder(
                 block.attention.q_proj,
                 block.attention.k_proj,
                 block.attention.v_proj,
@@ -329,10 +330,10 @@ class BertRunRecipe(BaseMockRunRecipe):
 
     @staticmethod
     def get_nncf_modules_in_transformer_block_order(
-            compressed_model: NNCFNetwork) -> List[TransformerBlockItem]:
+            compressed_model: NNCFNetwork) -> List[DictInTransformerBlockOrder]:
         modules = []
         for block in compressed_model.nncf_module.bert.encoder.layer:
-            modules.append(TransformerBlockItem(
+            modules.append(DictInTransformerBlockOrder(
                 block.attention.self.query,
                 block.attention.self.key,
                 block.attention.self.value,
@@ -396,11 +397,11 @@ class SwinRunRecipe(BaseMockRunRecipe):
 
     @staticmethod
     def get_nncf_modules_in_transformer_block_order(
-            compressed_model: NNCFNetwork) -> List[TransformerBlockItem]:
+            compressed_model: NNCFNetwork) -> List[DictInTransformerBlockOrder]:
         modules = []
         for layer in compressed_model.nncf_module.swin.encoder.layers:
             for block in layer.blocks:
-                modules.append(TransformerBlockItem(
+                modules.append(DictInTransformerBlockOrder(
                     block.attention.self.query,
                     block.attention.self.key,
                     block.attention.self.value,
@@ -480,7 +481,7 @@ class LinearRunRecipe(BaseMockRunRecipe):
 
     @staticmethod
     def get_nncf_modules_in_transformer_block_order(compressed_model: NNCFNetwork
-                                                    ) -> List[TransformerBlockItem]:
+                                                    ) -> List[DictInTransformerBlockOrder]:
         return []
 
 

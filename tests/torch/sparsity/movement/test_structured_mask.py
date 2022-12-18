@@ -37,8 +37,8 @@ from nncf.torch import create_compressed_model
 from tests.shared.logging import nncf_caplog  # pylint:disable=unused-import
 from tests.torch.sparsity.movement.helpers import BaseMockRunRecipe
 from tests.torch.sparsity.movement.helpers import BertRunRecipe
+from tests.torch.sparsity.movement.helpers import DictInTransformerBlockOrder
 from tests.torch.sparsity.movement.helpers import SwinRunRecipe
-from tests.torch.sparsity.movement.helpers import TransformerBlockItem
 from tests.torch.sparsity.movement.helpers import Wav2Vec2RunRecipe
 from tests.torch.sparsity.movement.helpers import mock_linear_nncf_node
 
@@ -287,7 +287,7 @@ class TestStructuredMaskRule:
 
 desc_test_resolve_dependent_structured = {
     'prune_1head_1channel': dict(
-        independent_structured=TransformerBlockItem(
+        independent_structured=DictInTransformerBlockOrder(
             mhsa_q=torch.FloatTensor([[1], [0]]),
             mhsa_k=torch.FloatTensor([[1], [0]]),
             mhsa_v=torch.FloatTensor([[1], [0]]),
@@ -295,7 +295,7 @@ desc_test_resolve_dependent_structured = {
             ffn_i=torch.FloatTensor([[1], [1], [0]]),
             ffn_o=torch.FloatTensor([[1, 1, 0]]),
         ),
-        dependent_structured=TransformerBlockItem(
+        dependent_structured=DictInTransformerBlockOrder(
             mhsa_q=torch.FloatTensor([[1], [0]]),
             mhsa_k=torch.FloatTensor([[1], [0]]),
             mhsa_v=torch.FloatTensor([[1], [0]]),
@@ -305,7 +305,7 @@ desc_test_resolve_dependent_structured = {
         ),
     ),
     'prune_0head_0channel': dict(
-        independent_structured=TransformerBlockItem(
+        independent_structured=DictInTransformerBlockOrder(
             mhsa_q=torch.FloatTensor([[1], [0]]),
             mhsa_k=torch.FloatTensor([[1], [0]]),
             mhsa_v=torch.FloatTensor([[0], [1]]),
@@ -313,7 +313,7 @@ desc_test_resolve_dependent_structured = {
             ffn_i=torch.FloatTensor([[1], [1], [0]]),
             ffn_o=torch.FloatTensor([[1, 0, 1]]),
         ),
-        dependent_structured=TransformerBlockItem(
+        dependent_structured=DictInTransformerBlockOrder(
             mhsa_q=torch.FloatTensor([[1], [1]]),
             mhsa_k=torch.FloatTensor([[1], [1]]),
             mhsa_v=torch.FloatTensor([[1], [1]]),
