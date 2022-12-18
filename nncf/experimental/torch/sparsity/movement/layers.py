@@ -255,6 +255,8 @@ class MovementSparsifier(nn.Module):
 
     def requires_grad_(self, requires_grad: bool = True):
         super().requires_grad_(requires_grad)
+        if not requires_grad:
+            self.zero_grad(set_to_none=True)  # avoid further unexpected update with Adam optimizer
         self.frozen = not requires_grad
 
     def extra_repr(self) -> str:
