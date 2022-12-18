@@ -279,7 +279,7 @@ class StructuredMaskHandler:
         for group in self._structured_mask_ctx_groups:
             group_type = group.group_type
             if group_type not in self.rules_by_group_type:
-                raise ValueError(f'No strucrtured mask strategy for group_type="{group_type}"')
+                raise ValueError(f'No structured mask strategy for group_type="{group_type}"')
             ctxes = group.structured_mask_context_list
             row_prune_ctxes = list(filter(lambda ctx: ctx.prune_by_row, ctxes))
             col_prune_ctxes = list(filter(lambda ctx: not ctx.prune_by_row, ctxes))

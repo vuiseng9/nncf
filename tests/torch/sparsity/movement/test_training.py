@@ -67,7 +67,7 @@ class MovementTrainingTestDescriptor(BaseSampleTestCaseDescriptor):
         self.timeout_ = 8 * 60  # 8 mins
         self.expected_eval_acc_ = None
         self.expected_eval_f1_ = None
-        self.expected_rela_sparsity_ = None
+        self.expected_linear_layer_sparsity_ = None
         self.num_train_epochs_ = 9
         self.learning_rate_ = 5e-5
         self.seed_ = None
@@ -105,8 +105,8 @@ class MovementTrainingTestDescriptor(BaseSampleTestCaseDescriptor):
         self.expected_eval_f1_ = expected
         return self
 
-    def expected_rela_sparsity(self, expected):
-        self.expected_rela_sparsity_ = expected
+    def expected_linear_layer_sparsity(self, expected):
+        self.expected_linear_layer_sparsity_ = expected
         return self
 
     def num_train_epochs(self, num_train_epochs: int):
@@ -240,20 +240,20 @@ MOVEMENT_DESCRIPTORS = {
     'mrpc_cuda_1card': deepcopy(mrpc_movement_desc_template)
     .expected_eval_f1(approx(0.81, abs=0.02))
     .expected_eval_acc(approx(0.68, abs=0.03))
-    .expected_rela_sparsity(approx(0.48, abs=0.05)),
+    .expected_linear_layer_sparsity(approx(0.48, abs=0.05)),
 
     'mrpc_cuda_1card_fp16': deepcopy(mrpc_movement_desc_template)
     .enable_autocast_fp16()
     .expected_eval_f1(approx(0.81, abs=0.02))
     .expected_eval_acc(approx(0.68, abs=0.03))
-    .expected_rela_sparsity(approx(0.48, abs=0.05)),
+    .expected_linear_layer_sparsity(approx(0.48, abs=0.05)),
 
     'mrpc_cuda_2cards_dp': deepcopy(mrpc_movement_desc_template)
     .batch_size(32)
     .data_parallel(n_card=2)
     .expected_eval_f1(approx(0.81, abs=0.02))
     .expected_eval_acc(approx(0.68, abs=0.03))
-    .expected_rela_sparsity(approx(0.48, abs=0.05)),
+    .expected_linear_layer_sparsity(approx(0.48, abs=0.05)),
 
     'mrpc_cuda_2cards_dp_fp16': deepcopy(mrpc_movement_desc_template)
     .batch_size(32)
@@ -261,14 +261,14 @@ MOVEMENT_DESCRIPTORS = {
     .enable_autocast_fp16()
     .expected_eval_f1(approx(0.81, abs=0.02))
     .expected_eval_acc(approx(0.68, abs=0.03))
-    .expected_rela_sparsity(approx(0.48, abs=0.05)),
+    .expected_linear_layer_sparsity(approx(0.48, abs=0.05)),
 
     'mrpc_cuda_2cards_ddp': deepcopy(mrpc_movement_desc_template)
     .batch_size(32)
     .distributed_data_parallel(n_card=2)
     .expected_eval_f1(approx(0.81, abs=0.02))
     .expected_eval_acc(approx(0.68, abs=0.03))
-    .expected_rela_sparsity(approx(0.48, abs=0.05)),
+    .expected_linear_layer_sparsity(approx(0.48, abs=0.05)),
 
     'mrpc_cuda_2cards_ddp_fp16': deepcopy(mrpc_movement_desc_template)
     .batch_size(32)
@@ -276,13 +276,13 @@ MOVEMENT_DESCRIPTORS = {
     .enable_autocast_fp16()
     .expected_eval_f1(approx(0.81, abs=0.02))
     .expected_eval_acc(approx(0.68, abs=0.03))
-    .expected_rela_sparsity(approx(0.48, abs=0.05)),
+    .expected_linear_layer_sparsity(approx(0.48, abs=0.05)),
 
     'mrpc_cpu_1card': deepcopy(mrpc_movement_desc_template)
     .cpu_only()
     .expected_eval_f1(approx(0.81, abs=0.02))
     .expected_eval_acc(approx(0.68, abs=0.03))
-    .expected_rela_sparsity(approx(0.48, abs=0.05)),
+    .expected_linear_layer_sparsity(approx(0.48, abs=0.05)),
 }
 
 
@@ -343,6 +343,6 @@ class TestMovementTraining:
             assert metrics['eval_accuracy'] == approx(desc.expected_eval_acc_)
         if desc.expected_eval_f1_ is not None:
             assert metrics['eval_f1'] == approx(desc.expected_eval_f1_)
-        if desc.expected_rela_sparsity_ is not None:
+        if desc.expected_linear_layer_sparsity_ is not None:
             assert metrics[LINEAR_LAYER_SPARSITY_NAME_IN_MOVEMENT_STAT] == \
-                approx(desc.expected_rela_sparsity_)
+                approx(desc.expected_linear_layer_sparsity_)
