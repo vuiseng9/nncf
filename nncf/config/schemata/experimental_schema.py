@@ -343,7 +343,7 @@ MOVEMENT_SCHEDULER_PARAMS_SCHEMA = {
             with_attributes(NUMBER,
                             description='The initial value of importance threshold during warmup stage. If not '
                                         'specified, this will be automatically decided during training so that '
-                                        'the model is with about 0.1% relative sparsity on involved layers at '
+                                        'the model is with about 0.1% linear layer sparsity on involved layers at '
                                         'the beginning of warmup stage.'),
         'final_importance_threshold':
             with_attributes(NUMBER,
