@@ -58,7 +58,7 @@ Note: currently only `torch.nn.Linear` layers are supported by Movement Sparsity
 
 - `importance_regularization_factor`: The regularization factor on weight importance scores. With a larger positive value, more model weights will be regarded as less important and thus be sparsified. The appropriate value range of this argument can be quite different per model and task.
 
-- `enable_structured_masking`: Optional. A boolean to decide whether to do structured mask resolution after warmup stage. Currently, we only support structured masking on multi-head self-attention blocks and feed-forward networks in BERT, Swin and Wav2vec2 implemented in [Transformers](https://github.com/huggingface/transformers). If it is set to `false`, the output model is instead with unstructured sparsity. Default is `true`.
+- `enable_structured_masking`: Optional. A boolean to decide whether to do structured mask resolution after warmup stage. Currently, we only support structured masking on multi-head self-attention blocks and feed-forward networks in BERT, Swin and Wav2Vec2 implemented in [Transformers](https://github.com/huggingface/transformers). If it is set to `false`, the output model is instead with unstructured sparsity. Default is `true`.
 
 - `sparse_structure_by_scopes`: Describes how each supported layer will be sparsified. This argument is a list, where each entry dictionary must specify `mode` and `target_scopes`, together with some extra arguments for a certain mode (e.g., `sparse_factors` for "block", and `axis` for "per_dim").
 
@@ -66,7 +66,7 @@ Note: currently only `torch.nn.Linear` layers are supported by Movement Sparsity
 
     - fine: Each weight element is learned individually whether to be sparsified. No extra argument needed.
 
-    - block: Each block within a weight will be preserved or sparsified together as a whole. Requires `sparse_factors` to decide the block shape. Note that the block shape must be dividable w.r.t. the weight shape.
+    - block: Each block within a weight will be preserved or sparsified together as a whole. Requires `sparse_factors` to decide the block shape. Note that the block shape must be divisible by the weight shape.
 
     - per_dim: The weight will be sparsified by a certain dimension. Requires `axis` to decide which dimension to sparsify. Typically, for a layer containing a 2D weight matrix, `axis=0` means to be sparse by row, and `axis=1` means sparse by column.
 
@@ -84,7 +84,7 @@ Usually we do not need to manually set the following arguments, but you can spec
 
 - `power`: Optional. The threshold updates during warmup follow the concave polynomial decay with a certain `power`. Default is 3.
 
-- `steps_per_epoch`: Optional. The threshold is updated each step during warmup, and thus `steps_per_epoch` is needed for calculation. By default, this can be automatically counted during 1st epoch without any side effect, as long as `warmup_start_epoch` >= 1. Setting `steps_per_epoch` is only required when you want to start sparsification from epoch 0.
+- `steps_per_epoch`: Optional. Because the threshold is updated each training step during warmup, `steps_per_epoch` is needed for calculation. By default, this can be automatically counted during 1st epoch without any side effect, as long as `warmup_start_epoch` >= 1. Setting `steps_per_epoch` is only required when you want to start sparsification before the first epoch is finished.
 
 For more information, please refer to the following publication:
 
