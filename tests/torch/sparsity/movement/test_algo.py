@@ -51,9 +51,12 @@ from tests.torch.sparsity.movement.helpers import BertRunRecipe
 from tests.torch.sparsity.movement.helpers import CompressionCallback
 from tests.torch.sparsity.movement.helpers import Conv2dPlusLinearRunRecipe
 from tests.torch.sparsity.movement.helpers import Conv2dRunRecipe
+from tests.torch.sparsity.movement.helpers import FACTOR_NAME_IN_MOVEMENT_STAT
+from tests.torch.sparsity.movement.helpers import LINEAR_LAYER_SPARSITY_NAME_IN_MOVEMENT_STAT
 from tests.torch.sparsity.movement.helpers import LinearRunRecipe
-from tests.torch.sparsity.movement.helpers import MovementAlgoConfig
+from tests.torch.sparsity.movement.helpers import MODEL_SPARSITY_NAME_IN_MOVEMENT_STAT
 from tests.torch.sparsity.movement.helpers import SwinRunRecipe
+from tests.torch.sparsity.movement.helpers import THRESHOLD_NAME_IN_MOVEMENT_STAT
 from tests.torch.sparsity.movement.helpers import TransformerBlockItem
 from tests.torch.sparsity.movement.helpers import Wav2Vec2RunRecipe
 from tests.torch.sparsity.movement.helpers import build_compression_trainer
@@ -66,12 +69,6 @@ from datasets import Dataset  # pylint: disable=no-name-in-module
 from transformers import TrainingArguments
 from transformers.trainer_callback import TrainerControl
 from transformers.trainer_callback import TrainerState
-
-FACTOR_NAME_IN_MOVEMENT_STAT = 'movement_sparsity/importance_regularization_factor'
-THRESHOLD_NAME_IN_MOVEMENT_STAT = 'movement_sparsity/importance_threshold'
-LINEAR_LAYER_SPARSITY_NAME_IN_MOVEMENT_STAT = 'movement_sparsity/linear_layer_sparsity'
-MODEL_SPARSITY_NAME_IN_MOVEMENT_STAT = 'movement_sparsity/model_sparsity'
-
 
 desc_sparse_structures = {
     'explicit_mixed': [
@@ -222,7 +219,8 @@ class TestControllerCreation:
     @pytest.mark.parametrize('desc', desc_improper_sparse_structures.values(),
                              ids=desc_improper_sparse_structures.keys())
     def test_error_on_wrong_sparse_structure_by_scopes(self, desc: dict):
-        recipe = BertRunRecipe().algo_config_(sparse_structure_by_scopes=desc['sparse_structure_by_scopes'])
+        recipe = BertRunRecipe()
+        recipe.algo_config_(sparse_structure_by_scopes=desc['sparse_structure_by_scopes'])
         with pytest.raises(desc['error'], match=desc['match']):
             create_compressed_model(recipe.model(), recipe.nncf_config(), dump_graphs=False)
 
@@ -495,8 +493,8 @@ class TestModelSaving:
             item = dataset[i:i + 1]
             onnx_input = {}
             for input_name, input_info in zip(input_names, recipe.model_input_info):
-                onnx_input[input_name] = np.array(item[input_info['keyword']],
-                                                  dtype=input_info.get('type', 'float32'))
+                onnx_input[input_name] = torch.tensor(item[input_info.keyword],
+                                                      dtype=input_info.type).numpy()
             outputs = sess.run(None, onnx_input)
             for name, output in zip(output_names, outputs):
                 onnx_output_dict[name].append(output)
@@ -800,9 +798,9 @@ class TestComponentUpdateInTraining:
     @pytest.mark.parametrize('desc', desc_test_controller_structured_mask_resolution.values(),
                              ids=desc_test_controller_structured_mask_resolution.keys())
     def test_controller_structured_mask_resolution(self, tmp_path: Path, desc: dict):
-        mhsa_qkv_bias = (desc['unstructured_binary_mask']['mhsa_q']['bias'] is not None)
-        mhsa_o_bias = (desc['unstructured_binary_mask']['mhsa_o']['bias'] is not None)
-        ffn_bias = (desc['unstructured_binary_mask']['ffn_i']['bias'] is not None)
+        mhsa_qkv_bias = (desc['unstructured_binary_mask'].mhsa_q['bias'] is not None)
+        mhsa_o_bias = (desc['unstructured_binary_mask'].mhsa_o['bias'] is not None)
+        ffn_bias = (desc['unstructured_binary_mask'].ffn_i['bias'] is not None)
         recipe = BertRunRecipe(log_dir=tmp_path).model_config_(
             mhsa_qkv_bias=mhsa_qkv_bias, mhsa_o_bias=mhsa_o_bias, ffn_bias=ffn_bias
         )
@@ -812,7 +810,8 @@ class TestComponentUpdateInTraining:
         compressed_model.train()
         module_dict = recipe.get_nncf_modules_in_transformer_block_order(compressed_model)[0]
         module_vs_operand_map = {minfo.module: minfo.operand for minfo in compression_ctrl.sparsified_module_info}
-        for unstructured_binary_mask, module in zip(desc['unstructured_binary_mask'].values(), module_dict.values()):
+        for unstructured_binary_mask, module in zip(desc['unstructured_binary_mask'].values(),
+                                                    module_dict.values()):
             operand = module_vs_operand_map[module]
             operand.weight_ctx.binary_mask = unstructured_binary_mask['weight']
             assert (operand.prune_bias is False and unstructured_binary_mask['bias'] is None) or \
@@ -824,9 +823,8 @@ class TestComponentUpdateInTraining:
         compression_ctrl.resolve_structured_mask()
         compression_ctrl.populate_structured_mask()
 
-        for ref_structured_binary_mask, module in zip(
-                desc['ref_structured_binary_mask'].values(),
-                module_dict.values()):
+        for ref_structured_binary_mask, module in zip(desc['ref_structured_binary_mask'].values(),
+                                                      module_dict.values()):
             operand = module_vs_operand_map[module]
             assert torch.allclose(operand.weight_ctx.binary_mask, ref_structured_binary_mask['weight'])
             if operand.prune_bias:

@@ -24,6 +24,11 @@ from nncf.common.graph.graph import NNCFNode
 from nncf.common.graph.layer_attributes import LinearLayerAttributes
 from nncf.experimental.torch.sparsity.movement.algo import MovementSparsifier
 
+FACTOR_NAME_IN_MOVEMENT_STAT = 'movement_sparsity/importance_regularization_factor'
+THRESHOLD_NAME_IN_MOVEMENT_STAT = 'movement_sparsity/importance_threshold'
+LINEAR_LAYER_SPARSITY_NAME_IN_MOVEMENT_STAT = 'movement_sparsity/linear_layer_sparsity'
+MODEL_SPARSITY_NAME_IN_MOVEMENT_STAT = 'movement_sparsity/model_sparsity'
+
 
 def mock_linear_nncf_node(in_features: int = 1, out_features: int = 1,
                           bias: bool = True, node_name: str = 'linear') -> NNCFNode:

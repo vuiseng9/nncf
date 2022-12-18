@@ -372,12 +372,12 @@ class TestStructuredMaskHandler:
         module_vs_node_name_map = {minfo.module: minfo.module_node_name
                                    for minfo in compression_ctrl.sparsified_module_info}
         node_name_vs_context_map = {ctx.module_node_name: ctx for ctx in all_ctxes}
-        ctxes = [node_name_vs_context_map[module_vs_node_name_map[m]] for m in module_dict.__dict__.values()]
-        for ctx, param in zip(ctxes, desc['independent_structured'].__dict__.values()):
+        ctxes = [node_name_vs_context_map[module_vs_node_name_map[m]] for m in module_dict.values()]
+        for ctx, param in zip(ctxes, desc['independent_structured'].values()):
             ctx.independent_structured_mask = param
 
         handler.resolve_dependent_structured_mask()
-        for ctx, ref_param in zip(ctxes, desc['dependent_structured'].__dict__.values()):
+        for ctx, ref_param in zip(ctxes, desc['dependent_structured'].values()):
             assert torch.allclose(ctx.dependent_structured_mask, ref_param)
 
     def test_populate_dependent_structured_mask_to_operand(self, mocker):
