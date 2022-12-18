@@ -26,7 +26,9 @@ from tests.torch.sparsity.movement.helpers.trainer import build_compression_trai
 from tests.torch.sparsity.movement.helpers.utils import FACTOR_NAME_IN_MOVEMENT_STAT
 from tests.torch.sparsity.movement.helpers.utils import LINEAR_LAYER_SPARSITY_NAME_IN_MOVEMENT_STAT
 from tests.torch.sparsity.movement.helpers.utils import MODEL_SPARSITY_NAME_IN_MOVEMENT_STAT
+from tests.torch.sparsity.movement.helpers.utils import MRPC_CONFIG_FILE_NAME
 from tests.torch.sparsity.movement.helpers.utils import THRESHOLD_NAME_IN_MOVEMENT_STAT
+from tests.torch.sparsity.movement.helpers.utils import TRAINING_SCRIPTS_PATH
 from tests.torch.sparsity.movement.helpers.utils import force_update_sparsifier_binary_masks_by_threshold
 from tests.torch.sparsity.movement.helpers.utils import initialize_sparsifier_parameters_by_linspace
 from tests.torch.sparsity.movement.helpers.utils import is_roughly_non_decreasing

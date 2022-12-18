@@ -22,17 +22,17 @@ from pytest import approx
 import torch.cuda
 
 from tests.shared.paths import PROJECT_ROOT
-from tests.shared.paths import TEST_ROOT
 from tests.torch.helpers import Command
 from tests.torch.sample_test_validator import BaseSampleTestCaseDescriptor
 from tests.torch.sample_test_validator import BaseSampleValidator
 from tests.torch.sparsity.movement.helpers import LINEAR_LAYER_SPARSITY_NAME_IN_MOVEMENT_STAT
+from tests.torch.sparsity.movement.helpers import MRPC_CONFIG_FILE_NAME
+from tests.torch.sparsity.movement.helpers import TRAINING_SCRIPTS_PATH
 
 
 class MovementGlueHandler:
     def get_executable(self) -> Path:
-        return TEST_ROOT.joinpath('torch', 'sparsity', 'movement',
-                                  'training_scripts', self._get_main_filename() + '.py')
+        return TRAINING_SCRIPTS_PATH.joinpath(self._get_main_filename() + '.py')
 
     @staticmethod
     def get_checkpoint_path(checkpoint_save_dir) -> Path:
@@ -87,7 +87,7 @@ class MovementTrainingTestDescriptor(BaseSampleTestCaseDescriptor):
 
     @property
     def config_directory(self) -> Path:
-        return TEST_ROOT.joinpath('torch', 'sparsity', 'movement', 'training_scripts')
+        return TRAINING_SCRIPTS_PATH
 
     def model_name(self, model_name_):
         self.model_name_ = model_name_
@@ -230,7 +230,7 @@ mrpc_movement_desc_template = \
     MovementTrainingTestDescriptor()\
     .model_name('google/bert_uncased_L-2_H-128_A-2')\
     .real_dataset('mrpc')\
-    .config_name('bert_tiny_uncased_mrpc_movement.json')\
+    .config_name(MRPC_CONFIG_FILE_NAME)\
     .learning_rate(5e-5)\
     .batch_size(64)\
     .num_train_epochs(9)\
