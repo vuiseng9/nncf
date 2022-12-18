@@ -594,8 +594,8 @@ class TestModelSavingAndResuming:
                                                           recipe.nncf_config(),
                                                           dump_graphs=False)
         assert load_state(new_compressed_model, state_dict, is_resume=True) == len(state_dict)
-        PTTensorListComparator.check_equal(new_compressed_model.state_dict().values(),
-                                           state_dict.values())
+        PTTensorListComparator.check_equal(list(new_compressed_model.state_dict().values()),
+                                           list(state_dict.values()))
 
     def test_can_load_compression_state(self, tmp_path):
         recipe = LinearRunRecipe(log_dir=tmp_path).scheduler_params_(steps_per_epoch=4)
