@@ -168,7 +168,7 @@ class StructuredMaskContext:
         """
         node = self.sparsifier_operand.target_module_node
         assert isinstance(node.layer_attributes, tuple(EXPECTED_NODE_LAYER_ATTRS))
-        weight_shape: Tuple[int, int] = tuple(list(node.layer_attributes.get_weight_shape()))
+        weight_shape: Tuple[int, int] = tuple(node.layer_attributes.get_weight_shape())
         bias_shape: Tuple[int] = (node.layer_attributes.get_bias_shape(),
                                   ) if self.sparsifier_operand.prune_bias else (0,)
 
@@ -223,10 +223,11 @@ class StructuredMaskContextGroup:
 
     def __str__(self) -> str:
         if not self.structured_mask_context_list:
-            ctx_str = '[]'
+            ctx_list_str = '[]'
         else:
-            ctx_str = '[\n\t{}\n]'.format('\n\t'.join(map(str, self.structured_mask_context_list)))
-        return f'{self.__class__.__name__}[{self.group_id}]({self.group_type}): {ctx_str}'
+            ctxes = (f'\n\t{ctx}' for ctx in self.structured_mask_context_list)
+            ctx_list_str = '[{}\n]'.format(''.join(ctxes))
+        return f'{self.__class__.__name__}[{self.group_id}]({self.group_type}): {ctx_list_str}'
 
 
 class StructuredMaskHandler:

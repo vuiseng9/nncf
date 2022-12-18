@@ -145,8 +145,8 @@ class TestStructuredMaskContext:
         assert ctx.grid_size == ref_resolved_grid
 
     @pytest.mark.parametrize(('structure_grid_size', 'ref_mask_shape'), [
-        ((2, 4), torch.Size((2, 1))),
-        ((4, 1), torch.Size((1, 4))),
+        ((2, 4), torch.Size([2, 1])),
+        ((4, 1), torch.Size([1, 4])),
     ])
     @pytest.mark.parametrize('is_dependent_mask', [True, False],
                              ids=['dependent', 'independent'])
@@ -187,7 +187,7 @@ class TestStructuredMaskContext:
         mask_name = 'dependent_structured_mask' if is_dependent_mask else 'independent_structured_mask'
         operand = MovementSparsifier(mock_linear_nncf_node(1, 1))
         ctx = StructuredMaskContext(operand, 'linear', (1, 1), True)
-        setattr(ctx, mask_name, torch.ones((1, 1)))
+        setattr(ctx, mask_name, torch.ones(1, 1))
         # use 'meta' device for check since it does not need gpus
         mock_meta_mask = torch.ones((1, 1), device=torch.device('meta'))
         with nncf_caplog.at_level(logging.DEBUG, logger=nncf_logger.name):
