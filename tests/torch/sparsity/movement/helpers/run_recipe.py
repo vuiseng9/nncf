@@ -185,16 +185,6 @@ class BaseMockRunRecipe(ABC):
             num_samples // self.model_config.num_labels + 1)[:num_samples]
         return Dataset.from_dict(input_dict)
 
-    @staticmethod
-    @abstractmethod
-    def get_nncf_modules_in_transformer_block_order(
-            compressed_model: NNCFNetwork) -> List[DictInTransformerBlockOrder]:
-        pass
-
-    @abstractmethod
-    def _create_model(self) -> torch.nn.Module:
-        pass
-
     def dumps_model_input_info(self, model_input_info: Optional[List[ModelInputInfo]] = None
                                ) -> List[Dict[str, Any]]:
         if model_input_info is None:
@@ -209,6 +199,16 @@ class BaseMockRunRecipe(ABC):
                 item['filler'] = info.filler
             result.append(item)
         return result
+
+    @staticmethod
+    @abstractmethod
+    def get_nncf_modules_in_transformer_block_order(
+            compressed_model: NNCFNetwork) -> List[DictInTransformerBlockOrder]:
+        pass
+
+    @abstractmethod
+    def _create_model(self) -> torch.nn.Module:
+        pass
 
 
 class Wav2Vec2RunRecipe(BaseMockRunRecipe):
@@ -236,9 +236,6 @@ class Wav2Vec2RunRecipe(BaseMockRunRecipe):
         ],
         ignored_scopes=['{re}feature_extractor'],
     )
-
-    def _create_model(self) -> torch.nn.Module:
-        return AutoModelForAudioClassification.from_config(self.model_config)
 
     @property
     def model_input_info(self) -> List[ModelInputInfo]:
@@ -269,6 +266,9 @@ class Wav2Vec2RunRecipe(BaseMockRunRecipe):
             )
         return modules
 
+    def _create_model(self) -> torch.nn.Module:
+        return AutoModelForAudioClassification.from_config(self.model_config)
+
 
 class BertRunRecipe(BaseMockRunRecipe):
     model_family = 'huggingface_bert'
@@ -293,20 +293,6 @@ class BertRunRecipe(BaseMockRunRecipe):
         ],
         ignored_scopes=['{re}embedding', '{re}pooler', '{re}classifier'],
     )
-
-    def _create_model(self) -> torch.nn.Module:
-        model = AutoModelForSequenceClassification.from_config(self.model_config)
-        for block in model.bert.encoder.layer:
-            if not getattr(self.model_config, 'mhsa_qkv_bias', True):
-                block.attention.self.query.bias = None
-                block.attention.self.key.bias = None
-                block.attention.self.value.bias = None
-            if not getattr(self.model_config, 'mhsa_o_bias', True):
-                block.attention.output.dense.bias = None
-            if not getattr(self.model_config, 'ffn_bias', True):
-                block.intermediate.dense.bias = None
-                block.output.dense.bias = None
-        return model
 
     @property
     def model_input_info(self) -> List[ModelInputInfo]:
@@ -343,6 +329,20 @@ class BertRunRecipe(BaseMockRunRecipe):
             )
         return modules
 
+    def _create_model(self) -> torch.nn.Module:
+        model = AutoModelForSequenceClassification.from_config(self.model_config)
+        for block in model.bert.encoder.layer:
+            if not getattr(self.model_config, 'mhsa_qkv_bias', True):
+                block.attention.self.query.bias = None
+                block.attention.self.key.bias = None
+                block.attention.self.value.bias = None
+            if not getattr(self.model_config, 'mhsa_o_bias', True):
+                block.attention.output.dense.bias = None
+            if not getattr(self.model_config, 'ffn_bias', True):
+                block.intermediate.dense.bias = None
+                block.output.dense.bias = None
+        return model
+
 
 class SwinRunRecipe(BaseMockRunRecipe):
     model_family = 'huggingface_swin'
@@ -367,9 +367,6 @@ class SwinRunRecipe(BaseMockRunRecipe):
         ],
         ignored_scopes=['{re}embedding', '{re}pooler', '{re}classifier'],
     )
-
-    def _create_model(self) -> torch.nn.Module:
-        return AutoModelForImageClassification.from_config(self.model_config)
 
     @property
     def model_input_info(self) -> List[ModelInputInfo]:
@@ -410,6 +407,9 @@ class SwinRunRecipe(BaseMockRunRecipe):
                     block.output.dense)
                 )
         return modules
+
+    def _create_model(self) -> torch.nn.Module:
+        return AutoModelForImageClassification.from_config(self.model_config)
 
 
 class LinearForClassification(PreTrainedModel):
