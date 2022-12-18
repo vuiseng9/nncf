@@ -611,12 +611,17 @@ class TestModelSavingAndResuming:
                                                       compression_state=ref_compression_state)
         assert compression_ctrl.get_compression_state() == ref_compression_state
 
-    @pytest.mark.parametrize('resume_step', [2, 7, 15, 17], ids=['epoch0', 'epoch1', 'ecpoh2_end', 'epoch3'])
+    @pytest.mark.parametrize('resume_step', [2, 7, 15, 17],
+                             ids=['epoch0', 'epoch1', 'epoch2_end', 'epoch3'])
     @pytest.mark.parametrize('steps_per_epoch', [5, None])
-    def test_can_resume_training_from_compression_state(self, tmp_path, resume_step: int, steps_per_epoch: int):
-        recipe = LinearRunRecipe(log_dir=tmp_path).model_config_(intermediate_size=6)
+    @pytest.mark.parametrize('adaptive_init_threshold', [True, False])
+    def test_can_resume_training_from_compression_state(
+        self, tmp_path, resume_step: int, steps_per_epoch: int, adaptive_init_threshold: bool
+    ):
+        recipe = BertRunRecipe(log_dir=tmp_path).model_config_(intermediate_size=6)
         recipe.scheduler_params_(warmup_start_epoch=1, warmup_end_epoch=3,
-                                 steps_per_epoch=steps_per_epoch, init_importance_threshold=None)
+                                 steps_per_epoch=steps_per_epoch,
+                                 init_importance_threshold=None if adaptive_init_threshold else -0.01)
         actual_steps_per_epoch = steps_per_epoch or 5
         batch_size = 4
         num_train_epochs = 5
