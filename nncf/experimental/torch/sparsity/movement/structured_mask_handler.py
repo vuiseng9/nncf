@@ -141,7 +141,7 @@ class StructuredMaskContext:
         preserved_cols = mask_by_grid.amax(dim=0)
         preserved_rows = mask_by_grid.amax(dim=1)
 
-        if self.sparsifier_operand.prune_bias is True:
+        if self.sparsifier_operand.prune_bias:
             bias_binary_mask = self.sparsifier_operand.bias_ctx.binary_mask.detach().clone()
             bias_preserved_rows = F.max_pool1d(
                 bias_binary_mask.view(1, -1), kernel_size=self.grid_size[0], stride=self.grid_size[0]).squeeze(0)
@@ -157,14 +157,14 @@ class StructuredMaskContext:
         """
         structured_mask_inflated = self._inflate_structured_mask(self.dependent_structured_mask, self.grid_size)
         self.sparsifier_operand.weight_ctx.binary_mask = structured_mask_inflated
-        if self.sparsifier_operand.prune_bias is True:
+        if self.sparsifier_operand.prune_bias:
             self.sparsifier_operand.bias_ctx.binary_mask = structured_mask_inflated.amax(dim=1)
 
     def gather_statistics_from_operand(self) -> StructuredMaskContextStatistics:
         """
         Collects the structured mask statistics from the binary masks in operand.
 
-        :return: A `StructuredMaskContextStatistics` object.
+        :return: The statistics of the structured mask context.
         """
         node = self.sparsifier_operand.target_module_node
         assert isinstance(node.layer_attributes, tuple(EXPECTED_NODE_LAYER_ATTRS))
@@ -214,9 +214,21 @@ class StructuredMaskContext:
 
 
 class StructuredMaskContextGroup:
+    """
+    Stores together the structured mask contexts that are related to the same building block.
+    """
+
     def __init__(self, group_id: int,
                  group_type: BuildingBlockType,
-                 structured_mask_contexts: List[StructuredMaskContext]) -> None:
+                 structured_mask_contexts: List[StructuredMaskContext]):
+        """
+        Initializes a group of related structured mask contexts.
+
+        :param group_id: The index of the building block.
+        :param group_type: The type of building block that this group belongs to.
+        :param structured_mask_contexts: A list of structured mask contexts corresponding
+            to the building block.
+        """
         self.group_id = group_id
         self.group_type = group_type
         self.structured_mask_contexts = structured_mask_contexts
@@ -251,7 +263,7 @@ class StructuredMaskHandler:
         :param compressed_model: The wrapped compressed model.
         :param sparsified_module_info_list: List of `SparsifiedModuleInfo` in the
             controller of `compressed_model`.
-        :param strategy: Strategy of resolving structured masks for the `compressed_model`.
+        :param strategy: Strategy of resolving structured masks for `compressed_model`.
         """
         self.strategy = strategy
         self.rules_by_group_type = strategy.rules_by_group_type
