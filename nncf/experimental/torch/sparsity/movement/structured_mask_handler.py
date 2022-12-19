@@ -37,6 +37,10 @@ EXPECTED_NODE_LAYER_ATTRS = [LinearLayerAttributes]
 
 
 class StructuredMaskContextStatistics:
+    """
+    Describes details of the resolved structured mask in a supported layer.
+    """
+
     def __init__(self,
                  weight_shape: Tuple[int, int],
                  pruned_weight_shape: Tuple[int, int],
@@ -45,6 +49,20 @@ class StructuredMaskContextStatistics:
                  head_or_channel_id_to_keep: List[int],
                  module_node_name: NNCFNodeName,
                  ):
+        """
+        Initializes the statistics for the target linear module of a structured mask context.
+
+        :param weight_shape: Shape of the original weight in a linear layer.
+        :param pruned_weight_shape: Shape of the weight after structured mask resolution, 
+            discarding the pruned regions.
+        :param bias_shape: Shape of the original bias in a linear layer.
+        :param pruned_bias_shape: Shape of the bias after structured mask resolution, 
+            discarding the pruned regions.
+        :param head_or_channel_id_to_keep: If the layer belongs to multi-head self-attention block,
+            specifies the preserved head ids after structured masking. If the layer belongs to feed-
+            forward network, specifies the preserved channels after structured masking.
+        :param module_node_name: Node name of the target module.
+        """
         self.weight_shape = weight_shape
         self.pruned_weight_shape = pruned_weight_shape
         self.bias_shape = bias_shape
