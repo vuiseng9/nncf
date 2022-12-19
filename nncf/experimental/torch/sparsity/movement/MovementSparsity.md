@@ -55,7 +55,7 @@ Please refer [optimum-intel](https://github.com/huggingface/optimum-intel/tree/m
 #### Detailed description of Movement Sparsity configuration
 
 - `algorithm`: The algorithm name is "movement_sparsity".
-- `warmup_start_epoch` & `warmup_end_epoch`: The algorithm will conduct model weight sparsification gradually from epoch >= `warmup_start_epoch` to epoch < `warmup_end_epoch`, with epoch is zero-indexed and can be fractional. This span is known as sparsification warm-up (stage 1).
+- `warmup_start_epoch` & `warmup_end_epoch`: The algorithm will conduct model weight sparsification gradually from epoch >= `warmup_start_epoch` to epoch < `warmup_end_epoch`, with epoch is zero-indexed. This span is known as sparsification warm-up (stage 1).
 - `importance_regularization_factor`: The regularization factor on weight importance scores. With a larger positive value, more model weights will be regarded as less important and thus be sparsified. The appropriate value range of this argument can be quite different per model and task.
 - `enable_structured_masking`: Optional. A boolean to enable structured mask resolution after warm-up stage. Currently, structured masking is only supported for multi-head self-attention blocks and feed-forward networks in **_BERT, Wav2Vec2 and Swin_** implemented in [Hugging Face's transformers](https://huggingface.co/docs/transformers/index). Setting it to `false` results in unstructured sparse output model. Default is `true`.
 - `sparse_structure_by_scopes`: Describes how a layer will be sparsified. The value of the argument is a list, where each entry dictionary must specify `mode` and `target_scopes`, together with additional key-pair for a given mode (e.g., `sparse_factors` for "block" mode, and `axis` for "per_dim" mode).
