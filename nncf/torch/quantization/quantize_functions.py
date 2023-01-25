@@ -55,6 +55,10 @@ class QuantizeSymmetric(torch.autograd.Function):
 
             output = QuantizedFunctionsCUDA.Quantize_forward(input_, input_low, input_range, levels)
         elif input_.device.type == 'hpu':
+            if not input_.is_contiguous():
+                nncf_logger.debug("input_ is not contiguous!")
+                input_ = input_.contiguous()
+
             if dump_kernel_io_dict is not None:
                 if len(dump_kernel_io_dict) == 0:
                     # we only dump for a single batch, the first batch to save memory
@@ -107,7 +111,10 @@ class QuantizeSymmetric(torch.autograd.Function):
                 grad_output, input_, input_low, input_range, levels, level_low, level_high
             )
         elif grad_output.device.type == 'hpu':
-            # TODO: to be complete
+            if not grad_output.is_contiguous():
+                nncf_logger.debug("grad_output is not contiguous!")
+                grad_output = grad_output.contiguous()
+
             grad_input, _, grad_scale = QuantizedFunctionsHPU.fakequantize_bwd(
                 grad_output, input_, input_low, input_range, levels, level_low, level_high
             )
@@ -147,6 +154,10 @@ class QuantizeAsymmetric(torch.autograd.Function):
 
             output = QuantizedFunctionsCUDA.Quantize_forward(input_, input_low, input_range, levels)
         elif input_.device.type == 'hpu':
+            if not input_.is_contiguous():
+                nncf_logger.debug("input_ is not contiguous!")
+                input_ = input_.contiguous()
+
             if dump_kernel_io_dict is not None:
                 if len(dump_kernel_io_dict) == 0:
                     # we only dump for a single batch, the first batch to save memory
@@ -199,7 +210,10 @@ class QuantizeAsymmetric(torch.autograd.Function):
                 grad_output, input_, input_low, input_range, levels, level_low, level_high
             )
         elif grad_output.device.type == 'hpu':
-            # TODO: to be complete
+            if not grad_output.is_contiguous():
+                nncf_logger.debug("grad_output is not contiguous!")
+                grad_output = grad_output.contiguous()
+
             grad_input, grad_input_low, grad_input_range = QuantizedFunctionsHPU.fakequantize_bwd(
                 grad_output, input_, input_low, input_range, levels, level_low, level_high
             )
