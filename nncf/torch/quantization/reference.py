@@ -49,11 +49,11 @@ class ReferenceQuantize:
                  level_low: int,
                  level_high: int,
                  range_sign: int) -> List[GeneralizedTensor]:
-        mask_hi = (input_ > (input_low + input_range)).astype(input_.dtype)
-        mask_lo = (input_ < input_low).astype(input_.dtype)
+        mask_hi = (input_ > (input_low + input_range)).to(input_.dtype)
+        mask_lo = (input_ < input_low).to(input_.dtype)
 
         mask_in = 1 - mask_hi - mask_lo
-        err = (output - input_) * np.reciprocal(input_range * range_sign)
+        err = (output - input_) * torch.reciprocal(input_range * range_sign)
         grad_range = grad_output * (err * mask_in + range_sign * (level_low / level_high) * mask_lo + mask_hi)
         grad_range = sum_like(grad_range, input_range)
 

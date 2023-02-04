@@ -64,7 +64,7 @@ class QuantizeSymmetric(torch.autograd.Function):
                 grad_output = grad_output.contiguous()
 
             grad_input, _, grad_scale = QuantizedFunctionsCUDA.get("Quantize_backward")(
-                grad_output, input_, input_low, input_range, levels, level_low, level_high
+                grad_output, input_, input_low, input_range, levels, level_low, level_high, False
             )
         else:
             grad_input, _, grad_scale = QuantizedFunctionsCPU.get("Quantize_backward")(
@@ -113,7 +113,7 @@ class QuantizeAsymmetric(torch.autograd.Function):
                 grad_output = grad_output.contiguous()
 
             grad_input, grad_input_low, grad_input_range = QuantizedFunctionsCUDA.get("Quantize_backward")(
-                grad_output, input_, input_low, input_range, levels, level_low, level_high
+                grad_output, input_, input_low, input_range, levels, level_low, level_high, True
             )
         else:
             grad_input, grad_input_low, grad_input_range = QuantizedFunctionsCPU.get("Quantize_backward")(

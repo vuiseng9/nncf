@@ -75,11 +75,12 @@ class QuantizedFunctionsCUDALoader(ExtensionLoader):
     @classmethod
     def load(cls):
         try:
-            return torch.utils.cpp_extension.load(cls.name(),
-                        CUDA_EXT_SRC_LIST,
-                        extra_include_paths=EXT_INCLUDE_DIRS,
-                        build_directory=cls.get_build_dir(),
-                        verbose=False)
+            return ReferenceQuantizedFunctions
+            # return torch.utils.cpp_extension.load(cls.name(),
+            #             CUDA_EXT_SRC_LIST,
+            #             extra_include_paths=EXT_INCLUDE_DIRS,
+            #             build_directory=cls.get_build_dir(),
+            #             verbose=False)
         except (subprocess.CalledProcessError, OSError, RuntimeError) as e:
             assert torch.cuda.is_available()
             raise RuntimeError("CUDA is available for PyTorch, but NNCF could not compile "
