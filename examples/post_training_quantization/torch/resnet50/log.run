@@ -1,0 +1,61 @@
+$ python main_rn50_imgnet.py 
+INFO:nncf:NNCF initialized successfully. Supported frameworks detected: torch, onnx, openvino
+WARNING:nncf:NNCF provides best results with torch==1.13.1, while current torch version is 2.0.1+cu117. If you encounter issues, consider switching to torch==1.13.1
+INFO:nncf:Collecting tensor statistics |█████           | 1 / 3
+INFO:nncf:Collecting tensor statistics |██████████      | 2 / 3
+INFO:nncf:Collecting tensor statistics |████████████████| 3 / 3
+INFO:nncf:Compiling and loading torch extension: quantized_functions_cpu...
+INFO:nncf:Finished loading torch extension: quantized_functions_cpu
+INFO:nncf:BatchNorm statistics adaptation |█████           | 1 / 3
+INFO:nncf:BatchNorm statistics adaptation |██████████      | 2 / 3
+INFO:nncf:BatchNorm statistics adaptation |████████████████| 3 / 3
+/data1/vchua/miniconda3/envs/jun23-nncf-ptq/lib/python3.8/site-packages/torch/onnx/utils.py:2033: UserWarning: No names were found for specified dynamic axes of provided input.Automatically generated names will be applied to each dynamic axes of input input_0
+  warnings.warn(
+============= Diagnostic Run torch.onnx.export version 2.0.1+cu117 =============
+verbose: False, log level: Level.ERROR
+======================= 0 NONE 0 NOTE 0 WARNING 0 ERROR ========================
+
+/data1/vchua/dev/jun23-nncf-ptq/nncf/nncf/torch/quantization/layers.py:338: TracerWarning: Converting a tensor to a Python number might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  return self._level_low.item()
+/data1/vchua/dev/jun23-nncf-ptq/nncf/nncf/torch/quantization/layers.py:346: TracerWarning: Converting a tensor to a Python number might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  return self._level_high.item()
+============= Diagnostic Run torch.onnx.export version 2.0.1+cu117 =============
+verbose: False, log level: Level.ERROR
+======================= 0 NONE 0 NOTE 0 WARNING 0 ERROR ========================
+
+[1/7] Save FP32 model: /data1/vchua/dev/jun23-nncf-ptq/nncf/examples/post_training_quantization/torch/resnet50/resnet50_fp32.xml
+Model graph (xml):   0.148 Mb
+Model weights (bin): 97.391 Mb
+Model size:          97.539 Mb
+[2/7] Save INT8 model: /data1/vchua/dev/jun23-nncf-ptq/nncf/examples/post_training_quantization/torch/resnet50/resnet50_int8.xml
+Model graph (xml):   0.382 Mb
+Model weights (bin): 24.532 Mb
+Model size:          24.914 Mb
+[3/7] Benchmark FP32 model:
+[ INFO ] Count:            13604 iterations
+[ INFO ] Duration:         15120.61 ms
+[ INFO ] Latency:
+[ INFO ]    Median:        83.44 ms
+[ INFO ]    Average:       83.98 ms
+[ INFO ]    Min:           71.32 ms
+[ INFO ]    Max:           171.78 ms
+[ INFO ] Throughput:   899.70 FPS
+[4/7] Benchmark INT8 model:
+[ INFO ] Count:            58748 iterations
+[ INFO ] Duration:         15032.64 ms
+[ INFO ] Latency:
+[ INFO ]    Median:        18.99 ms
+[ INFO ]    Average:       18.99 ms
+[ INFO ]    Min:           14.63 ms
+[ INFO ]    Max:           42.73 ms
+[ INFO ] Throughput:   3908.03 FPS
+[5/7] Validate OpenVINO FP32 model:
+100%|██████████████████████████████████████████████████████████████████████████████████| 391/391 [03:29<00:00,  1.86it/s]
+Accuracy @ top1: 0.761
+[6/7] Validate OpenVINO INT8 model:
+100%|██████████████████████████████████████████████████████████████████████████████████| 391/391 [01:40<00:00,  3.88it/s]
+Accuracy @ top1: 0.755
+[7/7] Report:
+Accuracy drop: 0.006
+Model compression rate: 3.915
+Performance speed up (throughput mode): 4.344
